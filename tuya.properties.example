@@ -1,0 +1,5 @@
+# Copy to tuya.properties only after creating our SmartLife App SDK project.
+# Never commit the real file.
+TUYA_APP_KEY=
+TUYA_APP_SECRET=
+TUYA_SDK_VERSION=7.8.0

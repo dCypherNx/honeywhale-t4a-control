@@ -1,0 +1,17 @@
+.gradle/
+build/
+app/build/
+local.properties
+tuya.properties
+/app/src/main/assets/t_s.bmp
+app/libs/
+*.jks
+*.keystore
+*.apk
+.idea/
+*.iml
+captures/
+*.xml
+*.png
+*.log
+!app/src/main/res/**/*.xml
