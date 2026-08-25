@@ -2,47 +2,67 @@
     <string name="app_name">T4A Control</string>
     <string name="active_account">CONTA ATIVA: %1$s</string>
     <string name="logged_in">Logado: %1$s</string>
-    <string name="login_error">Erro Login: %1$s</string>
+    <string name="login_error">Erro de Login: %1$s</string>
     <string name="ready_to_pair">Pronto para parear</string>
-    <string name="searching">Buscando&#8230;</string>
+    <string name="searching">Buscando patinete&#8230;</string>
     <string name="syncing">Sincronizando&#8230;</string>
-    <string name="token_error">Erro Token</string>
-    <string name="activating">Ativando&#8230;</string>
-    <string name="paired">VINCULADO!</string>
-    <string name="activation_failed">Falhou: %1$d</string>
-    <string name="no_scooter">Nenhum patinete.</string>
+    <string name="token_error">Erro ao obter Token</string>
+    <string name="activating">Ativando dispositivo&#8230;</string>
+    <string name="paired">VINCULADO COM SUCESSO!</string>
+    <string name="activation_failed">A ativação falhou: %1$d</string>
+    <string name="no_scooter">Nenhum patinete encontrado.</string>
     <string name="device_label">DISPOSITIVO: %1$s</string>
-    <string name="removed">Removido</string>
+    <string name="removed">Dispositivo Removido</string>
     <string name="connected">CONECTADO</string>
-    <string name="offline">OFFLINE</string>
-    <string name="unlinked">Desvinculado</string>
-    <string name="command_ok">Envio OK: %1$s</string>
-    <string name="command_error">Erro: %1$s</string>
+    <string name="offline">DESCONECTADO (OFFLINE)</string>
+    <string name="unlinked">Vínculo Removido</string>
+    <string name="command_ok">Comando Enviado: %1$s</string>
+    <string name="command_error">Erro no Comando: %1$s</string>
+
     <string name="title_dash">T4A CONTROL</string>
     <string name="battery_label">\ud83d\udd0b BATERIA: %1$d%%</string>
     <string name="odo_total_label">ODÔMETRO TOTAL: %1$s</string>
     <string name="email_hint">E-mail</string>
     <string name="password_hint">Senha</string>
-    <string name="login_btn">ENTRAR</string>
+    <string name="login_btn">ENTRAR NA CONTA</string>
     <string name="brake_active">⚠️ FREIO ACIONADO</string>
     <string name="scan_new_btn">BUSCAR NOVO PATINETE</string>
-    <string name="pair_btn">PAREAR</string>
-    <string name="unpair_btn">REMOVER VÍNCULO</string>
-    <string name="nav_dash">PAINEL</string>
-    <string name="nav_configs">CONFIGS</string>
+    <string name="pair_btn">PAREAR DISPOSITIVO</string>
+    <string name="unpair_btn">REMOVER VÍNCULO DO DISPOSITIVO</string>
+
+    <string name="nav_dash">PAINEL DE CONTROLE</string>
+    <string name="nav_configs">CONFIGURAÇÕES</string>
+
     <string name="unit_box_title">UNIDADE DE MEDIDA</string>
     <string name="unit_mi">MILHAS (mi)</string>
     <string name="unit_km">QUILÔMETROS (km)</string>
     <string name="dp_display">%1$s: %2$s</string>
     <string name="country_code">55</string>
-    <string name="zero_start_btn">ZERO START</string>
-    <string name="kick_start_btn">KICK START</string>
-    <string name="activate_btn">ATIVAR</string>
-    <string name="deactivate_btn">DESATIVAR</string>
+
+    <string name="group_riding">CONTROLES DE PILOTAGEM</string>
     <string name="group_security">SEGURANÇA</string>
     <string name="group_lights">ILUMINAÇÃO</string>
-    <string name="group_settings">AJUSTES T4A</string>
-    <string name="group_status">ESTADO</string>
-    <string name="log_full">LOG COMPLETO:\n</string>
+    <string name="group_admin">ADMINISTRAÇÃO DO DISPOSITIVO</string>
+    <string name="group_status">TELEMETRIA COMPLETA</string>
+
+    <string name="dp_lock">Trava do Motor</string>
+    <string name="dp_light">Farol Frontal</string>
+    <string name="dp_unit">Unidade de Medida</string>
+    <string name="dp_odo_total">Odômetro Total</string>
+    <string name="dp_cruise">Piloto Automático</string>
+    <string name="dp_limit">Modo de Condução</string>
+    <string name="dp_start">Modo de Partida</string>
+    <string name="dp_bat_pct">Bateria (%)</string>
+    <string name="dp_speed">Velocidade</string>
+    <string name="dp_odo_trip">Odômetro Parcial</string>
+    <string name="dp_current">Corrente do Motor</string>
+    <string name="dp_voltage">Tensão da Bateria</string>
+
+    <string name="state_locked">🔒 BLOQUEADO</string>
+    <string name="state_unlocked">🔓 LIBERADO</string>
+    <string name="state_on">LIGADO</string>
+    <string name="state_off">DESLIGADO</string>
+
+    <string name="log_full">LOG COMPLETO DE EVENTOS:\n</string>
     <string name="log_recent">ÚLTIMOS EVENTOS:\n</string>
 </resources>
