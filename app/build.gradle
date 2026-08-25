@@ -9,27 +9,30 @@ if (!tuyaPropertiesFile.exists()) {
 }
 tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
+def sdkVersion = 37
+
 android {
     namespace 'br.com.t4acontrol'
-    compileSdk 36
+    compileSdkVersion sdkVersion
 
     buildFeatures {
+        resValues true
         buildConfig true
     }
 
     defaultConfig {
         applicationId 'br.com.t4acontrol'
         minSdk 31
-        targetSdk 36
-        versionCode 4
-        versionName '0.4.0'
+        targetSdk sdkVersion
+        versionCode 5
+        versionName '0.5.0'
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),
                 TUYA_SMART_SECRET: tuyaProperties.getProperty('TUYA_APP_SECRET', '')
         ]
         ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
         }
     }
 
@@ -58,7 +61,7 @@ configurations.configureEach {
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.aar'])
-    implementation 'com.alibaba:fastjson:1.1.67.android'
-    implementation 'com.squareup.okhttp3:okhttp-urlconnection:3.14.9'
+    implementation 'com.alibaba:fastjson:2.0.64'
+    implementation 'com.squareup.okhttp3:okhttp-urlconnection:5.5.0'
     implementation 'com.thingclips.smart:thingsmart:7.8.0'
 }
