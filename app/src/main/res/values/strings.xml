@@ -58,6 +58,8 @@
     <string name="dp_current">Corrente</string>
     <string name="dp_voltage">Tensão</string>
 
+    <string name="dp_time">Tempo de Uso</string>
+    <string name="raw_dps_title">DADOS BRUTOS (ALL DPS)</string>
     <string name="state_locked">BLOQUEADO</string>
     <string name="state_unlocked">DESBLOQUEADO</string>
     <string name="state_on">LIGADO</string>

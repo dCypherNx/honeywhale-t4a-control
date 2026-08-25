@@ -11,7 +11,7 @@ tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
 android {
     namespace 'br.com.t4acontrol'
-    compileSdkVersion 35
+    compileSdk 35
 
     buildFeatures {
         resValues true
@@ -21,9 +21,9 @@ android {
     defaultConfig {
         applicationId 'br.com.t4acontrol'
         minSdk 31
-        targetSdkVersion 35
-        versionCode 8
-        versionName '0.6.3'
+        targetSdk 35
+        versionCode 10
+        versionName '0.6.6'
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),
