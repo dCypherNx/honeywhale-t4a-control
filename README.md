@@ -1,48 +1,44 @@
 # T4A Control para Android
 
-Aplicativo nativo para controle e monitoramento do patinete HoneyWhale T4A via Tuya Smart SDK.
+Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A pelo Tuya Smart SDK.
 
-## Estado Atual (v0.5.1)
+## Estado atual (v0.6.6)
 
-- **Integração Tuya**: ThingSmart Home SDK (v7.8.0) com suporte a Android 15+ (SDK 37).
-- **Conectividade Agressiva**:
-    - Polling de estado a cada **200ms** para velocímetro ultra-responsivo.
-    - Ciclo de auto-reconexão forçada a cada 5s (primeiro plano) ou 30s (segundo plano).
-    - Persistência de conexão otimizada via ciclo de vida da Activity.
-- **Interface Dual (Dash/Settings)**:
-    - **Modo Painel**: Focado em pilotagem com velocímetro grande, bateria destacada e alternância rápida de KM/MI.
-    - **Modo Configurações**: Acesso a todos os DPs técnicos e log completo de eventos.
-- **Painel de Controle**:
-    - Velocímetro em tempo real com suporte a **Km/h** e **Mph**.
-    - Monitoramento de bateria e tensão.
-    - Odômetro Total e Parcial com conversão de unidades.
-    - Controle de farol, trava de motor e modos de velocidade (WALK, ECO, RACE, SPORT).
-    - Alerta visual de freio acionado.
-- **Gestão de Logs**: Visualização simplificada (10 eventos) no painel e histórico completo nas configurações.
+Funcional e implementado:
 
-## Requisitos e Tecnologias
+- autenticação da conta privada T4A Control;
+- restauração do T4A previamente pareado;
+- descoberta, ativação e remoção do pareamento;
+- conexão e reconexão BLE automáticas;
+- atualização dos DPS recebidos, inclusive mudanças externas;
+- comandos absolutos de farol e bloqueio;
+- seleção explícita de modo, unidade, piloto automático e tipo de partida;
+- painel de velocidade, bateria, odômetro, percurso e freio;
+- separação entre apresentação (`MainActivity`) e Tuya/BLE (`backend`).
 
-- **Android**: Alvo Android 15+ (API 37), suporte mínimo Android 12 (API 31).
-- **Stack**: Java nativo, ThingSmart SDK, FastJSON, OkHttp 5.5.0.
-- **Permissões**: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`.
+Ainda não implementado ou validado:
 
-## Configuração do Desenvolvedor
+- MQTT e discovery para Home Assistant;
+- armazenamento de chaves de um protocolo BLE próprio no Android Keystore;
+- funcionamento local independente do SDK/nuvem Tuya;
+- serviço em primeiro plano para conexão persistente com o aplicativo encerrado;
+- OTA, limite de velocidade e desbloqueio automático por proximidade.
 
-O projeto requer credenciais da Tuya Developer Platform.
-1. Copie `tuya.properties.example` para `tuya.properties`.
-2. Preencha `TUYA_APP_KEY` e `TUYA_APP_SECRET`.
+## Arquitetura
+
+- `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya.
+- `backend/T4ABackend`: possui sessão, casa, scan, ativação, conexão, DPS e desvinculação.
+- `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
+
+O backend nunca informa sucesso de um comando alterando o estado local. O valor exibido muda apenas quando o DPS confirmado chega do dispositivo ou do cache atualizado pelo SDK.
 
 ## Compilação
 
-O projeto utiliza:
-- **Gradle**: 9.5.0
-- **Android Gradle Plugin (AGP)**: 9.3.2
-- **JDK**: 21 (Eclipse Temurin)
+- Android Gradle Plugin: 9.3.2
+- Gradle Wrapper: 9.7.1
+- Java: 17 no código; JDK 21 para compilação
+- compileSdk: 36
+- targetSdk: 35
+- Tuya Smart SDK: 7.8.0
 
-A APK de desenvolvimento é gerada em `app/build/outputs/apk/debug/app-debug.apk`.
-
-## Histórico Recente
-
-- **v0.5.1**: Upgrade para SDK 37, OkHttp 5.5.0 e implementação de reconexão agressiva (polling de 200ms).
-- **v0.4.1**: Restauração da separação entre Painel/Configurações, adição de botões explícitos de alternância KM/Milha e refinamento do log.
-- **v0.4.0**: Correção de bugs de layout e estabilização da alternância de unidades.
+O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK de desenvolvimento é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
