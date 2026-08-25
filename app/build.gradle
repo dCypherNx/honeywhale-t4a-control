@@ -59,6 +59,7 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation project(':backend')
     implementation fileTree(dir: 'libs', include: ['*.aar'])
     implementation 'com.alibaba:fastjson:1.1.67.android'
     implementation 'com.squareup.okhttp3:okhttp-urlconnection:4.12.0'
