@@ -22,8 +22,8 @@ android {
         applicationId 'br.com.t4acontrol'
         minSdk 31
         targetSdkVersion 35
-        versionCode 7
-        versionName '0.6.1'
+        versionCode 8
+        versionName '0.6.2'
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),

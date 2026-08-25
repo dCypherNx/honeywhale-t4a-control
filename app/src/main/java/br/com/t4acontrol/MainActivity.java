@@ -77,6 +77,11 @@ public final class MainActivity extends Activity {
     private EditText emailInput, passwordInput;
     private LinearLayout authPanel, devicePanel, controlsPanel;
     
+    // UI estática persistente
+    private TextView speedView, speedUnitView, batteryView, rssiView, lockStateView, odoTotalView;
+    private final List<Button> modeButtons = new ArrayList<>();
+    private final Map<String, Button> dashButtons = new HashMap<>();
+    
     private ScanDeviceBean tuyaCandidate;
     private long activeHomeId;
     private IThingDevice thingDevice;
@@ -176,8 +181,8 @@ public final class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this); nav.setOrientation(LinearLayout.HORIZONTAL);
         Button btnDash = new Button(this); btnDash.setText(R.string.nav_dash); btnDash.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
         Button btnCfg = new Button(this); btnCfg.setText(R.string.nav_configs); btnCfg.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-        btnDash.setOnClickListener(v -> { isSettingsMode = false; renderControls(); });
-        btnCfg.setOnClickListener(v -> { isSettingsMode = true; renderControls(); });
+        btnDash.setOnClickListener(v -> { if (isSettingsMode) { isSettingsMode = false; refreshUi(); } });
+        btnCfg.setOnClickListener(v -> { if (!isSettingsMode) { isSettingsMode = true; refreshUi(); } });
         nav.addView(btnDash); nav.addView(btnCfg); devicePanel.addView(nav);
 
         controlsPanel = new LinearLayout(this); controlsPanel.setOrientation(LinearLayout.VERTICAL); devicePanel.addView(controlsPanel);
@@ -187,71 +192,69 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this); scroll.addView(body); setContentView(scroll);
     }
 
-    private void renderControls() {
+    private void refreshUi() {
         controlsPanel.removeAllViews();
-        if (activeDevice == null) return;
-        boolean mi = Objects.equals(currentDps.get(DP_UNIT), "mile"); double r = mi ? 0.621371 : 1.0;
-        if (!isSettingsMode) renderDashboard(mi, r);
-        else renderSettings(r);
-        updateLogView();
+        dashButtons.clear();
+        modeButtons.clear();
+        if (isSettingsMode) buildSettings();
+        else buildDashboard();
+        updateValues();
     }
 
-    private void renderDashboard(boolean mi, double r) {
-        float dashSpeed = parseSafeFloat(currentDps.get(DP_SPEED));
+    private void buildDashboard() {
         LinearLayout dashRow = new LinearLayout(this); dashRow.setOrientation(LinearLayout.HORIZONTAL); dashRow.setGravity(Gravity.CENTER);
-        TextView sv = new TextView(this); sv.setText(String.format(Locale.ROOT, "%.1f", dashSpeed * r)); sv.setTextSize(120); sv.setTextColor(Color.BLACK);
-        TextView un = new TextView(this); un.setText(mi ? " mph" : " km/h"); un.setTextSize(32); un.setTextColor(Color.GRAY);
-        dashRow.addView(sv); dashRow.addView(un); controlsPanel.addView(dashRow);
+        speedView = new TextView(this); speedView.setTextSize(120); speedView.setTextColor(Color.BLACK);
+        speedUnitView = new TextView(this); speedUnitView.setTextSize(32); speedUnitView.setTextColor(Color.GRAY);
+        dashRow.addView(speedView); dashRow.addView(speedUnitView); controlsPanel.addView(dashRow);
 
-        int bat = parseSafeInt(currentDps.get(DP_BATTERY));
-        TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(40); bv.setGravity(Gravity.CENTER);
-        bv.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED); controlsPanel.addView(bv);
+        batteryView = new TextView(this); batteryView.setTextSize(40); batteryView.setGravity(Gravity.CENTER);
+        controlsPanel.addView(batteryView);
         
-        TextView rv = new TextView(this); rv.setText("Intensidade Sinal: " + currentRssi + " dBm"); rv.setGravity(Gravity.CENTER); rv.setTextColor(Color.BLUE);
-        controlsPanel.addView(rv);
+        rssiView = new TextView(this); rssiView.setGravity(Gravity.CENTER); rssiView.setTextColor(Color.BLUE);
+        controlsPanel.addView(rssiView);
 
         LinearLayout act = createGroup(getString(R.string.group_riding));
-        
-        // Bloqueio com botões separados
-        TextView lockState = new TextView(this); 
-        lockState.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0));
-        lockState.setGravity(Gravity.CENTER); lockState.setPadding(0, dp(5), 0, dp(5)); act.addView(lockState);
+        lockStateView = new TextView(this); lockStateView.setGravity(Gravity.CENTER); lockStateView.setPadding(0, dp(5), 0, dp(5)); act.addView(lockStateView);
         
         LinearLayout lockRow = new LinearLayout(this); lockRow.setOrientation(LinearLayout.HORIZONTAL);
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false); // No T4A false=LIBERADO
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true); // No T4A true=TRAVADO
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false); 
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true);
         act.addView(lockRow);
 
         LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
-        addDashBtn(row1, DP_LIGHT, getString(R.string.dp_light), "light");
-        addDashBtn(row1, DP_CRUISE, getString(R.string.dp_cruise), "bool");
+        addPersistBtn(row1, DP_LIGHT, getString(R.string.dp_light), "light");
+        addPersistBtn(row1, DP_CRUISE, getString(R.string.dp_cruise), "bool");
         act.addView(row1);
         
         LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
-        addDashBtn(row2, DP_START_MODE, getString(R.string.dp_start), "start");
+        addPersistBtn(row2, DP_START_MODE, getString(R.string.dp_start), "start");
         act.addView(row2);
         
-        addSpeedPresets(act, DP_SPEED_LIMIT);
+        LinearLayout modeRow = new LinearLayout(this); modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] ns = {"WALK 6", "ECO 25", "RACE 35", "SPORT 45"};
+        String[] vs = {"level_0", "level_1", "level_2", "level_3"};
+        for (int mIdx = 0; mIdx < 4; mIdx++) {
+            final String val = vs[mIdx];
+            Button b = new Button(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(65), 1.0f);
+            lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
+            b.setText(ns[mIdx]); b.setTextSize(10); b.setPadding(0, 0, 0, 0);
+            b.setTag(val);
+            b.setOnClickListener(v -> publish(DP_SPEED_LIMIT, val));
+            modeButtons.add(b); modeRow.addView(b);
+        }
+        act.addView(modeRow);
         controlsPanel.addView(act);
 
         LinearLayout unitBox = createGroup(getString(R.string.unit_box_title));
         addIconPairBtn(unitBox, DP_UNIT, getString(R.string.unit_mi), getString(R.string.unit_km), "mile", "km");
         controlsPanel.addView(unitBox);
         
-        Object odoTotal = currentDps.get(DP_ODO_TOTAL);
-        TextView ot = new TextView(this); ot.setText(getString(R.string.odo_total_label, formatValue(DP_ODO_TOTAL, odoTotal, r)));
-        ot.setTextSize(18); ot.setPadding(0, dp(20), 0, 0); controlsPanel.addView(ot);
+        odoTotalView = new TextView(this); odoTotalView.setTextSize(18); odoTotalView.setPadding(0, dp(20), 0, 0); 
+        controlsPanel.addView(odoTotalView);
     }
 
-    private void addActionButton(LinearLayout row, String id, String label, Object val) {
-        Button b = new Button(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
-        lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
-        b.setText(label); b.setPadding(0, 0, 0, 0);
-        b.setOnClickListener(v -> publish(id, val)); row.addView(b);
-    }
-
-    private void renderSettings(double r) {
+    private void buildSettings() {
         LinearLayout adm = createGroup(getString(R.string.group_admin));
         if (activeDevice != null) {
             TextView mac = new TextView(this); mac.setText("MAC: " + activeDevice.getMac()); mac.setGravity(Gravity.CENTER); mac.setPadding(0, 0, 0, dp(10)); adm.addView(mac);
@@ -261,56 +264,99 @@ public final class MainActivity extends Activity {
         Button unpairBtn = new Button(this); unpairBtn.setText(R.string.unpair_btn); unpairBtn.setTextColor(Color.RED); unpairBtn.setOnClickListener(v -> removePairing()); adm.addView(unpairBtn);
         controlsPanel.addView(adm);
 
-        Map<String, SchemaBean> schemas = activeDevice.getSchemaMap(); if (schemas == null || schemas.isEmpty()) return;
-        LinearLayout sts = createGroup(getString(R.string.group_status));
-        for (Map.Entry<String, SchemaBean> entry : new TreeMap<>(schemas).entrySet()) {
-            String id = entry.getKey(); SchemaBean sc = entry.getValue(); Object v = currentDps.get(id);
-            TextView l = new TextView(this); l.setText(getString(R.string.dp_display, displayDpName(id, sc), formatValue(id, v, r)));
-            l.setTextSize(14); l.setTextColor(0xFF2E7D32); l.setPadding(0, dp(5), 0, dp(2));
-            sts.addView(l);
+        Map<String, SchemaBean> schemas = activeDevice != null ? activeDevice.getSchemaMap() : null;
+        if (schemas != null) {
+            LinearLayout sts = createGroup(getString(R.string.group_status));
+            for (Map.Entry<String, SchemaBean> entry : new TreeMap<>(schemas).entrySet()) {
+                String id = entry.getKey();
+                TextView l = new TextView(this); l.setTag("dp_" + id);
+                l.setTextSize(14); l.setTextColor(0xFF2E7D32); l.setPadding(0, dp(5), 0, dp(2));
+                sts.addView(l);
+            }
+            controlsPanel.addView(sts);
         }
-        controlsPanel.addView(sts);
     }
 
-    private void addDashBtn(LinearLayout row, String id, String label, String type) {
+    private void updateValues() {
+        if (activeDevice == null) return;
+        boolean mi = Objects.equals(currentDps.get(DP_UNIT), "mile");
+        double r = mi ? 0.621371 : 1.0;
+
+        if (!isSettingsMode) {
+            if (speedView != null) speedView.setText(String.format(Locale.ROOT, "%.1f", parseSafeFloat(currentDps.get(DP_SPEED)) * r));
+            if (speedUnitView != null) speedUnitView.setText(mi ? " mph" : " km/h");
+            
+            int bat = parseSafeInt(currentDps.get(DP_BATTERY));
+            if (batteryView != null) {
+                batteryView.setText(getString(R.string.battery_label, bat));
+                batteryView.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
+            }
+            if (rssiView != null) rssiView.setText("Sinal: " + currentRssi + " dBm");
+            if (lockStateView != null) lockStateView.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0));
+            if (odoTotalView != null) odoTotalView.setText(getString(R.string.odo_total_label, formatValue(DP_ODO_TOTAL, currentDps.get(DP_ODO_TOTAL), r)));
+
+            for (Map.Entry<String, Button> entry : dashButtons.entrySet()) {
+                String id = entry.getKey(); Button b = entry.getValue();
+                Object val = currentDps.get(id); String type = (String) b.getTag();
+                String label = displayDpName(id, null);
+                String state = "";
+                if ("light".equals(type)) state = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
+                else if ("bool".equals(type)) state = isTrue(val) ? "ON" : "OFF";
+                else if ("start".equals(type)) state = "zero_start".equals(val) ? "ZERO" : "KICK";
+                b.setText(label + "\n" + state);
+            }
+
+            Object curLimit = currentDps.get(DP_SPEED_LIMIT);
+            for (Button b : modeButtons) {
+                if (Objects.equals(b.getTag(), curLimit)) b.setBackgroundColor(Color.YELLOW);
+                else b.setBackgroundColor(0xFFE0E0E0);
+            }
+        } else {
+            for (int i = 0; i < controlsPanel.getChildCount(); i++) {
+                View group = controlsPanel.getChildAt(i);
+                if (group instanceof LinearLayout) {
+                    for (int j = 0; j < ((LinearLayout)group).getChildCount(); j++) {
+                        View child = ((LinearLayout)group).getChildAt(j);
+                        if (child.getTag() != null && child.getTag().toString().startsWith("dp_")) {
+                            String id = child.getTag().toString().substring(3);
+                            SchemaBean sc = activeDevice.getSchemaMap().get(id);
+                            ((TextView)child).setText(getString(R.string.dp_display, displayDpName(id, sc), formatValue(id, currentDps.get(id), r)));
+                        }
+                    }
+                }
+            }
+        }
+        updateLogView();
+    }
+
+    private void addActionButton(LinearLayout row, String id, String label, Object val) {
         Button b = new Button(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(65), 1.0f);
         lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
-        Object val = currentDps.get(id); String stateStr = "";
-        if ("light".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
-        else if ("bool".equals(type)) stateStr = (val instanceof Boolean && (Boolean)val) ? "ON" : "OFF";
-        else if ("start".equals(type)) stateStr = "zero_start".equals(val) ? "ZERO" : "KICK";
-        b.setText(label + "\n" + stateStr); b.setPadding(0, 0, 0, 0);
+        b.setText(label); b.setPadding(0, 0, 0, 0);
+        b.setOnClickListener(v -> publish(id, val)); row.addView(b);
+    }
+
+    private void addPersistBtn(LinearLayout row, String id, String label, String type) {
+        Button b = new Button(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(65), 1.0f);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
+        b.setTag(type); b.setPadding(0, 0, 0, 0);
         b.setOnClickListener(v -> {
+            Object val = currentDps.get(id);
             if ("start".equals(type)) publish(id, "zero_start".equals(val) ? "not_zero_start" : "zero_start");
             else if (val instanceof Boolean) publish(id, !((Boolean)val));
             else if (val != null) publish(id, !isTrue(val));
             else publish(id, true);
         });
         row.addView(b);
-    }
-
-    private void addSpeedPresets(LinearLayout g, String id) {
-        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] ns = {"WALK 6", "ECO 25", "RACE 35", "SPORT 45"};
-        String[] vs = {"level_0", "level_1", "level_2", "level_3"};
-        Object curVal = currentDps.get(id);
-        for (int i = 0; i < 4; i++) {
-            final String val = vs[i];
-            Button b = new Button(this);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1.0f);
-            lp.setMargins(dp(1), dp(1), dp(1), dp(1)); b.setLayoutParams(lp);
-            b.setText(ns[i]); b.setTextSize(9); b.setPadding(0, 0, 0, 0);
-            if (val.equals(curVal)) b.setBackgroundColor(Color.YELLOW);
-            b.setOnClickListener(v -> publish(id, val)); row.addView(b);
-        }
-        g.addView(row);
+        dashButtons.put(id, b);
     }
 
     private void addIconPairBtn(LinearLayout g, String id, String tOn, String tOff, Object vOn, Object vOff) {
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
         Button b1 = new Button(this); b1.setText(tOn); 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1.0f);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(55), 1.0f);
         b1.setLayoutParams(lp); b1.setOnClickListener(v -> publish(id, vOn));
         Button b2 = new Button(this); b2.setText(tOff); b2.setLayoutParams(lp); b2.setOnClickListener(v -> publish(id, vOff));
         row.addView(b1); row.addView(b2); g.addView(row);
@@ -385,15 +431,15 @@ public final class MainActivity extends Activity {
             @Override public void onDpUpdate(String id, Map<String, Object> dps) {
                 if (dps != null) { 
                     appendLog("RAW: " + dps);
-                    runOnUiThread(() -> { currentDps.putAll(dps); checkBrake(dps); renderControls(); }); 
+                    runOnUiThread(() -> { currentDps.putAll(dps); checkBrake(dps); updateValues(); }); 
                 }
             }
             @Override public void onRemoved(String id) { runOnUiThread(() -> setStatus(getString(R.string.removed), Color.RED)); }
-            @Override public void onStatusChanged(String id, boolean online) { runOnUiThread(() -> { setStatus(online ? getString(R.string.connected) : getString(R.string.offline), online ? 0xFF2E7D32 : Color.RED); if (online) handler.post(statusPoller); else handler.removeCallbacks(statusPoller); renderControls(); }); }
+            @Override public void onStatusChanged(String id, boolean online) { runOnUiThread(() -> { setStatus(online ? getString(R.string.connected) : getString(R.string.offline), online ? 0xFF2E7D32 : Color.RED); if (online) handler.post(statusPoller); else handler.removeCallbacks(statusPoller); updateValues(); }); }
             @Override public void onNetworkStatusChanged(String id, boolean o) {}
             @Override public void onDevInfoUpdate(String id) {}
         });
-        renderControls(); startAutomaticConnection(); handler.post(statusPoller);
+        refreshUi(); startAutomaticConnection(); handler.post(statusPoller);
     }
 
     private void publish(String id, Object val) {
@@ -415,8 +461,14 @@ public final class MainActivity extends Activity {
     private void syncState() { 
         if (activeDevice != null) { 
             DeviceBean d = ThingHomeSdk.getDataInstance().getDeviceBean(activeDevice.getDevId());
-            if (d != null) { activeDevice = d; if (d.getDps() != null) { currentDps.putAll(d.getDps()); checkBrake(d.getDps()); } }
-            renderControls(); 
+            if (d != null) { 
+                activeDevice = d; 
+                if (d.getDps() != null) { 
+                    currentDps.putAll(d.getDps()); 
+                    checkBrake(d.getDps()); 
+                } 
+            }
+            runOnUiThread(this::updateValues); 
         } 
     }
 
@@ -474,5 +526,4 @@ public final class MainActivity extends Activity {
     private void setStatus(String t, int c) { status.setText(t); status.setTextColor(c); }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
     private void showDeviceFlow() { authPanel.setVisibility(View.GONE); devicePanel.setVisibility(View.VISIBLE); }
-    private String translateEnum(String id, String opt) { if (id.equals(DP_SPEED_LIMIT)) { if (opt.equals("level_0")) return "WALK"; if (opt.equals("level_1")) return "ECO"; if (opt.equals("level_2")) return "RACE"; if (opt.equals("level_3")) return "SPORT"; } if (id.equals(DP_START_MODE)) return "zero_start".equals(opt) ? "ZERO" : "KICK"; return opt; }
 }

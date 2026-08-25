@@ -30,31 +30,31 @@
     <string name="pair_btn">PAREAR DISPOSITIVO</string>
     <string name="unpair_btn">REMOVER VÍNCULO DO DISPOSITIVO</string>
 
-    <string name="nav_dash">PAINEL DE CONTROLE</string>
-    <string name="nav_configs">CONFIGURAÇÕES</string>
+    <string name="nav_dash">PAINEL</string>
+    <string name="nav_configs">CONFIGS</string>
 
-    <string name="unit_box_title">UNIDADE DE MEDIDA</string>
+    <string name="unit_box_title">UNIDADE</string>
     <string name="unit_mi">MILHAS (mi)</string>
     <string name="unit_km">QUILÔMETROS (km)</string>
     <string name="dp_display">%1$s: %2$s</string>
     <string name="country_code">55</string>
 
-    <string name="group_riding">CONTROLES DE PILOTAGEM</string>
+    <string name="group_riding">PILOTAGEM</string>
     <string name="group_security">SEGURANÇA</string>
     <string name="group_lights">ILUMINAÇÃO</string>
-    <string name="group_admin">ADMINISTRAÇÃO DO DISPOSITIVO</string>
-    <string name="group_status">TELEMETRIA COMPLETA</string>
+    <string name="group_admin">ADMINISTRAÇÃO</string>
+    <string name="group_status">TELEMETRIA</string>
 
     <string name="dp_lock">Bloqueio</string>
     <string name="dp_light">Farol</string>
     <string name="dp_unit">Unidade</string>
     <string name="dp_odo_total">Odômetro Total</string>
     <string name="dp_cruise">Cruzeiro</string>
-    <string name="dp_limit">Condução</string>
-    <string name="dp_start">Partida</string>
+    <string name="dp_limit">Modo Condução</string>
+    <string name="dp_start">Modo Partida</string>
     <string name="dp_bat_pct">Bateria (%)</string>
     <string name="dp_speed">Velocidade</string>
-    <string name="dp_odo_trip">Parcial</string>
+    <string name="dp_odo_trip">Odômetro Parcial</string>
     <string name="dp_current">Corrente</string>
     <string name="dp_voltage">Tensão</string>
 
@@ -66,6 +66,6 @@
     <string name="btn_lock">BLOQUEAR</string>
     <string name="btn_unlock">DESBLOQUEAR</string>
 
-    <string name="log_full">LOG COMPLETO DE EVENTOS:\n</string>
-    <string name="log_recent">ÚLTIMOS EVENTOS:\n</string>
+    <string name="log_full">LOG COMPLETO:\n</string>
+    <string name="log_recent">EVENTOS:\n</string>
 </resources>
