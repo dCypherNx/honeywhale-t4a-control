@@ -54,7 +54,7 @@ import com.thingclips.smart.sdk.bean.DeviceBean;
 public final class MainActivity extends Activity {
     private static final String TAG = "T4A_APP";
     
-    // Datapoints T4A
+    // T4A Datapoints
     private static final String DP_LOCK = "1";
     private static final String DP_SPEED = "2";
     private static final String DP_BATTERY = "3";
@@ -101,7 +101,7 @@ public final class MainActivity extends Activity {
                 DeviceBean d = ThingHomeSdk.getDataInstance().getDeviceBean(activeDevice.getDevId());
                 boolean online = d != null && d.getIsOnline();
                 if (!online) {
-                    appendLog("Reconexão automática em curso...");
+                    appendLog("Auto-reconexão ativa...");
                     startAutomaticConnection();
                 }
             }
@@ -124,7 +124,7 @@ public final class MainActivity extends Activity {
                 queryHomes();
             }
         } catch (Exception e) {
-            Log.e(TAG, "SDK Init error", e);
+            Log.e(TAG, "SDK error", e);
         }
     }
 
@@ -206,12 +206,10 @@ public final class MainActivity extends Activity {
         TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(28); bv.setGravity(Gravity.CENTER);
         bv.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED); controlsPanel.addView(bv);
 
-        // Controles de Pilotagem Diretos
         LinearLayout act = createGroup(getString(R.string.group_riding));
-        
         LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
         addDashBtn(row1, DP_LIGHT, getString(R.string.dp_light), "light");
-        addDashBtn(row1, DP_LOCK, getString(R.string.dp_lock), "lock"); // Lógica de inversão aplicada aqui
+        addDashBtn(row1, DP_LOCK, getString(R.string.dp_lock), "lock"); 
         act.addView(row1);
         
         LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
@@ -219,7 +217,7 @@ public final class MainActivity extends Activity {
         addDashBtn(row2, DP_START_MODE, getString(R.string.dp_start), "start");
         act.addView(row2);
         
-        addSpeedPresets(act, DP_SPEED_LIMIT, mi);
+        addSpeedPresets(act, DP_SPEED_LIMIT);
         controlsPanel.addView(act);
 
         LinearLayout unitBox = createGroup(getString(R.string.unit_box_title));
@@ -250,20 +248,12 @@ public final class MainActivity extends Activity {
     }
 
     private void addDashBtn(LinearLayout row, String id, String label, String type) {
-        Button b = new Button(this);
-        b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-        Object val = currentDps.get(id);
-        String stateStr = "";
-        
+        Button b = new Button(this); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Object val = currentDps.get(id); String stateStr = "";
         if ("light".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
-        else if ("lock".equals(type)) {
-            // CORREÇÃO: No T4A, true = Motor Travado (Hard), false = Liberado. 
-            // O usuário quer ver "LIBERADO" para true (experiência física invertida).
-            stateStr = isTrue(val) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
-        }
-        else if ("bool".equals(type)) stateStr = (val instanceof Boolean && (Boolean)val) ? "LIGADO" : "DESLIGADO";
+        else if ("lock".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
+        else if ("bool".equals(type)) stateStr = isTrue(val) ? "ON" : "OFF";
         else if ("start".equals(type)) stateStr = "zero_start".equals(val) ? "ZERO" : "KICK";
-        
         b.setText(label + "\n" + stateStr);
         b.setOnClickListener(v -> {
             if ("start".equals(type)) publish(id, "zero_start".equals(val) ? "not_zero_start" : "zero_start");
@@ -274,9 +264,9 @@ public final class MainActivity extends Activity {
         row.addView(b);
     }
 
-    private void addSpeedPresets(LinearLayout g, String id, boolean mi) {
+    private void addSpeedPresets(LinearLayout g, String id) {
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] ns = mi ? new String[]{"WALK", "ECO", "RACE", "SPORT"} : new String[]{"WALK", "ECO", "RACE", "SPORT"};
+        String[] ns = {"WALK", "ECO", "RACE", "SPORT"};
         String[] vs = {"level_0", "level_1", "level_2", "level_3"};
         for (int i = 0; i < 4; i++) {
             final String val = vs[i];
@@ -342,13 +332,6 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void loadHomeDevice() {
-        ThingHomeSdk.newHomeInstance(activeHomeId).getHomeDetail(new IThingHomeResultCallback() {
-            @Override public void onSuccess(HomeBean h) { runOnUiThread(() -> { List<DeviceBean> ds = h.getDeviceList(); if (ds != null && !ds.isEmpty()) attachDevice(ds.get(0)); else setStatus(getString(R.string.no_scooter), Color.GRAY); }); }
-            @Override public void onError(String c, String e) {}
-        });
-    }
-
     private void attachDevice(DeviceBean device) {
         if (thingDevice != null) thingDevice.unRegisterDevListener();
         activeDevice = device; pairingStatus.setText(getString(R.string.device_label, device.getName()));
@@ -409,6 +392,17 @@ public final class MainActivity extends Activity {
         Log.d(TAG, msg); logList.add(msg); runOnUiThread(this::updateLogView);
     }
 
+    private void checkBrake(Map<String, Object> dps) {
+        Object obj = dps.get(DP_BRAKE);
+        if (obj != null) {
+            try {
+                int vInt = Integer.parseInt(obj.toString());
+                final boolean isBraking = (vInt & 0x04) != 0;
+                runOnUiThread(() -> brakeView.setVisibility(isBraking ? View.VISIBLE : View.GONE));
+            } catch (Exception ignored) {}
+        }
+    }
+
     private String formatValue(String id, Object v, double r) {
         if (v == null) return "---"; String s = v.toString();
         if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
@@ -426,11 +420,12 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isTrue(Object v) { if (v == null) return false; String s = v.toString(); return "true".equals(s) || "1".equals(s); }
-    private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
     private float parseSafeFloat(Object o) { if (o == null) return 0f; try { return Float.parseFloat(o.toString()) / 10.0f; } catch (Exception e) { return 0f; } }
+    private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
     private LinearLayout createGroup(String t) { LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(0, dp(15), 0, dp(15)); TextView tv = new TextView(this); tv.setText(t); tv.setTextColor(0xFF1565C0); tv.setTextSize(18); tv.setPadding(0, dp(10), 0, dp(5)); c.addView(tv); return c; }
     private void ensurePermissions() { requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION}, 100); }
     private void setStatus(String t, int c) { status.setText(t); status.setTextColor(c); }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
     private void showDeviceFlow() { authPanel.setVisibility(View.GONE); devicePanel.setVisibility(View.VISIBLE); }
+    private void loadHomeDevice() { ThingHomeSdk.newHomeInstance(activeHomeId).getHomeDetail(new IThingHomeResultCallback() { @Override public void onSuccess(HomeBean h) { runOnUiThread(() -> { List<DeviceBean> ds = h.getDeviceList(); if (ds != null && !ds.isEmpty()) attachDevice(ds.get(0)); else setStatus(getString(R.string.no_scooter), Color.GRAY); }); } @Override public void onError(String c, String e) {} }); }
 }
