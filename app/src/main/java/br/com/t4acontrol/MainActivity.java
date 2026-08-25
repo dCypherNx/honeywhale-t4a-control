@@ -52,38 +52,22 @@ import com.thingclips.smart.sdk.bean.BleActivatorBean;
 import com.thingclips.smart.sdk.bean.DeviceBean;
 
 public final class MainActivity extends Activity {
-    private static final String TAG = """
-            T4A_APP""";
-    private static final String DP_BRAKE = """
-            39""";
-    private static final String DP_SPEED = """
-            2""";
-    private static final String DP_BATTERY = """
-            3""";
-    private static final String DP_UNIT = """
-            11""";
-    private static final String DP_ODO_TOTAL = """
-            12""";
-    private static final String DP_LOCK = """
-            1""";
-    private static final String DP_LIGHT = """
-            8""";
-    private static final String DP_SPEED_LIMIT = """
-            14""";
-    private static final String DP_START_MODE = """
-            16""";
-    private static final String DP_CRUISE = """
-            13""";
-    private static final String DP_BATTERY_PERCENT = """
-            101""";
-    private static final String DP_SPEED_VALUE = """
-            102""";
-    private static final String DP_ODO_TRIP = """
-            5""";
-    private static final String DP_CURRENT = """
-            105""";
-    private static final String DP_VOLTAGE = """
-            106""";
+    private static final String TAG = "T4A_APP";
+    private static final String DP_BRAKE = "39";
+    private static final String DP_SPEED = "2";
+    private static final String DP_BATTERY = "3";
+    private static final String DP_UNIT = "11";
+    private static final String DP_ODO_TOTAL = "12";
+    private static final String DP_LOCK = "1";
+    private static final String DP_LIGHT = "8";
+    private static final String DP_SPEED_LIMIT = "14";
+    private static final String DP_START_MODE = "16";
+    private static final String DP_CRUISE = "13";
+    private static final String DP_BATTERY_PERCENT = "101";
+    private static final String DP_SPEED_VALUE = "102";
+    private static final String DP_ODO_TRIP = "5";
+    private static final String DP_CURRENT = "105";
+    private static final String DP_VOLTAGE = "106";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Button connectButton;
@@ -272,7 +256,7 @@ public final class MainActivity extends Activity {
     private void renderControls() {
         controlsPanel.removeAllViews();
         if (activeDevice == null) return;
-        boolean mi = Objects.equals(currentDps.get(DP_UNIT), "mile"); double r = mi ? 0.621371 : 1.0;
+        boolean mi = "mile".equals(currentDps.get(DP_UNIT)); double r = mi ? 0.621371 : 1.0;
         
         if (!isSettingsMode) {
             renderDashboard(mi, r);
@@ -327,6 +311,7 @@ public final class MainActivity extends Activity {
             String id = entry.getKey(); SchemaBean sc = entry.getValue(); Object v = currentDps.get(id);
             switch (id) {
                 case DP_SPEED, DP_BATTERY -> { continue; }
+                default -> {}
             }
             
             TextView l = new TextView(this); l.setText(getString(R.string.dp_display, displayDpName(id, sc), formatValue(id, v, r)));
@@ -342,6 +327,7 @@ public final class MainActivity extends Activity {
                     case "bool" -> addBoolBtn(cfg, id);
                     case "enum" -> addEnumBtn(cfg, id, sc);
                     case "value" -> addValueBtn(cfg, id, sc);
+                    default -> {}
                 }
             }
             else { l.setTextColor(0xFF2E7D32); sts.addView(l); }
@@ -355,9 +341,7 @@ public final class MainActivity extends Activity {
         int logCount = isSettingsMode ? logList.size() : Math.min(logList.size(), 10);
         if (logCount > 0) {
             for (int logIdx = 0; logIdx < logCount; logIdx++) {
-                logBuilder.append(logList.get(logList.size() - 1 - logIdx)).append("""
-                        
-                        """);
+                logBuilder.append(logList.get(logList.size() - 1 - logIdx)).append("\n");
             }
         }
         log.setText(logBuilder);
@@ -382,12 +366,10 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
         String[] ns = mi ? new String[]{"WALK 4mi", "ECO 15mi", "RACE 21mi", "SPORT 27mi"} : new String[]{"WALK 6km", "ECO 25km", "RACE 35km", "SPORT 45km"};
         String[] vs = {"level_0", "level_1", "level_2", "level_3"};
-        int prsIdx = 0;
-        do {
-            final String val = vs[prsIdx];
-            Button b = new Button(this); b.setText(ns[prsIdx]); b.setTextSize(9); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); b.setOnClickListener(v -> publish(id, val)); row.addView(b);
-            prsIdx++;
-        } while (prsIdx < 4);
+        for (int pIdx = 0; pIdx < 4; pIdx++) {
+            final String val = vs[pIdx];
+            Button b = new Button(this); b.setText(ns[pIdx]); b.setTextSize(9); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); b.setOnClickListener(v -> publish(id, val)); row.addView(b);
+        }
         g.addView(row);
     }
     private void addStartModePresets(LinearLayout g, String id) {
@@ -399,14 +381,12 @@ public final class MainActivity extends Activity {
     private void addEnumBtn(LinearLayout g, String id, SchemaBean s) {
         try {
             JSONArray range = JSON.parseObject(s.getProperty()).getJSONArray("range");
-        if (range != null && !range.isEmpty()) {
-            int rIdx = 0;
-            do {
-                final String opt = range.getString(rIdx);
-                Button b = new Button(this); b.setText(translateEnum(id, opt)); b.setOnClickListener(v -> publish(id, opt)); g.addView(b);
-                rIdx++;
-            } while (rIdx < range.size());
-        }
+            if (range != null && !range.isEmpty()) {
+                for (int rIdx = 0; rIdx < range.size(); rIdx++) {
+                    final String opt = range.getString(rIdx);
+                    Button b = new Button(this); b.setText(translateEnum(id, opt)); b.setOnClickListener(v -> publish(id, opt)); g.addView(b);
+                }
+            }
         } catch (Exception ignored) {}
     }
     private void addValueBtn(LinearLayout g, String id, SchemaBean s) { try { JSONObject prop = JSON.parseObject(s.getProperty()); final int min = prop.getIntValue("min"), max = prop.getIntValue("max"), step = prop.getIntValue("step") > 0 ? prop.getIntValue("step") : 1; LinearLayout r = new LinearLayout(this); Button b1 = new Button(this); b1.setText(" -"); b1.setOnClickListener(v -> { Object cur = currentDps.get(id); int val = (cur instanceof Integer inv) ? inv : min; if (val - step >= min) publish(id, val - step); }); Button b2 = new Button(this); b2.setText(" +"); b2.setOnClickListener(v -> { Object cur = currentDps.get(id); int val = (cur instanceof Integer inv) ? inv : min; if (val + step <= max) publish(id, val + step); }); r.addView(b1); r.addView(b2); g.addView(r); } catch (Exception ignored) {} }

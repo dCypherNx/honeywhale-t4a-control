@@ -9,11 +9,9 @@ if (!tuyaPropertiesFile.exists()) {
 }
 tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
-def sdkVersion = 37
-
 android {
     namespace 'br.com.t4acontrol'
-    compileSdkVersion sdkVersion
+    compileSdkVersion 37
 
     buildFeatures {
         resValues true
@@ -23,7 +21,7 @@ android {
     defaultConfig {
         applicationId 'br.com.t4acontrol'
         minSdk 31
-        targetSdk sdkVersion
+        targetSdk 37
         versionCode 5
         versionName '0.5.0'
 
