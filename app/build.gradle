@@ -11,7 +11,7 @@ tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
 android {
     namespace 'br.com.t4acontrol'
-    compileSdk 35
+    compileSdk 36
 
     buildFeatures {
         resValues true
@@ -51,6 +51,7 @@ android {
             pickFirsts += ['lib/*/libc++_shared.so']
         }
     }
+    buildToolsVersion '36.0.0'
 }
 
 configurations.configureEach {

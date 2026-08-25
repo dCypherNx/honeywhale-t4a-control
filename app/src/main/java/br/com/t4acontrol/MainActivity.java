@@ -20,7 +20,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 
 import java.text.DateFormat;
 import java.util.Collections;
@@ -115,21 +114,19 @@ public final class MainActivity extends Activity {
         final String mac = activeDevice.getMac();
         if (mac == null || mac.isEmpty()) return;
         try {
-            ThingHomeSdk.getBleOperator().readBluetoothRssi(mac, (isSuccess, rssi) -> {
-                runOnUiThread(() -> {
-                    if (rssiView != null) {
-                        if (isSuccess && rssi != 0) {
-                            currentRssi = rssi;
-                            rssiView.setText(String.format(Locale.ROOT, "SINAL: %d dBm", currentRssi));
-                            if (currentRssi > -60) rssiView.setTextColor(0xFF2E7D32);
-                            else if (currentRssi > -80) rssiView.setTextColor(0xFFFBC02D);
-                            else rssiView.setTextColor(Color.RED);
-                        } else {
-                            rssiView.setText("SINAL: ---");
-                        }
+            ThingHomeSdk.getBleOperator().readBluetoothRssi(mac, (isSuccess, rssi) -> runOnUiThread(() -> {
+                if (rssiView != null) {
+                    if (isSuccess && rssi != 0) {
+                        currentRssi = rssi;
+                        rssiView.setText(getString(R.string.signal_label, currentRssi));
+                        if (currentRssi > -60) rssiView.setTextColor(0xFF2E7D32);
+                        else if (currentRssi > -80) rssiView.setTextColor(0xFFFBC02D);
+                        else rssiView.setTextColor(Color.RED);
+                    } else {
+                        rssiView.setText(R.string.signal_none);
                     }
-                });
-            });
+                }
+            }));
         } catch (Exception e) {
             Log.e(TAG, "RSSI poll failed", e);
         }
@@ -273,13 +270,13 @@ public final class MainActivity extends Activity {
         batBox.addView(batteryPercentView);
         
         LinearLayout bar = new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL); bar.setGravity(Gravity.CENTER);
-        for(int bIdx=0; bIdx<10; bIdx++) {
+        for(int index=0; index<10; index++) {
             View seg = new View(this);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(22), dp(10));
             lp.setMargins(dp(1), 0, dp(1), 0); seg.setLayoutParams(lp);
             seg.setBackgroundColor(Color.LTGRAY);
             bar.addView(seg);
-            batterySegments[bIdx] = seg;
+            batterySegments[index] = seg;
         }
         batBox.addView(bar); batBox.setPadding(0, dp(5), 0, dp(5)); controlsPanel.addView(batBox);
 
@@ -361,9 +358,9 @@ public final class MainActivity extends Activity {
             if (batteryPercentView != null) {
                 batteryPercentView.setText(String.format(Locale.ROOT, "%d%%", bat));
                 batteryPercentView.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
-                for (int i = 0; i < 10; i++) {
-                    if (batterySegments[i] != null) {
-                        batterySegments[i].setBackgroundColor(bat >= (i + 1) * 10 ? 0xFF2E7D32 : Color.LTGRAY);
+                for (int updateSegIdx = 0; updateSegIdx < 10; updateSegIdx++) {
+                    if (batterySegments[updateSegIdx] != null) {
+                        batterySegments[updateSegIdx].setBackgroundColor(bat >= (updateSegIdx + 1) * 10 ? 0xFF2E7D32 : Color.LTGRAY);
                     }
                 }
             }
@@ -407,6 +404,7 @@ public final class MainActivity extends Activity {
         updateLogView();
     }
 
+    @SuppressWarnings("SameParameterValue")
     private void addActionButton(LinearLayout row, String id, String label, Object val) {
         Button b = new Button(this);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
@@ -436,6 +434,7 @@ public final class MainActivity extends Activity {
         row.addView(b); dashButtons.put(id, b);
     }
 
+    @SuppressWarnings("SameParameterValue")
     private void addIconPairBtn(LinearLayout g, String id, String t1, String t2, Object v1, Object v2) {
         LinearLayout r = new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
         Button b1 = new Button(this); b1.setText(t1); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(55), 1.0f);
@@ -588,42 +587,61 @@ public final class MainActivity extends Activity {
     private String formatValue(String id, Object v, double r) {
         if (v == null) return "---";
         String s = v.toString();
-        if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
-        if (id.equals(DP_LIGHT)) return isTrue(v) ? getString(R.string.state_on) : getString(R.string.state_off);
-        if (id.equals(DP_SPEED_LIMIT)) {
-            if (s.equals("level_0")) return "WALK";
-            if (s.equals("level_1")) return "ECO";
-            if (s.equals("level_2")) return "RACE";
-            if (s.equals("level_3")) return "SPORT";
-        }
-        if (id.equals(DP_START_MODE)) return s.equals("zero_start") ? "PARTIDA ZERO" : "KICK START";
-        if (id.equals(DP_ODO_TOTAL) || id.equals(DP_ODO_TRIP)) {
-            try { return String.format(Locale.ROOT, "%.1f%s", (Float.parseFloat(s) / 10.0) * r, r < 1.0 ? " mi" : " km"); } catch (Exception ignored) {}
-        }
-        if (id.equals(DP_TIME)) {
-            try { int t = Integer.parseInt(s); return String.format(Locale.ROOT, "%02d:%02d", t / 60, t % 60); } catch (Exception ignored) {}
-        }
-        if (id.equals(DP_VOLTAGE)) {
-            try { return String.format(Locale.ROOT, "%.1f V", Float.parseFloat(s) / 10.0f); } catch (Exception ignored) {}
-        }
-        return v instanceof Boolean ? ((Boolean)v ? "ATIVO" : "INATIVO") : s;
+
+        return switch (id) {
+            case DP_LOCK -> isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
+            case DP_LIGHT -> isTrue(v) ? getString(R.string.state_on) : getString(R.string.state_off);
+            case DP_SPEED_LIMIT -> switch (s) {
+                case "level_0" -> "WALK";
+                case "level_1" -> "ECO";
+                case "level_2" -> "RACE";
+                case "level_3" -> "SPORT";
+                default -> s;
+            };
+            case DP_START_MODE -> "zero_start".equals(s) ? "PARTIDA ZERO" : "KICK START";
+            case DP_ODO_TOTAL, DP_ODO_TRIP -> {
+                try {
+                    yield String.format(Locale.ROOT, "%.1f%s", (Float.parseFloat(s) / 10.0) * r, r < 1.0 ? " mi" : " km");
+                } catch (Exception ignored) {
+                    yield s;
+                }
+            }
+            case DP_TIME -> {
+                try {
+                    int t = Integer.parseInt(s);
+                    yield String.format(Locale.ROOT, "%02d:%02d", t / 60, t % 60);
+                } catch (Exception ignored) {
+                    yield s;
+                }
+            }
+            case DP_VOLTAGE -> {
+                try {
+                    yield String.format(Locale.ROOT, "%.1f V", Float.parseFloat(s) / 10.0f);
+                } catch (Exception ignored) {
+                    yield s;
+                }
+            }
+            default -> v instanceof Boolean b ? (b ? "ATIVO" : "INATIVO") : s;
+        };
     }
 
     private String displayDpName(String id, SchemaBean s) {
-        if (id.equals(DP_LOCK)) return getString(R.string.dp_lock);
-        if (id.equals(DP_LIGHT)) return getString(R.string.dp_light);
-        if (id.equals(DP_UNIT)) return getString(R.string.dp_unit);
-        if (id.equals(DP_ODO_TOTAL)) return getString(R.string.dp_odo_total);
-        if (id.equals(DP_CRUISE)) return getString(R.string.dp_cruise);
-        if (id.equals(DP_SPEED_LIMIT)) return getString(R.string.dp_limit);
-        if (id.equals(DP_START_MODE)) return getString(R.string.dp_start);
-        if (id.equals(DP_TIME)) return getString(R.string.dp_time);
-        if (id.equals(DP_BATTERY_PERCENT)) return getString(R.string.dp_bat_pct);
-        if (id.equals(DP_SPEED_VALUE)) return getString(R.string.dp_speed);
-        if (id.equals(DP_ODO_TRIP)) return getString(R.string.dp_odo_trip);
-        if (id.equals(DP_CURRENT)) return getString(R.string.dp_current);
-        if (id.equals(DP_VOLTAGE)) return getString(R.string.dp_voltage);
-        return s != null ? s.getCode().toUpperCase() : "DP " + id;
+        return switch (id) {
+            case DP_LOCK -> getString(R.string.dp_lock);
+            case DP_LIGHT -> getString(R.string.dp_light);
+            case DP_UNIT -> getString(R.string.dp_unit);
+            case DP_ODO_TOTAL -> getString(R.string.dp_odo_total);
+            case DP_CRUISE -> getString(R.string.dp_cruise);
+            case DP_SPEED_LIMIT -> getString(R.string.dp_limit);
+            case DP_START_MODE -> getString(R.string.dp_start);
+            case DP_TIME -> getString(R.string.dp_time);
+            case DP_BATTERY_PERCENT -> getString(R.string.dp_bat_pct);
+            case DP_SPEED_VALUE -> getString(R.string.dp_speed);
+            case DP_ODO_TRIP -> getString(R.string.dp_odo_trip);
+            case DP_CURRENT -> getString(R.string.dp_current);
+            case DP_VOLTAGE -> getString(R.string.dp_voltage);
+            default -> s != null ? s.getCode().toUpperCase() : "DP " + id;
+        };
     }
 
     private boolean isTrue(Object v) { if (v == null) return false; String s = v.toString(); return "true".equals(s) || "1".equals(s); }

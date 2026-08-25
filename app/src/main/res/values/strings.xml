@@ -57,7 +57,8 @@
     <string name="dp_odo_trip">Odômetro Parcial</string>
     <string name="dp_current">Corrente</string>
     <string name="dp_voltage">Tensão</string>
-
+    <string name="signal_label">SINAL: %1$d dBm</string>
+    <string name="signal_none">SINAL: ---</string>
     <string name="dp_time">Tempo de Uso</string>
     <string name="raw_dps_title">DADOS BRUTOS (ALL DPS)</string>
     <string name="state_locked">BLOQUEADO</string>
