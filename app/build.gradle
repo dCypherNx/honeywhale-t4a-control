@@ -23,7 +23,7 @@ android {
         minSdk 31
         targetSdkVersion 35
         versionCode 8
-        versionName '0.6.2'
+        versionName '0.6.3'
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),

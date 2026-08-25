@@ -14,6 +14,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -37,6 +38,7 @@ import com.thingclips.smart.android.user.bean.User;
 import com.thingclips.smart.android.ble.api.LeScanSetting;
 import com.thingclips.smart.android.ble.api.ScanDeviceBean;
 import com.thingclips.smart.android.ble.api.ScanType;
+import com.thingclips.smart.android.ble.api.BleRssiListener;
 import com.thingclips.smart.android.ble.builder.BleConnectBuilder;
 import com.thingclips.smart.android.device.bean.SchemaBean;
 import com.thingclips.smart.home.sdk.ThingHomeSdk;
@@ -47,6 +49,7 @@ import com.thingclips.smart.sdk.api.IBleActivatorListener;
 import com.thingclips.smart.sdk.api.IDeviceListener;
 import com.thingclips.smart.sdk.api.IResultCallback;
 import com.thingclips.smart.sdk.api.IThingDevice;
+
 import com.thingclips.smart.sdk.api.IThingActivatorGetToken;
 import com.thingclips.smart.sdk.bean.BleActivatorBean;
 import com.thingclips.smart.sdk.bean.DeviceBean;
@@ -78,7 +81,8 @@ public final class MainActivity extends Activity {
     private LinearLayout authPanel, devicePanel, controlsPanel;
     
     // UI estática persistente
-    private TextView speedView, speedUnitView, batteryView, rssiView, lockStateView, odoTotalView;
+    private TextView speedView, speedUnitView, rssiView, lockStateView, odoTotalView, batteryPercentView;
+    private final View[] batterySegments = new View[10];
     private final List<Button> modeButtons = new ArrayList<>();
     private final Map<String, Button> dashButtons = new HashMap<>();
     
@@ -95,10 +99,23 @@ public final class MainActivity extends Activity {
     private final Runnable statusPoller = new Runnable() {
         @Override
         public void run() {
-            if (activeDevice != null && thingDevice != null) syncState();
-            handler.postDelayed(this, 200);
+            if (activeDevice != null && thingDevice != null) {
+                syncState();
+                pollRssi();
+            }
+            handler.postDelayed(this, 2000);
         }
     };
+
+    private void pollRssi() {
+        if (activeDevice == null || !activeDevice.getIsOnline()) return;
+        ThingHomeSdk.getBleOperator().readBluetoothRssi(activeDevice.getMac(), (isSuccess, rssi) -> {
+            if (isSuccess) {
+                currentRssi = rssi;
+                runOnUiThread(() -> { if (rssiView != null) rssiView.setText(String.format(Locale.ROOT, "%d dBm", currentRssi)); });
+            }
+        });
+    }
 
     private final Runnable reconnectRunnable = new Runnable() {
         @Override
@@ -173,7 +190,11 @@ public final class MainActivity extends Activity {
         body.addView(authPanel);
         
         devicePanel = new LinearLayout(this); devicePanel.setOrientation(LinearLayout.VERTICAL); devicePanel.setVisibility(View.GONE);
-        status = new TextView(this); status.setTextSize(18); devicePanel.addView(status);
+        LinearLayout statusRow = new LinearLayout(this); statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        status = new TextView(this); status.setTextSize(18); status.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+        rssiView = new TextView(this); rssiView.setTextSize(14); rssiView.setGravity(Gravity.END);
+        statusRow.addView(status); statusRow.addView(rssiView);
+        devicePanel.addView(statusRow);
         brakeView = new TextView(this); brakeView.setText(R.string.brake_active); brakeView.setTextColor(Color.RED); brakeView.setTextSize(24); brakeView.setGravity(Gravity.CENTER); brakeView.setVisibility(View.GONE); devicePanel.addView(brakeView);
         pairingStatus = new TextView(this); pairingStatus.setTextSize(16); devicePanel.addView(pairingStatus);
         deviceInfo = new TextView(this); deviceInfo.setPadding(0, 0, 0, dp(10)); devicePanel.addView(deviceInfo);
@@ -204,21 +225,33 @@ public final class MainActivity extends Activity {
     private void buildDashboard() {
         LinearLayout dashRow = new LinearLayout(this); dashRow.setOrientation(LinearLayout.HORIZONTAL); dashRow.setGravity(Gravity.CENTER);
         speedView = new TextView(this); speedView.setTextSize(120); speedView.setTextColor(Color.BLACK);
+        
         speedUnitView = new TextView(this); speedUnitView.setTextSize(32); speedUnitView.setTextColor(Color.GRAY);
         dashRow.addView(speedView); dashRow.addView(speedUnitView); controlsPanel.addView(dashRow);
 
-        batteryView = new TextView(this); batteryView.setTextSize(40); batteryView.setGravity(Gravity.CENTER);
-        controlsPanel.addView(batteryView);
+        LinearLayout batBox = new LinearLayout(this); batBox.setOrientation(LinearLayout.VERTICAL); batBox.setGravity(Gravity.CENTER);
+        batteryPercentView = new TextView(this); batteryPercentView.setTextSize(34); batteryPercentView.setGravity(Gravity.CENTER);
+        batBox.addView(batteryPercentView);
         
-        rssiView = new TextView(this); rssiView.setGravity(Gravity.CENTER); rssiView.setTextColor(Color.BLUE);
-        controlsPanel.addView(rssiView);
+        LinearLayout bar = new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL); bar.setGravity(Gravity.CENTER);
+        for(int i=0; i<10; i++) {
+            View seg = new View(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(20), dp(10));
+            lp.setMargins(dp(2), 0, dp(2), 0); seg.setLayoutParams(lp);
+            seg.setBackgroundColor(Color.LTGRAY);
+            bar.addView(seg);
+            batterySegments[i] = seg;
+        }
+        batBox.addView(bar);
+        batBox.setPadding(0, dp(40), 0, dp(20));
+        controlsPanel.addView(batBox);
 
         LinearLayout act = createGroup(getString(R.string.group_riding));
         lockStateView = new TextView(this); lockStateView.setGravity(Gravity.CENTER); lockStateView.setPadding(0, dp(5), 0, dp(5)); act.addView(lockStateView);
         
         LinearLayout lockRow = new LinearLayout(this); lockRow.setOrientation(LinearLayout.HORIZONTAL);
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false); 
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true);
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), true); 
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), false);
         act.addView(lockRow);
 
         LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
@@ -246,11 +279,8 @@ public final class MainActivity extends Activity {
         act.addView(modeRow);
         controlsPanel.addView(act);
 
-        LinearLayout unitBox = createGroup(getString(R.string.unit_box_title));
-        addIconPairBtn(unitBox, DP_UNIT, getString(R.string.unit_mi), getString(R.string.unit_km), "mile", "km");
-        controlsPanel.addView(unitBox);
-        
         odoTotalView = new TextView(this); odoTotalView.setTextSize(18); odoTotalView.setPadding(0, dp(20), 0, 0); 
+        odoTotalView.setGravity(Gravity.CENTER);
         controlsPanel.addView(odoTotalView);
     }
 
@@ -263,6 +293,10 @@ public final class MainActivity extends Activity {
         connectButton = new Button(this); connectButton.setText(R.string.pair_btn); connectButton.setEnabled(false); connectButton.setOnClickListener(v -> startTuyaActivation()); adm.addView(connectButton);
         Button unpairBtn = new Button(this); unpairBtn.setText(R.string.unpair_btn); unpairBtn.setTextColor(Color.RED); unpairBtn.setOnClickListener(v -> removePairing()); adm.addView(unpairBtn);
         controlsPanel.addView(adm);
+
+        LinearLayout unitBox = createGroup(getString(R.string.unit_box_title));
+        addIconPairBtn(unitBox, DP_UNIT, getString(R.string.unit_mi), getString(R.string.unit_km), "mile", "km");
+        controlsPanel.addView(unitBox);
 
         Map<String, SchemaBean> schemas = activeDevice != null ? activeDevice.getSchemaMap() : null;
         if (schemas != null) {
@@ -287,11 +321,16 @@ public final class MainActivity extends Activity {
             if (speedUnitView != null) speedUnitView.setText(mi ? " mph" : " km/h");
             
             int bat = parseSafeInt(currentDps.get(DP_BATTERY));
-            if (batteryView != null) {
-                batteryView.setText(getString(R.string.battery_label, bat));
-                batteryView.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
+            if (batteryPercentView != null) {
+                batteryPercentView.setText(bat + "%");
+                batteryPercentView.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
+                for (int i = 0; i < 10; i++) {
+                    if (batterySegments[i] != null) {
+                        batterySegments[i].setBackgroundColor(bat >= (i + 1) * 10 ? 0xFF2E7D32 : Color.LTGRAY);
+                    }
+                }
             }
-            if (rssiView != null) rssiView.setText("Sinal: " + currentRssi + " dBm");
+            if (rssiView != null) rssiView.setText(String.format(Locale.ROOT, "%d dBm", currentRssi));
             if (lockStateView != null) lockStateView.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0));
             if (odoTotalView != null) odoTotalView.setText(getString(R.string.odo_total_label, formatValue(DP_ODO_TOTAL, currentDps.get(DP_ODO_TOTAL), r)));
 
@@ -333,7 +372,10 @@ public final class MainActivity extends Activity {
         Button b = new Button(this);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(65), 1.0f);
         lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
-        b.setText(label); b.setPadding(0, 0, 0, 0);
+        b.setText(label); b.setPadding(0, 0, 0, 0); b.setTextSize(10);
+        int icon = 0;
+        if (DP_LOCK.equals(id)) icon = isTrue(val) ? R.drawable.ic_unlock : R.drawable.ic_lock;
+        if (icon != 0) b.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0);
         b.setOnClickListener(v -> publish(id, val)); row.addView(b);
     }
 
@@ -341,7 +383,12 @@ public final class MainActivity extends Activity {
         Button b = new Button(this);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(65), 1.0f);
         lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
-        b.setTag(type); b.setPadding(0, 0, 0, 0);
+        b.setTag(type); b.setPadding(0, 0, 0, 0); b.setTextSize(10);
+        int icon = 0;
+        if (DP_LIGHT.equals(id)) icon = R.drawable.ic_light;
+        else if (DP_CRUISE.equals(id)) icon = R.drawable.ic_cruise;
+        else if (DP_START_MODE.equals(id)) icon = R.drawable.ic_start;
+        if (icon != 0) b.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0);
         b.setOnClickListener(v -> {
             Object val = currentDps.get(id);
             if ("start".equals(type)) publish(id, "zero_start".equals(val) ? "not_zero_start" : "zero_start");
@@ -504,7 +551,7 @@ public final class MainActivity extends Activity {
 
     private String formatValue(String id, Object v, double r) {
         if (v == null) return "---"; String s = v.toString();
-        if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_locked) : getString(R.string.state_unlocked);
+        if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
         if (id.equals(DP_LIGHT)) return isTrue(v) ? getString(R.string.state_on) : getString(R.string.state_off);
         if (id.equals(DP_SPEED_LIMIT)) { if (s.equals("level_0")) return "WALK"; if (s.equals("level_1")) return "ECO"; if (s.equals("level_2")) return "RACE"; if (s.equals("level_3")) return "SPORT"; }
         if (id.equals(DP_START_MODE)) return s.equals("zero_start") ? "PARTIDA ZERO" : "KICK START";
