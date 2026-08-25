@@ -2,7 +2,7 @@
 
 Aplicativo nativo para controle e monitoramento do patinete HoneyWhale T4A via Tuya Smart SDK.
 
-## Estado Atual (v0.5.0)
+## Estado Atual (v0.5.1)
 
 - **Integração Tuya**: ThingSmart Home SDK (v7.8.0) com suporte a Android 15+ (SDK 37).
 - **Conectividade Agressiva**:
@@ -43,6 +43,6 @@ A APK de desenvolvimento é gerada em `app/build/outputs/apk/debug/app-debug.apk
 
 ## Histórico Recente
 
-- **v0.5.0**: Upgrade para SDK 37, OkHttp 5.5.0 e implementação de reconexão agressiva (polling de 200ms).
+- **v0.5.1**: Upgrade para SDK 37, OkHttp 5.5.0 e implementação de reconexão agressiva (polling de 200ms).
 - **v0.4.1**: Restauração da separação entre Painel/Configurações, adição de botões explícitos de alternância KM/Milha e refinamento do log.
 - **v0.4.0**: Correção de bugs de layout e estabilização da alternância de unidades.
