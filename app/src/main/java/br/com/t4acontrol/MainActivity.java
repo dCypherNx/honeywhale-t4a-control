@@ -199,12 +199,12 @@ public final class MainActivity extends Activity {
     private void renderDashboard(boolean mi, double r) {
         float dashSpeed = parseSafeFloat(currentDps.get(DP_SPEED));
         LinearLayout dashRow = new LinearLayout(this); dashRow.setOrientation(LinearLayout.HORIZONTAL); dashRow.setGravity(Gravity.CENTER);
-        TextView sv = new TextView(this); sv.setText(String.format(Locale.ROOT, "%.1f", dashSpeed * r)); sv.setTextSize(100); sv.setTextColor(Color.BLACK); sv.setPadding(0, dp(10), 0, 0);
-        TextView un = new TextView(this); un.setText(mi ? " mph" : " km/h"); un.setTextSize(28); un.setTextColor(Color.GRAY);
+        TextView sv = new TextView(this); sv.setText(String.format(Locale.ROOT, "%.1f", dashSpeed * r)); sv.setTextSize(120); sv.setTextColor(Color.BLACK);
+        TextView un = new TextView(this); un.setText(mi ? " mph" : " km/h"); un.setTextSize(32); un.setTextColor(Color.GRAY);
         dashRow.addView(sv); dashRow.addView(un); controlsPanel.addView(dashRow);
 
         int bat = parseSafeInt(currentDps.get(DP_BATTERY));
-        TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(36); bv.setGravity(Gravity.CENTER);
+        TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(40); bv.setGravity(Gravity.CENTER);
         bv.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED); controlsPanel.addView(bv);
         
         TextView rv = new TextView(this); rv.setText("Intensidade Sinal: " + currentRssi + " dBm"); rv.setGravity(Gravity.CENTER); rv.setTextColor(Color.BLUE);
@@ -213,12 +213,13 @@ public final class MainActivity extends Activity {
         LinearLayout act = createGroup(getString(R.string.group_riding));
         
         // Bloqueio com botões separados
-        TextView lockLabel = new TextView(this); lockLabel.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0)); 
-        lockLabel.setPadding(0, dp(5), 0, dp(5)); act.addView(lockLabel);
+        TextView lockState = new TextView(this); 
+        lockState.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0));
+        lockState.setGravity(Gravity.CENTER); lockState.setPadding(0, dp(5), 0, dp(5)); act.addView(lockState);
         
         LinearLayout lockRow = new LinearLayout(this); lockRow.setOrientation(LinearLayout.HORIZONTAL);
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true); 
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false);
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false); // No T4A false=LIBERADO
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true); // No T4A true=TRAVADO
         act.addView(lockRow);
 
         LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
@@ -243,14 +244,17 @@ public final class MainActivity extends Activity {
     }
 
     private void addActionButton(LinearLayout row, String id, String label, Object val) {
-        Button b = new Button(this); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
-        b.setText(label); b.setOnClickListener(v -> publish(id, val)); row.addView(b);
+        Button b = new Button(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
+        b.setText(label); b.setPadding(0, 0, 0, 0);
+        b.setOnClickListener(v -> publish(id, val)); row.addView(b);
     }
 
     private void renderSettings(double r) {
         LinearLayout adm = createGroup(getString(R.string.group_admin));
         if (activeDevice != null) {
-            TextView mac = new TextView(this); mac.setText("Endereço MAC: " + activeDevice.getMac()); mac.setPadding(0, 0, 0, dp(10)); adm.addView(mac);
+            TextView mac = new TextView(this); mac.setText("MAC: " + activeDevice.getMac()); mac.setGravity(Gravity.CENTER); mac.setPadding(0, 0, 0, dp(10)); adm.addView(mac);
         }
         scanButton = new Button(this); scanButton.setText(R.string.scan_new_btn); scanButton.setOnClickListener(v -> beginScan()); adm.addView(scanButton);
         connectButton = new Button(this); connectButton.setText(R.string.pair_btn); connectButton.setEnabled(false); connectButton.setOnClickListener(v -> startTuyaActivation()); adm.addView(connectButton);
@@ -269,12 +273,14 @@ public final class MainActivity extends Activity {
     }
 
     private void addDashBtn(LinearLayout row, String id, String label, String type) {
-        Button b = new Button(this); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+        Button b = new Button(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2)); b.setLayoutParams(lp);
         Object val = currentDps.get(id); String stateStr = "";
         if ("light".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
         else if ("bool".equals(type)) stateStr = (val instanceof Boolean && (Boolean)val) ? "ON" : "OFF";
         else if ("start".equals(type)) stateStr = "zero_start".equals(val) ? "ZERO" : "KICK";
-        b.setText(label + "\n" + stateStr);
+        b.setText(label + "\n" + stateStr); b.setPadding(0, 0, 0, 0);
         b.setOnClickListener(v -> {
             if ("start".equals(type)) publish(id, "zero_start".equals(val) ? "not_zero_start" : "zero_start");
             else if (val instanceof Boolean) publish(id, !((Boolean)val));
@@ -286,19 +292,27 @@ public final class MainActivity extends Activity {
 
     private void addSpeedPresets(LinearLayout g, String id) {
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
-        String[] ns = {"WALK", "ECO", "RACE", "SPORT"};
+        String[] ns = {"WALK 6", "ECO 25", "RACE 35", "SPORT 45"};
         String[] vs = {"level_0", "level_1", "level_2", "level_3"};
+        Object curVal = currentDps.get(id);
         for (int i = 0; i < 4; i++) {
             final String val = vs[i];
-            Button b = new Button(this); b.setText(ns[i]); b.setTextSize(9); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); b.setOnClickListener(v -> publish(id, val)); row.addView(b);
+            Button b = new Button(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1.0f);
+            lp.setMargins(dp(1), dp(1), dp(1), dp(1)); b.setLayoutParams(lp);
+            b.setText(ns[i]); b.setTextSize(9); b.setPadding(0, 0, 0, 0);
+            if (val.equals(curVal)) b.setBackgroundColor(Color.YELLOW);
+            b.setOnClickListener(v -> publish(id, val)); row.addView(b);
         }
         g.addView(row);
     }
 
     private void addIconPairBtn(LinearLayout g, String id, String tOn, String tOff, Object vOn, Object vOff) {
         LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
-        Button b1 = new Button(this); b1.setText(tOn); b1.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); b1.setOnClickListener(v -> publish(id, vOn));
-        Button b2 = new Button(this); b2.setText(tOff); b2.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); b2.setOnClickListener(v -> publish(id, vOff));
+        Button b1 = new Button(this); b1.setText(tOn); 
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1.0f);
+        b1.setLayoutParams(lp); b1.setOnClickListener(v -> publish(id, vOn));
+        Button b2 = new Button(this); b2.setText(tOff); b2.setLayoutParams(lp); b2.setOnClickListener(v -> publish(id, vOff));
         row.addView(b1); row.addView(b2); g.addView(row);
     }
 
@@ -318,6 +332,15 @@ public final class MainActivity extends Activity {
             }
             @Override public void onError(String c, String e) {}
         });
+    }
+
+    private void loadHomeDevice() { 
+        ThingHomeSdk.newHomeInstance(activeHomeId).getHomeDetail(new IThingHomeResultCallback() { 
+            @Override public void onSuccess(HomeBean h) { 
+                runOnUiThread(() -> { List<DeviceBean> ds = h.getDeviceList(); if (ds != null && !ds.isEmpty()) attachDevice(ds.get(0)); else setStatus(getString(R.string.no_scooter), Color.GRAY); }); 
+            } 
+            @Override public void onError(String c, String e) {} 
+        }); 
     }
 
     private void beginScan() {
@@ -361,7 +384,7 @@ public final class MainActivity extends Activity {
         thingDevice.registerDeviceListener(new IDeviceListener() {
             @Override public void onDpUpdate(String id, Map<String, Object> dps) {
                 if (dps != null) { 
-                    appendLog("RAW UPDATE: " + dps);
+                    appendLog("RAW: " + dps);
                     runOnUiThread(() -> { currentDps.putAll(dps); checkBrake(dps); renderControls(); }); 
                 }
             }
@@ -377,8 +400,8 @@ public final class MainActivity extends Activity {
         if (thingDevice == null) return;
         Map<String, Object> dps = new HashMap<>(); dps.put(id, val);
         thingDevice.publishDps(JSON.toJSONString(dps), new IResultCallback() {
-            @Override public void onSuccess() { appendLog(getString(R.string.command_ok, id)); }
-            @Override public void onError(String c, String e) { appendLog(getString(R.string.command_error, e)); }
+            @Override public void onSuccess() { appendLog("TX: " + dps); }
+            @Override public void onError(String c, String e) { appendLog("ERR: " + e); }
         });
     }
 
@@ -429,7 +452,7 @@ public final class MainActivity extends Activity {
 
     private String formatValue(String id, Object v, double r) {
         if (v == null) return "---"; String s = v.toString();
-        if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
+        if (id.equals(DP_LOCK)) return isTrue(v) ? getString(R.string.state_locked) : getString(R.string.state_unlocked);
         if (id.equals(DP_LIGHT)) return isTrue(v) ? getString(R.string.state_on) : getString(R.string.state_off);
         if (id.equals(DP_SPEED_LIMIT)) { if (s.equals("level_0")) return "WALK"; if (s.equals("level_1")) return "ECO"; if (s.equals("level_2")) return "RACE"; if (s.equals("level_3")) return "SPORT"; }
         if (id.equals(DP_START_MODE)) return s.equals("zero_start") ? "PARTIDA ZERO" : "KICK START";
@@ -444,12 +467,12 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isTrue(Object v) { if (v == null) return false; String s = v.toString(); return "true".equals(s) || "1".equals(s); }
-    private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
     private float parseSafeFloat(Object o) { if (o == null) return 0f; try { return Float.parseFloat(o.toString()) / 10.0f; } catch (Exception e) { return 0f; } }
+    private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
     private LinearLayout createGroup(String t) { LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(0, dp(15), 0, dp(15)); TextView tv = new TextView(this); tv.setText(t); tv.setTextColor(0xFF1565C0); tv.setTextSize(18); tv.setPadding(0, dp(10), 0, dp(5)); c.addView(tv); return c; }
     private void ensurePermissions() { requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION}, 100); }
     private void setStatus(String t, int c) { status.setText(t); status.setTextColor(c); }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
     private void showDeviceFlow() { authPanel.setVisibility(View.GONE); devicePanel.setVisibility(View.VISIBLE); }
-    private void loadHomeDevice() { ThingHomeSdk.newHomeInstance(activeHomeId).getHomeDetail(new IThingHomeResultCallback() { @Override public void onSuccess(HomeBean h) { runOnUiThread(() -> { List<DeviceBean> ds = h.getDeviceList(); if (ds != null && !ds.isEmpty()) attachDevice(ds.get(0)); else setStatus(getString(R.string.no_scooter), Color.GRAY); }); } @Override public void onError(String c, String e) {} }); }
+    private String translateEnum(String id, String opt) { if (id.equals(DP_SPEED_LIMIT)) { if (opt.equals("level_0")) return "WALK"; if (opt.equals("level_1")) return "ECO"; if (opt.equals("level_2")) return "RACE"; if (opt.equals("level_3")) return "SPORT"; } if (id.equals(DP_START_MODE)) return "zero_start".equals(opt) ? "ZERO" : "KICK"; return opt; }
 }
