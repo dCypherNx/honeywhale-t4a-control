@@ -63,6 +63,9 @@
     <string name="state_on">LIGADO</string>
     <string name="state_off">DESLIGADO</string>
 
+    <string name="btn_lock">BLOQUEAR MOTOR</string>
+    <string name="btn_unlock">LIBERAR MOTOR</string>
+
     <string name="log_full">LOG COMPLETO DE EVENTOS:\n</string>
     <string name="log_recent">ÚLTIMOS EVENTOS:\n</string>
 </resources>
