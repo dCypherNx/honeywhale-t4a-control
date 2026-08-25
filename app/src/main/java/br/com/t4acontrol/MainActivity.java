@@ -72,8 +72,7 @@ import com.thingclips.smart.sdk.bean.DeviceBean;
 public final class MainActivity extends Activity {
     private static final String TAG = "T4A_APP";
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private BluetoothAdapter adapter;
-    private Button scanButton, connectButton;
+    private Button connectButton;
     private TextView status, deviceInfo, log, cloudStatus, pairingStatus, brakeView;
     private EditText emailInput, passwordInput;
     private LinearLayout authPanel, devicePanel, controlsPanel;
@@ -82,7 +81,6 @@ public final class MainActivity extends Activity {
     private IThingDevice thingDevice;
     private DeviceBean activeDevice;
     private final Map<String, Object> currentDps = new HashMap<>();
-    private boolean isForeground = false;
 
     private final Runnable statusPoller = new Runnable() {
         @Override
@@ -92,31 +90,11 @@ public final class MainActivity extends Activity {
         }
     };
 
-    private final Runnable reconnectRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (activeDevice != null) {
-                boolean online = false;
-                Boolean onlineObj = activeDevice.getIsOnline();
-                if (onlineObj != null) online = onlineObj;
-                
-                if (!online) {
-                    appendLog("Tentando reconexão automática...");
-                    startAutomaticConnection();
-                }
-            }
-            long delay = isForeground ? 30000L : 300000L;
-            handler.postDelayed(this, delay);
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         buildUi();
-        BluetoothManager manager = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
-        if (manager != null) adapter = manager.getAdapter();
         ensurePermissions();
         User cur = ThingHomeSdk.getUserInstance().getUser();
         if (cur != null) {
@@ -140,7 +118,7 @@ public final class MainActivity extends Activity {
         brakeView = new TextView(this); brakeView.setText("⚠️ FREIO ACIONADO"); brakeView.setTextColor(Color.RED); brakeView.setTextSize(24); brakeView.setGravity(Gravity.CENTER); brakeView.setVisibility(View.GONE); devicePanel.addView(brakeView);
         pairingStatus = new TextView(this); pairingStatus.setTextSize(16); devicePanel.addView(pairingStatus);
         deviceInfo = new TextView(this); deviceInfo.setPadding(0, 0, 0, dp(10)); devicePanel.addView(deviceInfo);
-        scanButton = new Button(this); scanButton.setText("BUSCAR NOVO PATINETE"); scanButton.setOnClickListener(v -> beginScan()); devicePanel.addView(scanButton);
+        Button scanButton = new Button(this); scanButton.setText("BUSCAR NOVO PATINETE"); scanButton.setOnClickListener(v -> beginScan()); devicePanel.addView(scanButton);
         connectButton = new Button(this); connectButton.setText("PAREAR"); connectButton.setEnabled(false); connectButton.setOnClickListener(v -> startTuyaActivation()); devicePanel.addView(connectButton);
         controlsPanel = new LinearLayout(this); controlsPanel.setOrientation(LinearLayout.VERTICAL); devicePanel.addView(controlsPanel);
         Button unpairBtn = new Button(this); unpairBtn.setText("REMOVER VÍNCULO"); unpairBtn.setTextColor(Color.RED); unpairBtn.setOnClickListener(v -> removePairing()); devicePanel.addView(unpairBtn);
@@ -259,7 +237,7 @@ public final class MainActivity extends Activity {
         TextView bv = new TextView(this); bv.setText("   \ud83d\udd0b" + bat + "%"); bv.setTextSize(24); bv.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
         h.addView(sv); h.addView(un); h.addView(bv); controlsPanel.addView(h);
         Map<String, SchemaBean> schemas = activeDevice.getSchemaMap(); if (schemas == null || schemas.isEmpty()) return;
-        LinearLayout sec = createGroup("SEGURAN\u00c7A"), lgt = createGroup("ILUMINA\u00c7\u00c3O"), cfg = createGroup("AJUSTES T4A"), sts = createGroup("ESTADO");
+        LinearLayout sec = createGroup("SEGURANÇA"), lgt = createGroup("ILUMINAÇÃO"), cfg = createGroup("AJUSTES T4A"), sts = createGroup("ESTADO");
         for (Map.Entry<String, SchemaBean> entry : new TreeMap<>(schemas).entrySet()) {
             String id = entry.getKey(); SchemaBean sc = entry.getValue(); Object v = currentDps.get(id);
             if (id.equals("2") || id.equals("3")) continue;
@@ -304,12 +282,12 @@ public final class MainActivity extends Activity {
         if (id.equals("8")) return s.equals("true") || s.equals("1") ? "\ud83d\udca1 ACESO" : "\ud83c\udf11 APAGADO";
         if (id.equals("14")) { if (s.equals("level_0")) return "WALK"; if (s.equals("level_1")) return "ECO"; if (s.equals("level_2")) return "RACE"; if (s.equals("level_3")) return "SPORT"; }
         if (id.equals("16")) return s.equals("zero_start") ? "PARTIDA ZERO" : "KICK START";
-        if (id.equals("12") || id.equals("5")) { try { return String.format(Locale.ROOT, "%.1f%s", (Float.parseFloat(s) / 10.0) * r, r \u003c 1.0 ? " mi" : " km"); } catch (Exception ignored) {} }
+        if (id.equals("12") || id.equals("5")) { try { return String.format(Locale.ROOT, "%.1f%s", (Float.parseFloat(s) / 10.0) * r, r < 1.0 ? " mi" : " km"); } catch (Exception ignored) {} }
         if (id.equals("106")) { try { return String.format(Locale.ROOT, "%.1f V", Float.parseFloat(s) / 10.0f); } catch (Exception ignored) {} }
         if (v instanceof Boolean) return (Boolean)v ? "ATIVO" : "INATIVO"; return s;
     }
     private String translateEnum(String id, String opt) { if (id.equals("14")) { if (opt.equals("level_0")) return "WALK"; if (opt.equals("level_1")) return "ECO"; if (opt.equals("level_2")) return "RACE"; if (opt.equals("level_3")) return "SPORT"; } if (id.equals("16")) return opt.equals("zero_start") ? "ZERO" : "KICK"; return opt; }
-    private String displayDpName(String id, SchemaBean s) { switch (id) { case "1": return "Trava do Motor"; case "8": return "Farol Frontal"; case "11": return "Unidade"; case "12": return "Od\u00f4metro Total"; case "13": return "Cruise Control"; case "14": return "Limite Velocidade"; case "16": return "Modo Partida"; case "101": return "Bateria (%)"; case "102": return "Velocidade"; case "5": return "Od\u00f4metro Parcial"; case "105": return "Corrente Motor"; case "106": return "Tens\u00e3o Bateria"; default: return s != null ? s.getCode().toUpperCase() : "DADO " + id; } }
+    private String displayDpName(String id, SchemaBean s) { switch (id) { case "1": return "Trava do Motor"; case "8": return "Farol Frontal"; case "11": return "Unidade"; case "12": return "Odômetro Total"; case "13": return "Cruise Control"; case "14": return "Limite Velocidade"; case "16": return "Modo Partida"; case "101": return "Bateria (%)"; case "102": return "Velocidade"; case "5": return "Odômetro Parcial"; case "105": return "Corrente Motor"; case "106": return "Tensão Bateria"; default: return s != null ? s.getCode().toUpperCase() : "DADO " + id; } }
     private boolean isAct(String id) { return "1".equals(id) || "8".equals(id) || "11".equals(id) || "13".equals(id) || "14".equals(id) || "16".equals(id); }
     private void publish(String id, Object val) { if (thingDevice == null) return; Map<String, Object> dps = new HashMap<>(); dps.put(id, val); thingDevice.publishDps(JSON.toJSONString(dps), new IResultCallback() { @Override public void onSuccess() { appendLog("Comando OK: " + id); } @Override public void onError(String c, String e) { appendLog("Erro: " + e); } }); }
     private void removePairing() { if (thingDevice != null) thingDevice.removeDevice(new IResultCallback() { @Override public void onSuccess() { runOnUiThread(() -> { setStatus("Desvinculado", Color.GREEN); controlsPanel.removeAllViews(); }); } @Override public void onError(String c, String e) {} }); }

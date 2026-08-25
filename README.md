@@ -1,48 +1,43 @@
 # T4A Control para Android
 
-Primeiro marco executável do aplicativo próprio para o HoneyWhale T4A.
+Aplicativo nativo para controle e monitoramento do patinete HoneyWhale T4A via Tuya Smart SDK.
 
-## Estado atual
+## Estado Atual (v0.4.0)
 
-- APK nativa Java, sem SDK ou biblioteca proprietária Tuya.
-- Android 12 ou superior; alvo Android 16/API 36.
-- Solicita somente `BLUETOOTH_SCAN` e `BLUETOOTH_CONNECT`.
-- Descobre anúncios do serviço Tuya BLE `0xFD50`.
-- Conecta por GATT, solicita MTU 247 e valida as características do T4A.
-- Habilita notificações por meio do CCCD.
-- Não chama `writeCharacteristic`; o canal de comando permanece bloqueado.
-- Não altera, redefine ou desvincula o pareamento HoneyWhale existente.
+- **Integração Tuya**: Implementação completa do ThingSmart Home SDK (v7.8.0).
+- **Gestão de Conta**: Suporte a login via e-mail e gerenciamento de "Home" (Residência).
+- **Pareamento e Ativação**: Fluxo de busca, tokenização e ativação de dispositivos BLE Tuya.
+- **Painel de Controle**:
+    - Velocímetro em tempo real com suporte a **Km/h** e **Mph**.
+    - Monitoramento de bateria e tensão.
+    - Odômetros Total e Parcial com conversão de unidades.
+    - Controle de farol, trava de motor e modos de velocidade (WALK, ECO, RACE, SPORT).
+    - Alerta visual de freio acionado.
+- **Conectividade**: Reconexão automática via BLE e polling de estado sincronizado.
 
-## Teste no Galaxy S25+
+## Requisitos e Tecnologias
 
-Em 2026-08-22 a versão `0.1.0-diag` foi instalada no SM-S936B com Android 16.
-O teste físico confirmou:
+- **Android**: Alvo Android 16 (API 36), suporte mínimo Android 12 (API 31).
+- **Stack**: Java nativo, ThingSmart SDK, FastJSON, OkHttp.
+- **Permissões**: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`.
 
-- anúncio FD50 encontrado;
-- conexão GATT com status 0;
-- MTU 247 negociado com status 0;
-- característica de escrita presente;
-- característica de notificação presente;
-- CCCD habilitado com sucesso;
-- nenhuma escrita de comando realizada.
+## Configuração do Desenvolvedor
 
-## Compilação portátil
+O projeto requer credenciais da Tuya Developer Platform.
+1. Copie `tuya.properties.example` para `tuya.properties`.
+2. Preencha `TUYA_APP_KEY` e `TUYA_APP_SECRET`.
 
-O projeto usa as ferramentas preservadas em `../tools/portable/`:
+## Compilação
 
-- Eclipse Temurin JDK 21;
-- Android SDK API 36 e Build Tools 36.0.0;
-- Gradle 9.1.0;
-- Android Gradle Plugin 9.0.1.
+O projeto utiliza:
+- **Gradle**: 9.5.0
+- **Android Gradle Plugin (AGP)**: 9.3.2
+- **JDK**: 21 (Eclipse Temurin)
 
 A APK de desenvolvimento é gerada em `app/build/outputs/apk/debug/app-debug.apk`.
 
-## Próximo marco
+## Histórico Recente
 
-Criar um aplicativo SmartLife App SDK próprio na Tuya Developer Platform e
-integrar login, residência e obtenção do token de ativação. A configuração local
-está descrita em `../TUYA_CLOUD_PLAN.md` e `tuya.properties.example`.
+- **v0.4.0**: Correção de bugs de layout, estabilização da alternância de unidades (km/mi) e correção de erros de sintaxe no formatador de DPs.
+- **v0.2.0**: Integração inicial com a nuvem Tuya e renderização dinâmica de controles.
 
-Depois disso, implementar montagem e desmontagem dos fragmentos Tuya BLE, ainda
-sem liberar datapoints. A escrita será adicionada somente após testes unitários
-dos contadores, integridade e derivação de sessão.
