@@ -81,6 +81,7 @@ public final class MainActivity extends Activity {
     private long activeHomeId;
     private IThingDevice thingDevice;
     private DeviceBean activeDevice;
+    private int currentRssi = 0;
     private final Map<String, Object> currentDps = new HashMap<>();
     private final List<String> logList = new ArrayList<>();
     private boolean isSettingsMode = false;
@@ -198,22 +199,34 @@ public final class MainActivity extends Activity {
     private void renderDashboard(boolean mi, double r) {
         float dashSpeed = parseSafeFloat(currentDps.get(DP_SPEED));
         LinearLayout dashRow = new LinearLayout(this); dashRow.setOrientation(LinearLayout.HORIZONTAL); dashRow.setGravity(Gravity.CENTER);
-        TextView sv = new TextView(this); sv.setText(String.format(Locale.ROOT, "%.1f", dashSpeed * r)); sv.setTextSize(72); sv.setTextColor(Color.BLACK);
-        TextView un = new TextView(this); un.setText(mi ? " mph" : " km/h"); un.setTextSize(24); un.setTextColor(Color.GRAY);
+        TextView sv = new TextView(this); sv.setText(String.format(Locale.ROOT, "%.1f", dashSpeed * r)); sv.setTextSize(100); sv.setTextColor(Color.BLACK); sv.setPadding(0, dp(10), 0, 0);
+        TextView un = new TextView(this); un.setText(mi ? " mph" : " km/h"); un.setTextSize(28); un.setTextColor(Color.GRAY);
         dashRow.addView(sv); dashRow.addView(un); controlsPanel.addView(dashRow);
 
         int bat = parseSafeInt(currentDps.get(DP_BATTERY));
-        TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(28); bv.setGravity(Gravity.CENTER);
+        TextView bv = new TextView(this); bv.setText(getString(R.string.battery_label, bat)); bv.setTextSize(36); bv.setGravity(Gravity.CENTER);
         bv.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED); controlsPanel.addView(bv);
+        
+        TextView rv = new TextView(this); rv.setText("Intensidade Sinal: " + currentRssi + " dBm"); rv.setGravity(Gravity.CENTER); rv.setTextColor(Color.BLUE);
+        controlsPanel.addView(rv);
 
         LinearLayout act = createGroup(getString(R.string.group_riding));
+        
+        // Bloqueio com botões separados
+        TextView lockLabel = new TextView(this); lockLabel.setText(getString(R.string.dp_lock) + ": " + formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0)); 
+        lockLabel.setPadding(0, dp(5), 0, dp(5)); act.addView(lockLabel);
+        
+        LinearLayout lockRow = new LinearLayout(this); lockRow.setOrientation(LinearLayout.HORIZONTAL);
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), true); 
+        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), false);
+        act.addView(lockRow);
+
         LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
         addDashBtn(row1, DP_LIGHT, getString(R.string.dp_light), "light");
-        addDashBtn(row1, DP_LOCK, getString(R.string.dp_lock), "lock"); 
+        addDashBtn(row1, DP_CRUISE, getString(R.string.dp_cruise), "bool");
         act.addView(row1);
         
         LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
-        addDashBtn(row2, DP_CRUISE, getString(R.string.dp_cruise), "bool");
         addDashBtn(row2, DP_START_MODE, getString(R.string.dp_start), "start");
         act.addView(row2);
         
@@ -229,8 +242,16 @@ public final class MainActivity extends Activity {
         ot.setTextSize(18); ot.setPadding(0, dp(20), 0, 0); controlsPanel.addView(ot);
     }
 
+    private void addActionButton(LinearLayout row, String id, String label, Object val) {
+        Button b = new Button(this); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
+        b.setText(label); b.setOnClickListener(v -> publish(id, val)); row.addView(b);
+    }
+
     private void renderSettings(double r) {
         LinearLayout adm = createGroup(getString(R.string.group_admin));
+        if (activeDevice != null) {
+            TextView mac = new TextView(this); mac.setText("Endereço MAC: " + activeDevice.getMac()); mac.setPadding(0, 0, 0, dp(10)); adm.addView(mac);
+        }
         scanButton = new Button(this); scanButton.setText(R.string.scan_new_btn); scanButton.setOnClickListener(v -> beginScan()); adm.addView(scanButton);
         connectButton = new Button(this); connectButton.setText(R.string.pair_btn); connectButton.setEnabled(false); connectButton.setOnClickListener(v -> startTuyaActivation()); adm.addView(connectButton);
         Button unpairBtn = new Button(this); unpairBtn.setText(R.string.unpair_btn); unpairBtn.setTextColor(Color.RED); unpairBtn.setOnClickListener(v -> removePairing()); adm.addView(unpairBtn);
@@ -251,8 +272,7 @@ public final class MainActivity extends Activity {
         Button b = new Button(this); b.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f));
         Object val = currentDps.get(id); String stateStr = "";
         if ("light".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
-        else if ("lock".equals(type)) stateStr = isTrue(val) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
-        else if ("bool".equals(type)) stateStr = isTrue(val) ? "ON" : "OFF";
+        else if ("bool".equals(type)) stateStr = (val instanceof Boolean && (Boolean)val) ? "ON" : "OFF";
         else if ("start".equals(type)) stateStr = "zero_start".equals(val) ? "ZERO" : "KICK";
         b.setText(label + "\n" + stateStr);
         b.setOnClickListener(v -> {
@@ -306,7 +326,8 @@ public final class MainActivity extends Activity {
         LeScanSetting settings = new LeScanSetting.Builder().setTimeout(15000).addScanType(ScanType.SINGLE).setNeedBoundResult(true).build();
         ThingHomeSdk.getBleOperator().startLeScan(settings, scanDevice -> runOnUiThread(() -> {
             if (scanDevice == null || tuyaCandidate != null) return;
-            tuyaCandidate = scanDevice; deviceInfo.setText(scanDevice.getName());
+            tuyaCandidate = scanDevice; currentRssi = scanDevice.getRssi();
+            deviceInfo.setText(scanDevice.getName());
             if (connectButton != null) connectButton.setEnabled(true); setStatus(getString(R.string.ready_to_pair), 0xFF2E7D32);
         }));
         setStatus(getString(R.string.searching), 0xFF1565C0);
@@ -339,7 +360,10 @@ public final class MainActivity extends Activity {
         thingDevice = ThingHomeSdk.newDeviceInstance(device.getDevId());
         thingDevice.registerDeviceListener(new IDeviceListener() {
             @Override public void onDpUpdate(String id, Map<String, Object> dps) {
-                if (dps != null) { runOnUiThread(() -> { currentDps.putAll(dps); checkBrake(dps); renderControls(); }); }
+                if (dps != null) { 
+                    appendLog("RAW UPDATE: " + dps);
+                    runOnUiThread(() -> { currentDps.putAll(dps); checkBrake(dps); renderControls(); }); 
+                }
             }
             @Override public void onRemoved(String id) { runOnUiThread(() -> setStatus(getString(R.string.removed), Color.RED)); }
             @Override public void onStatusChanged(String id, boolean online) { runOnUiThread(() -> { setStatus(online ? getString(R.string.connected) : getString(R.string.offline), online ? 0xFF2E7D32 : Color.RED); if (online) handler.post(statusPoller); else handler.removeCallbacks(statusPoller); renderControls(); }); }
@@ -420,8 +444,8 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isTrue(Object v) { if (v == null) return false; String s = v.toString(); return "true".equals(s) || "1".equals(s); }
-    private float parseSafeFloat(Object o) { if (o == null) return 0f; try { return Float.parseFloat(o.toString()) / 10.0f; } catch (Exception e) { return 0f; } }
     private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
+    private float parseSafeFloat(Object o) { if (o == null) return 0f; try { return Float.parseFloat(o.toString()) / 10.0f; } catch (Exception e) { return 0f; } }
     private LinearLayout createGroup(String t) { LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(0, dp(15), 0, dp(15)); TextView tv = new TextView(this); tv.setText(t); tv.setTextColor(0xFF1565C0); tv.setTextSize(18); tv.setPadding(0, dp(10), 0, dp(5)); c.addView(tv); return c; }
     private void ensurePermissions() { requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION}, 100); }
     private void setStatus(String t, int c) { status.setText(t); status.setTextColor(c); }
