@@ -2,7 +2,7 @@
 
 Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A pelo Tuya Smart SDK.
 
-## Estado atual (v1.0.1)
+## Estado atual (v1.0.3)
 
 Funcional e implementado:
 
