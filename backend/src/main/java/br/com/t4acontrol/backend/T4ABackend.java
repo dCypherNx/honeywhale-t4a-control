@@ -43,13 +43,14 @@ public final class T4ABackend {
     private static final long STATE_REFRESH_MS = 2000L;
     private static final long FOREGROUND_RECONNECT_MS = 5000L;
     private static final long BACKGROUND_RECONNECT_MS = 30000L;
-    private static final long RSSI_REFRESH_MS = 5000L;
+    private static final long RSSI_REFRESH_MS = 2000L;
+    private static final long RSSI_RESPONSE_TIMEOUT_MS = 6000L;
     private static final long LOCK_CONFIRM_TIMEOUT_MS = 5000L;
     private static final String PREF_LOCK_KNOWN = "lock_known";
     private static final String PREF_LOCK_VALUE = "lock_value";
     private static final String PREF_AUTO_LOCK = "auto_lock_distance";
-    private static final int AUTO_LOCK_RSSI = -88;
-    private static final int AUTO_UNLOCK_RSSI = -75;
+    private static final String PREF_AUTO_LOCK_DISTANCE = "auto_lock_distance_level";
+    private static final String DISTANCE_SHORT = "short", DISTANCE_MEDIUM = "medium", DISTANCE_LONG = "long";
 
     private final Listener listener;
     private final SharedPreferences preferences;
@@ -71,6 +72,8 @@ public final class T4ABackend {
     private boolean running;
     private boolean foreground = true;
     private long lastRssiRead;
+    private long lastRssiResponse;
+    private int rssiFailures;
     private Object pendingLockValue;
     private long pendingLockUntil;
 
@@ -200,6 +203,13 @@ public final class T4ABackend {
         event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
         emitState();
         if (enabled) evaluateAutoLock();
+    }
+
+    public void setAutoLockDistance(String distance) {
+        if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
+        preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
+        emitState();
+        evaluateAutoLock();
     }
 
     public void unpair() {
@@ -348,12 +358,15 @@ public final class T4ABackend {
         String name = device == null ? "" : device.getName();
         String mac = device == null ? "" : device.getMac();
         listener.onState(new T4AState(authenticated, account, pairing, connected, name, mac,
-                rssi, dps, schema, pendingDps.keySet(), preferences.getBoolean(PREF_AUTO_LOCK, false), message));
+                rssi, dps, schema, pendingDps.keySet(), preferences.getBoolean(PREF_AUTO_LOCK, false),
+                preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM), message));
     }
 
     private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
         if (update == null) return;
         Map<String, Object> accepted = canonicalDps(update);
+        // Velocidade é telemetria instantânea: somente uma notificação DP pode alterá-la.
+        if (!confirmsCommand) accepted.remove("2");
         if (confirmsCommand) for (String id : accepted.keySet()) {
             if (!DP_LOCK.equals(id) && pendingDps.remove(id) != null && !QUIET_DPS.contains(id)) event("DP " + id + " confirmado pelo T4A");
         }
@@ -409,26 +422,47 @@ public final class T4ABackend {
 
     private void pollRssi() {
         if (device == null || device.getMac() == null || device.getMac().isEmpty()) return;
-        lastRssiRead = System.currentTimeMillis();
+        long requestStarted = System.currentTimeMillis();
+        lastRssiRead = requestStarted;
         try {
             ThingHomeSdk.getBleOperator().readBluetoothRssi(device.getMac(), (success, value) -> handler.post(() -> {
-                rssi = success && value != 0 ? value : 0;
+                lastRssiResponse = System.currentTimeMillis();
+                if (success && value != 0) {
+                    rssi = value;
+                    rssiFailures = 0;
+                } else {
+                    rssi = 0;
+                    if (++rssiFailures >= 3) recoverRssi();
+                }
                 evaluateAutoLock();
                 emitState();
             }));
+            handler.postDelayed(() -> {
+                if (running && connected && lastRssiResponse < requestStarted) recoverRssi();
+            }, RSSI_RESPONSE_TIMEOUT_MS);
         } catch (RuntimeException ignored) {
             rssi = 0;
+            recoverRssi();
             emitState();
         }
+    }
+
+    private void recoverRssi() {
+        rssiFailures = 0;
+        lastRssiResponse = System.currentTimeMillis();
+        connectPairedDevice();
     }
 
     private void evaluateAutoLock() {
         if (!preferences.getBoolean(PREF_AUTO_LOCK, false) || !connected || rssi == 0 || pendingLockValue != null) return;
         boolean unlocked = Boolean.TRUE.equals(dps.get(DP_LOCK));
-        if (rssi <= AUTO_LOCK_RSSI && unlocked) {
+        String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
+        int lockRssi = DISTANCE_SHORT.equals(distance) ? -40 : DISTANCE_LONG.equals(distance) ? -80 : -60;
+        int unlockRssi = lockRssi + 8;
+        if (rssi <= lockRssi && unlocked) {
             event("Sinal distante (" + rssi + " dBm): bloqueando");
             publish(DP_LOCK, false);
-        } else if (rssi >= AUTO_UNLOCK_RSSI && !unlocked) {
+        } else if (rssi >= unlockRssi && !unlocked) {
             event("Sinal próximo (" + rssi + " dBm): desbloqueando");
             publish(DP_LOCK, true);
         }

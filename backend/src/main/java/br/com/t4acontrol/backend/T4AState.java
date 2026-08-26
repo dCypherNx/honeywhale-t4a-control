@@ -31,11 +31,13 @@ public final class T4AState {
     public final Map<String, DpInfo> schema;
     public final Set<String> pendingDps;
     public final boolean autoLockEnabled;
+    public final String autoLockDistance;
     public final String message;
 
     public T4AState(boolean authenticated, String account, Pairing pairing, boolean connected,
                     String deviceName, String mac, int rssi, Map<String, Object> dps,
-                    Map<String, DpInfo> schema, Set<String> pendingDps, boolean autoLockEnabled, String message) {
+                    Map<String, DpInfo> schema, Set<String> pendingDps, boolean autoLockEnabled,
+                    String autoLockDistance, String message) {
         this.authenticated = authenticated;
         this.account = account;
         this.pairing = pairing;
@@ -47,6 +49,7 @@ public final class T4AState {
         this.schema = Collections.unmodifiableMap(new HashMap<>(schema));
         this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
         this.autoLockEnabled = autoLockEnabled;
+        this.autoLockDistance = autoLockDistance;
         this.message = message;
     }
 }
