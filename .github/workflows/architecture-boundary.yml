@@ -1,0 +1,44 @@
+name: Architecture boundary
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  verify-boundary:
+    name: Verify Tuya boundary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out committed tree
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify required sources and imports
+        shell: pwsh
+        run: |
+          $required = @(
+            'backend/src/main/java/br/com/t4acontrol/backend/T4APlatform.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java'
+          )
+          $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
+          if ($missing.Count -gt 0) {
+            Write-Error ('Required boundary sources are missing: ' + ($missing -join ', '))
+            exit 1
+          }
+
+          $allowed = @('TuyaT4APlatform.java', 'T4ASdk.java')
+          $domainSources = Get-ChildItem 'backend/src/main/java' -Recurse -Filter '*.java' |
+            Where-Object { $_.Name -notin $allowed }
+          $violations = $domainSources | Select-String -Pattern 'com\.thingclips\.|ThingHomeSdk'
+          if ($violations) {
+            $violations | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+          Write-Output 'Required sources are committed and the Tuya boundary is clean.'
