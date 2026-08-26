@@ -33,7 +33,7 @@ Ainda não implementado ou validado:
 - `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
 - `backend/T4ASdk`: bootstrap e encerramento do SDK enquanto o adaptador Tuya continuar presente.
 
-O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips. Uma futura implementação BLE própria deverá implementar `T4APlatform`, sem alterar a UI nem as regras de estado em `T4ABackend`.
+O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips. O GitHub Actions repete a verificação em um checkout limpo em cada PR e push para `master`, garantindo também que os arquivos obrigatórios estejam no commit. Uma futura implementação BLE própria deverá implementar `T4APlatform`, sem alterar a UI nem as regras de estado em `T4ABackend`.
 
 ## Premissas de comandos e estados
 
