@@ -3,6 +3,7 @@ package br.com.t4acontrol.backend;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public final class T4AState {
     public enum Pairing { NO_HOME, UNPAIRED, SCANNING, READY, PAIRING, PAIRED, REMOVING }
@@ -28,11 +29,13 @@ public final class T4AState {
     public final int rssi;
     public final Map<String, Object> dps;
     public final Map<String, DpInfo> schema;
+    public final Set<String> pendingDps;
+    public final boolean autoLockEnabled;
     public final String message;
 
     public T4AState(boolean authenticated, String account, Pairing pairing, boolean connected,
                     String deviceName, String mac, int rssi, Map<String, Object> dps,
-                    Map<String, DpInfo> schema, String message) {
+                    Map<String, DpInfo> schema, Set<String> pendingDps, boolean autoLockEnabled, String message) {
         this.authenticated = authenticated;
         this.account = account;
         this.pairing = pairing;
@@ -42,6 +45,8 @@ public final class T4AState {
         this.rssi = rssi;
         this.dps = Collections.unmodifiableMap(new HashMap<>(dps));
         this.schema = Collections.unmodifiableMap(new HashMap<>(schema));
+        this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
+        this.autoLockEnabled = autoLockEnabled;
         this.message = message;
     }
 }
