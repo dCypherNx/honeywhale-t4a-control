@@ -6,33 +6,29 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Platform boundary used by the T4A domain backend.
- *
- * <p>The contract deliberately contains no ThingClips/Tuya types. A platform implementation may
- * use the Tuya SDK, a native BLE protocol, or a test fake without leaking that choice into the
- * state machine or UI.
- */
-public interface T4APlatform {
-  interface Callback<T> {
+/** Vendor-neutral values and callbacks shared by provisioning and runtime transport. */
+public final class T4AContracts {
+  private T4AContracts() {}
+
+  public interface Callback<T> {
     void onSuccess(T value);
 
     void onError(String code, String message);
   }
 
-  interface ResultCallback {
+  public interface ResultCallback {
     void onSuccess();
 
     void onError(String code, String message);
   }
 
-  interface DiscoveryListener {
+  public interface DiscoveryListener {
     void onDevice(DiscoveredDevice device);
 
     void onError(String code, String message);
   }
 
-  interface DeviceListener {
+  public interface DeviceListener {
     void onDpUpdate(String deviceId, Map<String, Object> dps);
 
     void onRemoved(String deviceId);
@@ -42,11 +38,11 @@ public interface T4APlatform {
     void onDeviceInfoChanged(String deviceId);
   }
 
-  interface RssiCallback {
+  public interface RssiCallback {
     void onResult(boolean success, int rssi);
   }
 
-  final class DpSchema {
+  public static final class DpSchema {
     public final String code;
     public final String mode;
     public final String type;
@@ -58,7 +54,7 @@ public interface T4APlatform {
     }
   }
 
-  final class Device {
+  public static final class Device {
     public final String id;
     public final String name;
     public final String mac;
@@ -82,7 +78,7 @@ public interface T4APlatform {
     }
   }
 
-  final class Home {
+  public static final class Home {
     public final long id;
     public final List<Device> devices;
 
@@ -94,8 +90,8 @@ public interface T4APlatform {
     }
   }
 
-  final class DiscoveredDevice {
-    /** Opaque identifier meaningful only to the active platform implementation. */
+  public static final class DiscoveredDevice {
+    /** Opaque identifier meaningful only to the active provisioner. */
     public final String discoveryId;
     public final String address;
     public final String uuid;
@@ -122,44 +118,11 @@ public interface T4APlatform {
     }
   }
 
-  /** Returns the restored account identifier, or {@code null} when no session exists. */
-  String currentAccount();
-
-  void login(String countryCode, String email, String password, Callback<String> callback);
-
-  /** Loads the primary home used by this single-device application. An id of zero means no home. */
-  void loadPrimaryHome(Callback<Home> callback);
-
-  void startDiscovery(long timeoutMs, DiscoveryListener listener);
-
-  void stopDiscovery();
-
-  /** Performs all platform-specific token acquisition and device activation. */
-  void pair(long homeId, DiscoveredDevice device, Callback<Device> callback);
-
-  void attach(Device device, DeviceListener listener);
-
-  void detach();
-
-  void connect(Device device);
-
-  boolean isConnected(String deviceId);
-
-  Device cachedDevice(String deviceId);
-
-  void publish(String deviceId, Map<String, Object> dps, ResultCallback callback);
-
-  void readRssi(String mac, RssiCallback callback);
-
-  void remove(String deviceId, ResultCallback callback);
-
-  void destroy();
-
   static String value(String value) {
     return value == null ? "" : value;
   }
 
-  static <K, V> Map<K, V> immutableMap(Map<K, V> values) {
+  private static <K, V> Map<K, V> immutableMap(Map<K, V> values) {
     return Collections.unmodifiableMap(
         values == null ? Collections.emptyMap() : new HashMap<>(values));
   }
