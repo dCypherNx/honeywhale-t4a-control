@@ -2,7 +2,7 @@
 
 Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A pelo Tuya Smart SDK.
 
-## Estado atual (v1.0.3)
+## Estado atual (v1.1.0)
 
 Funcional e implementado:
 
@@ -27,8 +27,13 @@ Ainda não implementado ou validado:
 ## Arquitetura
 
 - `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya.
-- `backend/T4ABackend`: possui sessão, casa, scan, ativação, conexão, DPS e desvinculação.
+- `backend/T4ABackend`: máquina de estados e regras do T4A. Depende apenas do contrato neutro `T4APlatform`.
+- `backend/T4APlatform`: fronteira substituível para conta, inventário, provisionamento e transporte. Seus modelos e callbacks não expõem tipos do fornecedor.
+- `backend/TuyaT4APlatform`: único adaptador que traduz o contrato próprio para login, casas, scan, ativação, conexão BLE, DPS, RSSI e desvinculação ThingClips.
 - `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
+- `backend/T4ASdk`: bootstrap e encerramento do SDK enquanto o adaptador Tuya continuar presente.
+
+O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips. Uma futura implementação BLE própria deverá implementar `T4APlatform`, sem alterar a UI nem as regras de estado em `T4ABackend`.
 
 ## Premissas de comandos e estados
 

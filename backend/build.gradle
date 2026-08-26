@@ -25,3 +25,30 @@ dependencies {
 configurations.configureEach {
     exclude group: 'com.thingclips.smart', module: 'thingsmart-modularCampAnno'
 }
+
+tasks.register('verifyTuyaBoundary') {
+    group = 'verification'
+    description = 'Garante que tipos ThingClips fiquem restritos ao adaptador e bootstrap Tuya.'
+
+    def domainSources = fileTree('src/main/java') {
+        include '**/*.java'
+        exclude '**/TuyaT4APlatform.java', '**/T4ASdk.java'
+    }
+    inputs.files(domainSources)
+
+    doLast {
+        def violations = domainSources.findAll { source ->
+            def text = source.getText('UTF-8')
+            text.contains('com.thingclips.') || text.contains('ThingHomeSdk')
+        }
+        if (!violations.isEmpty()) {
+            throw new GradleException(
+                    'Dependência Tuya fora da fronteira permitida: ' +
+                            violations.collect { project.relativePath(it) }.join(', '))
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('verifyTuyaBoundary')
+}
