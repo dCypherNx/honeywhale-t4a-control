@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "T4A Control"
 include(":app")
+include(":backend")

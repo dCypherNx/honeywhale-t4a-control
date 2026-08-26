@@ -2,658 +2,245 @@ package br.com.t4acontrol;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.content.pm.PackageManager;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Insets;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.InputType;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.WindowInsetsController;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 
-import com.alibaba.fastjson.JSON;
-
 import java.text.DateFormat;
-import java.util.Collections;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Locale;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.HashMap;
-import java.util.Objects;
 
-import com.thingclips.smart.android.user.api.ILoginCallback;
-import com.thingclips.smart.android.user.bean.User;
-import com.thingclips.smart.android.ble.api.LeScanSetting;
-import com.thingclips.smart.android.ble.api.ScanDeviceBean;
-import com.thingclips.smart.android.ble.api.ScanType;
-import com.thingclips.smart.android.ble.builder.BleConnectBuilder;
-import com.thingclips.smart.android.device.bean.SchemaBean;
-import com.thingclips.smart.home.sdk.ThingHomeSdk;
-import com.thingclips.smart.home.sdk.bean.HomeBean;
-import com.thingclips.smart.home.sdk.callback.IThingGetHomeListCallback;
-import com.thingclips.smart.home.sdk.callback.IThingHomeResultCallback;
-import com.thingclips.smart.sdk.api.IBleActivatorListener;
-import com.thingclips.smart.sdk.api.IDeviceListener;
-import com.thingclips.smart.sdk.api.IResultCallback;
-import com.thingclips.smart.sdk.api.IThingDevice;
+import com.mikepenz.iconics.IconicsDrawable;
 
-import com.thingclips.smart.sdk.api.IThingActivatorGetToken;
-import com.thingclips.smart.sdk.bean.BleActivatorBean;
-import com.thingclips.smart.sdk.bean.DeviceBean;
+import br.com.t4acontrol.backend.T4ABackend;
+import br.com.t4acontrol.backend.T4AState;
 
-public final class MainActivity extends Activity {
-    private static final String TAG = "T4A_APP";
-    
-    private static final String DP_LOCK = "1";
-    private static final String DP_SPEED = "2";
-    private static final String DP_BATTERY = "3";
-    private static final String DP_ODO_TRIP = "5";
-    private static final String DP_TIME = "6";
-    private static final String DP_LIGHT = "8";
-    private static final String DP_UNIT = "11";
-    private static final String DP_ODO_TOTAL = "12";
-    private static final String DP_CRUISE = "13";
-    private static final String DP_SPEED_LIMIT = "14";
-    private static final String DP_START_MODE = "16";
-    private static final String DP_BRAKE = "39";
-    private static final String DP_BATTERY_PERCENT = "101";
-    private static final String DP_SPEED_VALUE = "102";
-    private static final String DP_CURRENT = "105";
-    private static final String DP_VOLTAGE = "106";
+public final class MainActivity extends Activity implements T4ABackend.Listener {
+    private static final int REQUEST_BLUETOOTH = 100;
+    private static final String DP_LOCK="1", DP_SPEED="2", DP_BATTERY="3", DP_TRIP="5", DP_TIME="6", DP_LIGHT="8";
+    private static final String DP_UNIT="11", DP_TOTAL="12", DP_CRUISE="13", DP_LEVEL="14", DP_START="16";
+    private static final String PREF_KEEP_SCREEN_ON = "keep_screen_on";
+    private static final String PREF_TOTAL_ODOMETER = "show_total_odometer";
+    private static final int NAVY=0xFF00133D, BLUE=0xFF075EF0, GREEN=0xFF00A529, RED=0xFFE91925;
 
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private Button connectButton;
-    private TextView status, log, cloudStatus, pairingStatus, brakeView;
-    private EditText emailInput, passwordInput;
-    private LinearLayout authPanel, devicePanel, controlsPanel;
-    
-    private TextView speedView, speedUnitView, rssiView, lockStateView, odoTotalView, batteryPercentView, odoTripView, usageTimeView;
-    private final View[] batterySegments = new View[10];
-    private ImageView headerBtn;
-    private final List<Button> modeButtons = new ArrayList<>();
-    private final Map<String, Button> dashButtons = new HashMap<>();
-    
-    private ScanDeviceBean tuyaCandidate;
-    private long activeHomeId;
-    private IThingDevice thingDevice;
-    private DeviceBean activeDevice;
-    private int currentRssi = 0;
-    private final Map<String, Object> currentDps = new HashMap<>();
-    private final List<String> logList = new ArrayList<>();
-    private boolean isSettingsMode = false;
-    private boolean isAppVisible = false;
-    private boolean isLockUpdatePending = false;
+    private T4ABackend backend;
+    private T4AState state;
+    private LinearLayout authPanel, devicePanel, contentPanel;
+    private ScrollView rootScroll;
+    private TextView cloudStatus, status, eventTitle, events;
+    private EditText email, password;
+    private boolean settings;
+    private String renderedStructure = "", lastStatusEvent = "";
+    private final List<String> eventHistory = new ArrayList<>();
+    private final List<String> rawHistory = new ArrayList<>();
+    private TextView speed, speedUnit, battery, rssi, pairing, connection, device, mac, connectionIcon;
+    private TextView lock, level, unit, cruise, start, odoTotal, odoTrip, usageTime, allDps;
+    private LinearLayout batteryBar;
+    private ImageView batteryIcon;
+    private ImageView odometerIcon;
+    private Button[] modeButtons;
+    private ImageButton lightSwitch, startSwitch, cruiseSwitch;
+    private ImageButton autoLockButton;
+    private TextView autoLockLabel;
+    private SpeedBar speedProgress;
+    private boolean showTotalOdometer;
 
-    private final Runnable statusPoller = new Runnable() {
-        @Override
-        public void run() {
-            if (activeDevice != null && thingDevice != null) {
-                syncState();
-                pollRssi();
-            }
-            handler.postDelayed(this, 2000);
-        }
-    };
-
-    private void pollRssi() {
-        if (activeDevice == null || !activeDevice.getIsOnline()) {
-            runOnUiThread(() -> { if (rssiView != null) rssiView.setText(R.string.offline); });
-            return;
-        }
-        final String mac = activeDevice.getMac();
-        if (mac == null || mac.isEmpty()) return;
-        try {
-            ThingHomeSdk.getBleOperator().readBluetoothRssi(mac, (isSuccess, rssi) -> runOnUiThread(() -> {
-                if (rssiView != null) {
-                    if (isSuccess && rssi != 0) {
-                        currentRssi = rssi;
-                        rssiView.setText(getString(R.string.signal_label, currentRssi));
-                        if (currentRssi > -60) rssiView.setTextColor(0xFF2E7D32);
-                        else if (currentRssi > -80) rssiView.setTextColor(0xFFFBC02D);
-                        else rssiView.setTextColor(Color.RED);
-                    } else {
-                        rssiView.setText(R.string.signal_none);
-                    }
-                }
-            }));
-        } catch (Exception e) {
-            Log.e(TAG, "RSSI poll failed", e);
-        }
-    }
-
-    private final Runnable reconnectRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (activeDevice != null) {
-                DeviceBean d = ThingHomeSdk.getDataInstance().getDeviceBean(activeDevice.getDevId());
-                boolean online = d != null && d.getIsOnline();
-                if (!online) {
-                    appendLog("Auto-reconexão ativa...");
-                    startAutomaticConnection();
-                }
-            }
-            handler.postDelayed(this, isAppVisible ? 5000L : 30000L);
-        }
-    };
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         buildUi();
-        
-        // Ajuste de contraste da barra de status
-        android.view.WindowInsetsController controller = getWindow().getInsetsController();
-        if (controller != null) {
-            controller.setSystemBarsAppearance(android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
-                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS);
-        }
-        
+        configureSystemBars();
+        backend = new T4ABackend(this, this);
+        showTotalOdometer=preferences().getBoolean(PREF_TOTAL_ODOMETER,true);
+        applyKeepScreenOn(preferences().getBoolean(PREF_KEEP_SCREEN_ON, true));
         ensurePermissions();
-        try {
-            User cur = ThingHomeSdk.getUserInstance().getUser();
-            if (cur != null) {
-                cloudStatus.setText(getString(R.string.active_account, cur.getEmail() != null ? cur.getEmail() : "N/A"));
-                showDeviceFlow();
-                queryHomes();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "SDK error", e);
-        }
     }
 
-    @Override protected void onPause() { super.onPause(); isAppVisible = false; }
-    @Override protected void onResume() { 
-        super.onResume(); 
-        isAppVisible = true;
-        handler.removeCallbacks(reconnectRunnable);
-        handler.post(reconnectRunnable);
-        if (activeDevice != null) { 
-            startAutomaticConnection(); 
-            handler.removeCallbacks(statusPoller);
-            handler.post(statusPoller); 
-        } 
-    }
-    @Override protected void onDestroy() { 
-        handler.removeCallbacks(statusPoller);
-        handler.removeCallbacks(reconnectRunnable);
-        if (thingDevice != null) { thingDevice.unRegisterDevListener(); thingDevice.onDestroy(); } 
-        super.onDestroy(); 
-    }
+    @Override protected void onResume() { super.onResume(); if (backend != null) backend.start(); }
+    @Override protected void onPause() { if (backend != null) backend.setForeground(false); super.onPause(); }
+    @Override protected void onDestroy() { if (backend != null) backend.destroy(); super.onDestroy(); }
+    @Override public void onConfigurationChanged(Configuration configuration) { super.onConfigurationChanged(configuration); configureSystemBars(); if(rootScroll!=null)rootScroll.requestApplyInsets(); }
 
     private void buildUi() {
-        LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL); 
-        body.setPadding(dp(18), dp(36), dp(18), dp(10));
-        
-        RelativeLayout header = new RelativeLayout(this);
-        TextView title = new TextView(this); title.setText(R.string.title_dash); title.setTextSize(22); 
-        title.setTextColor(0xFF101820);
-        RelativeLayout.LayoutParams lpTitle = new RelativeLayout.LayoutParams(-2, -2);
-        lpTitle.addRule(RelativeLayout.ALIGN_PARENT_LEFT); title.setLayoutParams(lpTitle);
-        
-        headerBtn = new ImageView(this); 
-        headerBtn.setPadding(dp(8), dp(8), dp(8), dp(8));
-        RelativeLayout.LayoutParams lpHdr = new RelativeLayout.LayoutParams(dp(40), dp(40));
-        lpHdr.addRule(RelativeLayout.ALIGN_PARENT_RIGHT); lpHdr.addRule(RelativeLayout.CENTER_VERTICAL);
-        headerBtn.setLayoutParams(lpHdr);
-        headerBtn.setOnClickListener(v -> { isSettingsMode = !isSettingsMode; refreshUi(); });
-        
-        header.addView(title); header.addView(headerBtn);
-        body.addView(header);
-        
-        cloudStatus = new TextView(this); cloudStatus.setTextSize(11); body.addView(cloudStatus);
-        
-        authPanel = new LinearLayout(this); authPanel.setOrientation(LinearLayout.VERTICAL);
-        emailInput = new EditText(this); emailInput.setHint(R.string.email_hint); authPanel.addView(emailInput);
-        passwordInput = new EditText(this); passwordInput.setHint(R.string.password_hint); passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); authPanel.addView(passwordInput);
-        Button loginBtn = new Button(this); loginBtn.setText(R.string.login_btn); loginBtn.setOnClickListener(v -> loginToTuya()); authPanel.addView(loginBtn);
-        body.addView(authPanel);
-        
-        devicePanel = new LinearLayout(this); devicePanel.setOrientation(LinearLayout.VERTICAL); devicePanel.setVisibility(View.GONE);
-        RelativeLayout statusRow = new RelativeLayout(this);
-        status = new TextView(this); status.setTextSize(18);
-        RelativeLayout.LayoutParams lpSts = new RelativeLayout.LayoutParams(-2, -2);
-        lpSts.addRule(RelativeLayout.ALIGN_PARENT_LEFT); status.setLayoutParams(lpSts);
-        
-        rssiView = new TextView(this); rssiView.setTextSize(13);
-        RelativeLayout.LayoutParams lpRssi = new RelativeLayout.LayoutParams(-2, -2);
-        lpRssi.addRule(RelativeLayout.ALIGN_PARENT_RIGHT); rssiView.setLayoutParams(lpRssi);
-        
-        statusRow.addView(status); statusRow.addView(rssiView);
-        devicePanel.addView(statusRow);
-        
-        brakeView = new TextView(this); brakeView.setText(R.string.brake_active); brakeView.setTextColor(Color.RED); brakeView.setTextSize(18); brakeView.setGravity(Gravity.CENTER); brakeView.setVisibility(View.GONE); devicePanel.addView(brakeView);
-        pairingStatus = new TextView(this); pairingStatus.setTextSize(13); devicePanel.addView(pairingStatus);
-        
-        controlsPanel = new LinearLayout(this); controlsPanel.setOrientation(LinearLayout.VERTICAL); devicePanel.addView(controlsPanel);
-        log = new TextView(this); log.setTextSize(10); log.setPadding(0, dp(10), 0, dp(20)); devicePanel.addView(log);
-        body.addView(devicePanel);
-        
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.addView(body); setContentView(scroll);
+        LinearLayout body=vertical();body.setBackgroundColor(0xFFF7F8FB);
+        LinearLayout header=new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title=text(getString(R.string.app_name).toUpperCase(Locale.ROOT),30); title.setTypeface(Typeface.DEFAULT,Typeface.BOLD); header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        ImageButton mode=new ImageButton(this); mode.setImageDrawable(iconDrawable("cmd-cog",NAVY,25)); mode.setBackground(round(0xFFFFFFFF,99,0xFFE4E8F0,1)); mode.setPadding(dp(12),dp(12),dp(12),dp(12));
+        mode.setOnClickListener(v->{settings=!settings; mode.setImageDrawable(iconDrawable(settings?"cmd-arrow-left":"cmd-cog",NAVY,25)); renderedStructure=""; render();});
+        header.addView(mode,new LinearLayout.LayoutParams(dp(52),dp(52))); body.addView(header);
+        cloudStatus=text(getString(R.string.checking_account),12); cloudStatus.setVisibility(View.GONE); body.addView(cloudStatus);
+        status=text("",14); status.setPadding(0,dp(8),0,dp(8)); body.addView(status);
+        authPanel=vertical(); email=new EditText(this); email.setHint(R.string.email_hint); authPanel.addView(email);
+        password=new EditText(this); password.setHint(R.string.password_hint); password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD); authPanel.addView(password);
+        Button login=new Button(this); login.setText(R.string.login); login.setOnClickListener(v->{backend.login(email.getText().toString().trim(),password.getText().toString()); password.setText("");}); authPanel.addView(login); body.addView(authPanel);
+        devicePanel=vertical(); devicePanel.setVisibility(View.GONE); contentPanel=vertical(); devicePanel.addView(contentPanel);
+        LinearLayout eventCard=card(); eventTitle=text(getString(R.string.events),18); eventTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD); eventTitle.setTextColor(BLUE);setStartIcon(eventTitle,"cmd-format-list-bulleted",BLUE,20);eventTitle.setCompoundDrawablePadding(dp(8));eventCard.addView(eventTitle);
+        events=text("",12); events.setTextIsSelectable(true); events.setPadding(0,dp(8),0,0); eventCard.addView(events); devicePanel.addView(eventCard); body.addView(devicePanel);
+        ScrollView scroll=new ScrollView(this);rootScroll=scroll;scroll.setFillViewport(true);scroll.setClipToPadding(true);scroll.setBackgroundColor(0xFFF7F8FB);scroll.setOnApplyWindowInsetsListener((view,insets)->{Insets bars=insets.getInsets(WindowInsets.Type.systemBars());view.setPadding(bars.left+dp(16),bars.top+dp(8),bars.right+dp(16),bars.bottom+dp(8));return insets;});scroll.addView(body);setContentView(scroll);scroll.requestApplyInsets();
     }
 
-    private void refreshUi() {
-        controlsPanel.removeAllViews();
-        dashButtons.clear();
-        modeButtons.clear();
-        if (headerBtn != null) headerBtn.setImageResource(isSettingsMode ? R.drawable.ic_back : R.drawable.ic_settings);
-        if (isSettingsMode) buildSettings(); else buildDashboard();
-        updateValues();
-    }
+    @Override public void onState(T4AState value) { runOnUiThread(()->{state=value; if(!value.message.isEmpty()&&!value.message.equals(lastStatusEvent)){lastStatusEvent=value.message; appendEvent(value.message);} render();}); }
+    @Override public void onEvent(String value) { runOnUiThread(()->appendEvent(value)); }
+    @Override public void onRawLog(String value) { runOnUiThread(()->appendRaw(value)); }
 
-    private void buildDashboard() {
-        LinearLayout dashRow = new LinearLayout(this); dashRow.setOrientation(LinearLayout.HORIZONTAL); dashRow.setGravity(Gravity.CENTER);
-        speedView = new TextView(this); speedView.setTextSize(125); speedView.setTextColor(Color.BLACK); speedView.setIncludeFontPadding(false);
-        speedUnitView = new TextView(this); speedUnitView.setTextSize(32); speedUnitView.setTextColor(Color.GRAY);
-        dashRow.addView(speedView); dashRow.addView(speedUnitView); controlsPanel.addView(dashRow);
-
-        LinearLayout teleRow = new LinearLayout(this); teleRow.setOrientation(LinearLayout.HORIZONTAL); teleRow.setGravity(Gravity.CENTER);
-        odoTotalView = new TextView(this); odoTotalView.setTextSize(13); odoTotalView.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); odoTotalView.setGravity(Gravity.CENTER);
-        odoTripView = new TextView(this); odoTripView.setTextSize(13); odoTripView.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); odoTripView.setGravity(Gravity.CENTER);
-        usageTimeView = new TextView(this); usageTimeView.setTextSize(13); usageTimeView.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1.0f)); usageTimeView.setGravity(Gravity.CENTER);
-        teleRow.addView(odoTotalView); teleRow.addView(odoTripView); teleRow.addView(usageTimeView);
-        controlsPanel.addView(teleRow);
-
-        LinearLayout batBox = new LinearLayout(this); batBox.setOrientation(LinearLayout.VERTICAL); batBox.setGravity(Gravity.CENTER);
-        batteryPercentView = new TextView(this); batteryPercentView.setTextSize(34); batteryPercentView.setGravity(Gravity.CENTER);
-        batBox.addView(batteryPercentView);
-        
-        LinearLayout bar = new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL); bar.setGravity(Gravity.CENTER);
-        for(int index=0; index<10; index++) {
-            View seg = new View(this);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(22), dp(10));
-            lp.setMargins(dp(1), 0, dp(1), 0); seg.setLayoutParams(lp);
-            seg.setBackgroundColor(Color.LTGRAY);
-            bar.addView(seg);
-            batterySegments[index] = seg;
-        }
-        batBox.addView(bar); batBox.setPadding(0, dp(5), 0, dp(5)); controlsPanel.addView(batBox);
-
-        LinearLayout act = createGroup(getString(R.string.group_riding)); act.setPadding(0, 0, 0, 0);
-        lockStateView = new TextView(this); lockStateView.setGravity(Gravity.CENTER); lockStateView.setPadding(0, dp(5), 0, dp(5)); act.addView(lockStateView);
-        
-        LinearLayout lockRow = new LinearLayout(this); lockRow.setOrientation(LinearLayout.HORIZONTAL);
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_unlock), true); 
-        addActionButton(lockRow, DP_LOCK, getString(R.string.btn_lock), false);
-        act.addView(lockRow);
-
-        LinearLayout row1 = new LinearLayout(this); row1.setOrientation(LinearLayout.HORIZONTAL);
-        addPersistBtn(row1, DP_LIGHT, "light");
-        addPersistBtn(row1, DP_CRUISE, "bool");
-        act.addView(row1);
-        
-        LinearLayout row2 = new LinearLayout(this); row2.setOrientation(LinearLayout.HORIZONTAL);
-        addPersistBtn(row2, DP_START_MODE, "start");
-        act.addView(row2);
-        
-        LinearLayout modeRow = new LinearLayout(this); modeRow.setOrientation(LinearLayout.HORIZONTAL);
-        String[] ns = {"WALK 6", "ECO 25", "RACE 35", "SPORT 45"};
-        String[] vs = {"level_0", "level_1", "level_2", "level_3"};
-        for (int mIdx = 0; mIdx < 4; mIdx++) {
-            final String val = vs[mIdx];
-            Button b = new Button(this);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
-            lp.setMargins(dp(1), dp(1), dp(1), dp(1)); b.setLayoutParams(lp);
-            b.setText(ns[mIdx]); b.setTextSize(10); b.setTag(val);
-            b.setOnClickListener(v -> publish(DP_SPEED_LIMIT, val));
-            modeButtons.add(b); modeRow.addView(b);
-        }
-        act.addView(modeRow); controlsPanel.addView(act);
-    }
-
-    private void buildSettings() {
-        LinearLayout adm = createGroup(getString(R.string.group_admin));
-        if (activeDevice != null) {
-            TextView mac = new TextView(this); mac.setText(String.format("MAC: %s", activeDevice.getMac()));
-            mac.setGravity(Gravity.CENTER); mac.setPadding(0, 0, 0, dp(10)); adm.addView(mac);
-        }
-        Button sBtn = new Button(this); sBtn.setText(R.string.scan_new_btn); sBtn.setOnClickListener(v -> beginScan()); adm.addView(sBtn);
-        connectButton = new Button(this); connectButton.setText(R.string.pair_btn); connectButton.setEnabled(false); connectButton.setOnClickListener(v -> startTuyaActivation()); adm.addView(connectButton);
-        Button uBtn = new Button(this); uBtn.setText(R.string.unpair_btn); uBtn.setTextColor(Color.RED); uBtn.setOnClickListener(v -> removePairing()); adm.addView(uBtn);
-        controlsPanel.addView(adm);
-
-        LinearLayout uBox = createGroup(getString(R.string.unit_box_title));
-        addIconPairBtn(uBox, DP_UNIT, getString(R.string.unit_mi), getString(R.string.unit_km), "mile", "km");
-        controlsPanel.addView(uBox);
-
-        Map<String, SchemaBean> schemas = activeDevice != null ? activeDevice.getSchemaMap() : null;
-        if (schemas != null) {
-            LinearLayout sts = createGroup(getString(R.string.group_status));
-            for (Map.Entry<String, SchemaBean> entry : new TreeMap<>(schemas).entrySet()) {
-                String id = entry.getKey();
-                TextView l = new TextView(this); l.setTag("dp_" + id);
-                l.setTextSize(14); l.setTextColor(0xFF2E7D32); l.setPadding(0, dp(5), 0, dp(2));
-                sts.addView(l);
-            }
-            controlsPanel.addView(sts);
-        }
-
-        LinearLayout rawBox = createGroup(getString(R.string.raw_dps_title));
-        TextView rawText = new TextView(this); rawText.setTag("raw_dps_text");
-        rawText.setTextSize(11); rawText.setTextColor(Color.DKGRAY); rawText.setTextIsSelectable(true);
-        rawBox.addView(rawText); controlsPanel.addView(rawBox);
-    }
-
-    private void updateValues() {
-        if (activeDevice == null) return;
-        boolean mi = Objects.equals(currentDps.get(DP_UNIT), "mile");
-        double r = mi ? 0.621371 : 1.0;
-
-        if (!isSettingsMode) {
-            if (speedView != null) speedView.setText(String.format(Locale.ROOT, "%.1f", parseSafeFloat(currentDps.get(DP_SPEED)) * r));
-            if (speedUnitView != null) speedUnitView.setText(mi ? " mph" : " km/h");
-            
-            int bat = parseSafeInt(currentDps.get(DP_BATTERY));
-            if (batteryPercentView != null) {
-                batteryPercentView.setText(String.format(Locale.ROOT, "%d%%", bat));
-                batteryPercentView.setTextColor(bat > 20 ? 0xFF2E7D32 : Color.RED);
-                for (int updateSegIdx = 0; updateSegIdx < 10; updateSegIdx++) {
-                    if (batterySegments[updateSegIdx] != null) {
-                        batterySegments[updateSegIdx].setBackgroundColor(bat >= (updateSegIdx + 1) * 10 ? 0xFF2E7D32 : Color.LTGRAY);
-                    }
-                }
-            }
-            if (lockStateView != null) lockStateView.setText(String.format("%s: %s", getString(R.string.dp_lock), formatValue(DP_LOCK, currentDps.get(DP_LOCK), 1.0)));
-            if (odoTotalView != null) odoTotalView.setText(String.format("%s\n%s", getString(R.string.dp_odo_total), formatValue(DP_ODO_TOTAL, currentDps.get(DP_ODO_TOTAL), r)));
-            if (odoTripView != null) odoTripView.setText(String.format("%s\n%s", getString(R.string.dp_odo_trip), formatValue(DP_ODO_TRIP, currentDps.get(DP_ODO_TRIP), r)));
-            if (usageTimeView != null) usageTimeView.setText(String.format("%s\n%s", getString(R.string.dp_time), formatValue(DP_TIME, currentDps.get(DP_TIME), 1.0)));
-
-            for (Map.Entry<String, Button> entry : dashButtons.entrySet()) {
-                String id = entry.getKey(); Button b = entry.getValue();
-                Object val = currentDps.get(id); String type = (String) b.getTag();
-                String state = "";
-                if ("light".equals(type)) state = isTrue(val) ? getString(R.string.state_on) : getString(R.string.state_off);
-                else if ("bool".equals(type)) state = isTrue(val) ? "ON" : "OFF";
-                else if ("start".equals(type)) state = "zero_start".equals(val) ? "ZERO" : "KICK";
-                b.setText(String.format("%s\n%s", displayDpName(id, null), state));
-            }
-
-            Object curLimit = currentDps.get(DP_SPEED_LIMIT);
-            for (Button b : modeButtons) b.setBackgroundColor(Objects.equals(b.getTag(), curLimit) ? Color.YELLOW : 0xFFE0E0E0);
-        } else {
-            for (int i = 0; i < controlsPanel.getChildCount(); i++) {
-                View g = controlsPanel.getChildAt(i);
-                if (g instanceof LinearLayout) {
-                    for (int j = 0; j < ((LinearLayout)g).getChildCount(); j++) {
-                        View c = ((LinearLayout)g).getChildAt(j);
-                        if (c.getTag() != null && c.getTag().toString().startsWith("dp_")) {
-                            String id = c.getTag().toString().substring(3);
-                            SchemaBean sc = activeDevice.getSchemaMap().get(id);
-                            ((TextView)c).setText(getString(R.string.dp_display, displayDpName(id, sc), formatValue(id, currentDps.get(id), r)));
-                        }
-                    }
-                }
-            }
-            View rt = controlsPanel.findViewWithTag("raw_dps_text");
-            if (rt instanceof TextView tv) {
-                String nt = new TreeMap<>(currentDps).toString().replace(",", ",\n");
-                if (!nt.equals(tv.getText().toString())) tv.setText(nt);
-            }
-        }
+    private void appendEvent(String value) {
+        eventHistory.add(DateFormat.getTimeInstance().format(new Date())+"  "+value);
         updateLogView();
     }
 
-    @SuppressWarnings("SameParameterValue")
-    private void addActionButton(LinearLayout row, String id, String label, Object val) {
-        Button b = new Button(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
-        lp.setMargins(dp(1), dp(1), dp(1), dp(1)); b.setLayoutParams(lp);
-        b.setText(label); b.setPadding(0, 0, 0, 0); b.setTextSize(10);
-        int icon = 0;
-        if (DP_LOCK.equals(id)) icon = isTrue(val) ? R.drawable.ic_unlock : R.drawable.ic_lock;
-        if (icon != 0) b.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0);
-        b.setOnClickListener(v -> publish(id, val)); row.addView(b);
-    }
-
-    private void addPersistBtn(LinearLayout row, String id, String type) {
-        Button b = new Button(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(60), 1.0f);
-        lp.setMargins(dp(1), dp(1), dp(1), dp(1)); b.setLayoutParams(lp);
-        b.setTag(type); b.setPadding(0, 0, 0, 0); b.setTextSize(10);
-        int icon = 0;
-        if (DP_LIGHT.equals(id)) icon = R.drawable.ic_light;
-        else if (DP_CRUISE.equals(id)) icon = R.drawable.ic_cruise;
-        else if (DP_START_MODE.equals(id)) icon = R.drawable.ic_start;
-        if (icon != 0) b.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0);
-        b.setOnClickListener(v -> {
-            Object val = currentDps.get(id);
-            if ("start".equals(type)) publish(id, "zero_start".equals(val) ? "not_zero_start" : "zero_start");
-            else publish(id, val instanceof Boolean ? !((Boolean)val) : !isTrue(val));
-        });
-        row.addView(b); dashButtons.put(id, b);
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private void addIconPairBtn(LinearLayout g, String id, String t1, String t2, Object v1, Object v2) {
-        LinearLayout r = new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
-        Button b1 = new Button(this); b1.setText(t1); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(55), 1.0f);
-        b1.setLayoutParams(lp); b1.setOnClickListener(v -> publish(id, v1));
-        Button b2 = new Button(this); b2.setText(t2); b2.setLayoutParams(lp); b2.setOnClickListener(v -> publish(id, v2));
-        r.addView(b1); r.addView(b2); g.addView(r);
-    }
-
-    private void loginToTuya() {
-        String em = emailInput.getText().toString().trim(), pw = passwordInput.getText().toString();
-        if (em.isEmpty() || pw.isEmpty()) return;
-        ThingHomeSdk.getUserInstance().loginWithEmail(getString(R.string.country_code), em, pw, new ILoginCallback() {
-            @Override public void onSuccess(User u) { runOnUiThread(() -> { cloudStatus.setText(getString(R.string.logged_in, u.getEmail())); showDeviceFlow(); queryHomes(); }); }
-            @Override public void onError(String c, String e) { runOnUiThread(() -> setStatus(getString(R.string.login_error, e), Color.RED)); }
-        });
-    }
-
-    private void queryHomes() {
-        ThingHomeSdk.getHomeManagerInstance().queryHomeList(new IThingGetHomeListCallback() {
-            @Override public void onSuccess(List<HomeBean> homes) { if (homes != null && !homes.isEmpty()) { activeHomeId = homes.get(0).getHomeId(); loadHomeDevice(); } }
-            @Override public void onError(String c, String e) {}
-        });
-    }
-
-    private void loadHomeDevice() { 
-        ThingHomeSdk.newHomeInstance(activeHomeId).getHomeDetail(new IThingHomeResultCallback() { 
-            @Override public void onSuccess(HomeBean h) { 
-                runOnUiThread(() -> { List<DeviceBean> ds = h.getDeviceList(); if (ds != null && !ds.isEmpty()) attachDevice(ds.get(0)); else setStatus(getString(R.string.no_scooter), Color.GRAY); }); 
-            } 
-            @Override public void onError(String c, String e) {} 
-        }); 
-    }
-
-    private void beginScan() {
-        if (activeDevice != null && activeDevice.getIsOnline()) { setStatus(getString(R.string.connected), 0xFF2E7D32); return; }
-        tuyaCandidate = null; if (connectButton != null) connectButton.setEnabled(false);
-        LeScanSetting s = new LeScanSetting.Builder().setTimeout(15000).addScanType(ScanType.SINGLE).setNeedBoundResult(true).build();
-        ThingHomeSdk.getBleOperator().startLeScan(s, scanDevice -> runOnUiThread(() -> {
-            if (scanDevice == null || tuyaCandidate != null) return;
-            tuyaCandidate = scanDevice; currentRssi = scanDevice.getRssi();
-            if (pairingStatus != null) pairingStatus.setText(scanDevice.getName());
-            if (connectButton != null) connectButton.setEnabled(true); setStatus(getString(R.string.ready_to_pair), 0xFF2E7D32);
-        }));
-        setStatus(getString(R.string.searching), 0xFF1565C0);
-    }
-
-    private void startTuyaActivation() {
-        if (tuyaCandidate == null || activeHomeId == 0) return;
-        setStatus(getString(R.string.syncing), Color.BLUE);
-        ThingHomeSdk.getActivatorInstance().getActivatorToken(activeHomeId, new IThingActivatorGetToken() {
-            @Override public void onSuccess(String token) { runOnUiThread(() -> proceedActivation(token)); }
-            @Override public void onFailure(String c, String e) { runOnUiThread(() -> setStatus(getString(R.string.token_error), Color.RED)); }
-        });
-    }
-
-    private void proceedActivation(String token) {
-        setStatus(getString(R.string.activating), Color.BLUE);
-        BleActivatorBean b = new BleActivatorBean(tuyaCandidate);
-        b.homeId = activeHomeId; b.address = tuyaCandidate.getAddress(); b.uuid = tuyaCandidate.getUuid(); b.productId = tuyaCandidate.getProductId(); b.deviceType = tuyaCandidate.getDeviceType();
-        HashMap<String, Object> ext = new HashMap<>(); ext.put("token", token); b.setExtendsData(ext);
-        ThingHomeSdk.getActivator().newBleActivator().startActivator(b, new IBleActivatorListener() {
-            @Override public void onSuccess(DeviceBean d) { runOnUiThread(() -> { setStatus(getString(R.string.paired), Color.GREEN); attachDevice(d); }); }
-            @Override public void onFailure(int c, String m, Object h) { runOnUiThread(() -> { setStatus(getString(R.string.activation_failed, c), Color.RED); if (connectButton != null) connectButton.setEnabled(true); }); }
-        });
-    }
-
-    private void attachDevice(DeviceBean device) {
-        if (thingDevice != null) thingDevice.unRegisterDevListener();
-        activeDevice = device; if (pairingStatus != null) pairingStatus.setText(getString(R.string.device_label, device.getName()));
-        currentDps.clear(); if (device.getDps() != null) currentDps.putAll(device.getDps());
-        thingDevice = ThingHomeSdk.newDeviceInstance(device.getDevId());
-        thingDevice.registerDeviceListener(new IDeviceListener() {
-            @Override public void onDpUpdate(String id, Map<String, Object> dps) {
-                if (dps != null) { 
-                    appendLog("RAW: " + dps);
-                    runOnUiThread(() -> { 
-                        Map<String, Object> fdps = new HashMap<>(dps);
-                        if (fdps.containsKey(DP_LOCK)) {
-                            if (!isLockUpdatePending) fdps.remove(DP_LOCK); else isLockUpdatePending = false;
-                        }
-                        currentDps.putAll(fdps); checkBrake(fdps); updateValues(); 
-                    }); 
-                }
-            }
-            @Override public void onRemoved(String id) { runOnUiThread(() -> setStatus(getString(R.string.removed), Color.RED)); }
-            @Override public void onStatusChanged(String id, boolean online) { runOnUiThread(() -> { setStatus(online ? getString(R.string.connected) : getString(R.string.offline), online ? 0xFF2E7D32 : Color.RED); if (online) handler.post(statusPoller); else handler.removeCallbacks(statusPoller); updateValues(); }); }
-            @Override public void onNetworkStatusChanged(String id, boolean o) {}
-            @Override public void onDevInfoUpdate(String id) {}
-        });
-        refreshUi(); startAutomaticConnection(); handler.post(statusPoller);
-    }
-
-    private void publish(String id, Object val) {
-        if (thingDevice == null) return;
-        if (DP_LOCK.equals(id)) isLockUpdatePending = true;
-        Map<String, Object> dps = new HashMap<>(); dps.put(id, val);
-        thingDevice.publishDps(JSON.toJSONString(dps), new IResultCallback() {
-            @Override public void onSuccess() { appendLog("TX: " + dps); }
-            @Override public void onError(String c, String e) { appendLog("ERR: " + e); if (DP_LOCK.equals(id)) isLockUpdatePending = false; }
-        });
-    }
-
-    private void removePairing() {
-        if (thingDevice != null) thingDevice.removeDevice(new IResultCallback() {
-            @Override public void onSuccess() { runOnUiThread(() -> { setStatus(getString(R.string.unlinked), Color.GREEN); controlsPanel.removeAllViews(); }); }
-            @Override public void onError(String c, String e) {}
-        });
-    }
-
-    private void syncState() { 
-        if (activeDevice != null) { 
-            DeviceBean d = ThingHomeSdk.getDataInstance().getDeviceBean(activeDevice.getDevId());
-            if (d != null) { activeDevice = d; if (d.getDps() != null) { currentDps.putAll(d.getDps()); checkBrake(d.getDps()); } }
-            runOnUiThread(this::updateValues); 
-        } 
-    }
-
-    private void startAutomaticConnection() {
-        if (activeDevice == null) return;
-        BleConnectBuilder b = new BleConnectBuilder().setDevId(activeDevice.getDevId()).setUuid(activeDevice.getUuid()).setDirectConnect(true);
-        ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(b));
+    private void appendRaw(String value) {
+        rawHistory.add(DateFormat.getTimeInstance(DateFormat.MEDIUM).format(new Date())+" "+value);
+        updateLogView();
     }
 
     private void updateLogView() {
-        if (log == null) return;
-        StringBuilder lb = new StringBuilder(isSettingsMode ? getString(R.string.log_full) : getString(R.string.log_recent));
-        int lc = isSettingsMode ? logList.size() : Math.min(logList.size(), 10);
-        for (int i = 0; i < lc; i++) lb.append(logList.get(logList.size() - 1 - i)).append("\n");
-        log.setText(lb);
+        if(events==null)return;
+        List<String> source=settings?rawHistory:eventHistory;
+        if(eventTitle!=null)eventTitle.setText(settings?R.string.raw_log:R.string.events);
+        events.setTypeface(settings?Typeface.MONOSPACE:Typeface.DEFAULT);
+        events.setTextSize(settings?10:12);
+        events.setIncludeFontPadding(!settings);
+        events.setLineSpacing(0,settings?0.88f:1f);
+        events.setPadding(0,settings?dp(3):dp(8),0,0);
+        StringBuilder out=new StringBuilder();int first=settings?0:Math.max(0,source.size()-10);for(int i=source.size()-1;i>=first;i--)out.append(source.get(i)).append('\n');events.setText(out);
     }
 
-    private void appendLog(String m) {
-        runOnUiThread(() -> {
-            String msg = DateFormat.getTimeInstance().format(new Date()) + " " + m;
-            Log.d(TAG, msg); logList.add(msg); updateLogView();
-        });
+    private void render() {
+        if(state==null)return;
+        authPanel.setVisibility(state.authenticated?View.GONE:View.VISIBLE); devicePanel.setVisibility(state.authenticated?View.VISIBLE:View.GONE);
+        cloudStatus.setText(state.authenticated?getString(R.string.account,state.account):getString(R.string.account_unauthenticated)); status.setText(state.message); status.setTextColor(state.connected?GREEN:0xFF555555); status.setVisibility(state.authenticated&&state.pairing==T4AState.Pairing.PAIRED?View.GONE:View.VISIBLE);
+        if(!state.authenticated)return;
+        String structure=settings+":"+state.pairing+":"+new TreeMap<>(state.dps).keySet();
+        if(!structure.equals(renderedStructure)){renderedStructure=structure; contentPanel.removeAllViews(); clearRefs(); if(settings)buildSettings();else buildDashboard();}
+        updateValues(); updateLogView(); setActionsEnabled(contentPanel,state.connected);
     }
 
-    private void checkBrake(Map<String, Object> dps) {
-        Object obj = dps.get(DP_BRAKE);
-        if (obj != null) {
-            try {
-                int vInt = Integer.parseInt(obj.toString());
-                final boolean isBraking = (vInt & 0x04) != 0;
-                runOnUiThread(() -> { if (brakeView != null) brakeView.setVisibility(isBraking ? View.VISIBLE : View.GONE); });
-            } catch (Exception ignored) {}
-        }
+    private void buildDashboard() {
+        if(state.pairing!=T4AState.Pairing.PAIRED){buildPairingActions();return;}
+        LinearLayout connectionCard=card(); LinearLayout connectionRow=new LinearLayout(this); connectionRow.setGravity(Gravity.CENTER_VERTICAL);
+        connectionIcon=text("",34); connectionIcon.setGravity(Gravity.CENTER); connectionIcon.setTextColor(Color.WHITE);setStartIcon(connectionIcon,"cmd-check-circle",Color.WHITE,30);connectionRow.addView(connectionIcon,new LinearLayout.LayoutParams(dp(54),dp(54)));
+        LinearLayout connectionText=vertical(); connection=text("",19); connection.setTypeface(Typeface.DEFAULT,Typeface.BOLD); device=text("",14); connectionText.addView(connection);connectionText.addView(device); LinearLayout.LayoutParams grow=new LinearLayout.LayoutParams(0,-2,1);grow.setMargins(dp(14),0,dp(8),0);connectionRow.addView(connectionText,grow); rssi=line();rssi.setGravity(Gravity.END);setStartIcon(rssi,"cmd-signal",GREEN,18);rssi.setCompoundDrawablePadding(dp(5));connectionRow.addView(rssi);connectionCard.addView(connectionRow);
+        LinearLayout batteryRow=new LinearLayout(this);batteryRow.setGravity(Gravity.CENTER_VERTICAL);batteryRow.setPadding(0,dp(7),0,0);batteryIcon=new ImageView(this);batteryIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);batteryIcon.setRotation(90f);batteryRow.addView(batteryIcon,new LinearLayout.LayoutParams(dp(38),dp(25)));batteryBar=new LinearLayout(this);batteryBar.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams barParams=new LinearLayout.LayoutParams(0,dp(16),1);barParams.setMargins(dp(8),0,dp(9),0);batteryRow.addView(batteryBar,barParams);battery=text("",15);battery.setTypeface(Typeface.DEFAULT,Typeface.BOLD);batteryRow.addView(battery);connectionCard.addView(batteryRow);contentPanel.addView(connectionCard);
+
+        LinearLayout speedCard=card();FrameLayout gauge=new FrameLayout(this);speedProgress=new SpeedBar();gauge.addView(speedProgress,new FrameLayout.LayoutParams(-1,dp(154)));LinearLayout speedRow=new LinearLayout(this);speedRow.setGravity(Gravity.CENTER);speed=text("",82);speed.setTypeface(Typeface.DEFAULT,Typeface.BOLD);speedRow.addView(speed);speedUnit=text("",24);speedUnit.setTypeface(Typeface.DEFAULT,Typeface.BOLD);speedUnit.setPadding(dp(12),dp(28),0,0);speedRow.addView(speedUnit);gauge.addView(speedRow,new FrameLayout.LayoutParams(-1,dp(126)));level=text("",11);level.setTextColor(0xFF667085);level.setGravity(Gravity.END);level.setPadding(0,dp(5),dp(8),0);FrameLayout.LayoutParams levelParams=new FrameLayout.LayoutParams(-1,dp(30),Gravity.TOP|Gravity.END);gauge.addView(level,levelParams);speedCard.addView(gauge,new LinearLayout.LayoutParams(-1,dp(154)));contentPanel.addView(speedCard);
+
+        LinearLayout tripCard=card();LinearLayout tripRow=new LinearLayout(this);tripRow.setGravity(Gravity.CENTER_VERTICAL);LinearLayout odometerMetric=metricWithIcon("cmd-speedometer",BLUE);odometerIcon=(ImageView)odometerMetric.getChildAt(0);odoTotal=(TextView)odometerMetric.getChildAt(1);View.OnClickListener toggleOdometer=v->toggleOdometer();odometerMetric.setOnClickListener(toggleOdometer);odoTotal.setOnClickListener(toggleOdometer);LinearLayout timeMetric=metricWithIcon("cmd-clock-outline",BLUE);usageTime=(TextView)timeMetric.getChildAt(1);tripRow.addView(odometerMetric,new LinearLayout.LayoutParams(0,-2,1));tripRow.addView(metricDivider(),new LinearLayout.LayoutParams(dp(1),dp(44)));tripRow.addView(timeMetric,new LinearLayout.LayoutParams(0,-2,1));tripCard.addView(tripRow);contentPanel.addView(tripCard);
+
+        LinearLayout controls=card();LinearLayout controlsHeader=new LinearLayout(this);controlsHeader.setGravity(Gravity.CENTER_VERTICAL);TextView controlsTitle=text(getString(R.string.riding),19);controlsTitle.setTextColor(BLUE);controlsTitle.setTypeface(Typeface.DEFAULT,Typeface.BOLD);setStartIcon(controlsTitle,"cmd-car-shift-pattern",BLUE,21);controlsTitle.setCompoundDrawablePadding(dp(7));controlsHeader.addView(controlsTitle,new LinearLayout.LayoutParams(0,-2,1));lock=line();lock.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);controlsHeader.addView(lock);controls.addView(controlsHeader);
+        modeButtons=addEnumTo(controls,DP_LEVEL,new String[]{speedLimit(R.string.mode_walk,6),speedLimit(R.string.mode_eco,25),speedLimit(R.string.mode_race,35),speedLimit(R.string.mode_sport,45)},new Object[]{"level_0","level_1","level_2","level_3"});
+        LinearLayout switchRow=new LinearLayout(this);lightSwitch=addStateToggle(switchRow,getString(R.string.light),DP_LIGHT,false,true);startSwitch=addStateToggle(switchRow,getString(R.string.start_mode),DP_START,"zero_start","not_zero_start");cruiseSwitch=addStateToggle(switchRow,getString(R.string.cruise),DP_CRUISE,false,true);controls.addView(switchRow);
+        LinearLayout locks=new LinearLayout(this);locks.addView(lockActionCard(getString(R.string.unlock),"cmd-lock-open",GREEN,()->backend.publish(DP_LOCK,true)),weight());locks.addView(lockActionCard(getString(R.string.lock),"cmd-lock",RED,()->backend.publish(DP_LOCK,false)),weight());locks.addView(autoLockCard(),weight());controls.addView(locks);contentPanel.addView(controls);
     }
 
-    private String formatValue(String id, Object v, double r) {
-        if (v == null) return "---";
-        String s = v.toString();
-
-        return switch (id) {
-            case DP_LOCK -> isTrue(v) ? getString(R.string.state_unlocked) : getString(R.string.state_locked);
-            case DP_LIGHT -> isTrue(v) ? getString(R.string.state_on) : getString(R.string.state_off);
-            case DP_SPEED_LIMIT -> switch (s) {
-                case "level_0" -> "WALK";
-                case "level_1" -> "ECO";
-                case "level_2" -> "RACE";
-                case "level_3" -> "SPORT";
-                default -> s;
-            };
-            case DP_START_MODE -> "zero_start".equals(s) ? "PARTIDA ZERO" : "KICK START";
-            case DP_ODO_TOTAL, DP_ODO_TRIP -> {
-                try {
-                    yield String.format(Locale.ROOT, "%.1f%s", (Float.parseFloat(s) / 10.0) * r, r < 1.0 ? " mi" : " km");
-                } catch (Exception ignored) {
-                    yield s;
-                }
-            }
-            case DP_TIME -> {
-                try {
-                    int t = Integer.parseInt(s);
-                    yield String.format(Locale.ROOT, "%02d:%02d", t / 60, t % 60);
-                } catch (Exception ignored) {
-                    yield s;
-                }
-            }
-            case DP_VOLTAGE -> {
-                try {
-                    yield String.format(Locale.ROOT, "%.1f V", Float.parseFloat(s) / 10.0f);
-                } catch (Exception ignored) {
-                    yield s;
-                }
-            }
-            default -> v instanceof Boolean b ? (b ? "ATIVO" : "INATIVO") : s;
-        };
+    private void buildSettings() {
+        TextView heading=text(getString(R.string.settings),24);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);heading.setPadding(0,dp(8),0,dp(8));contentPanel.addView(heading);
+        LinearLayout connectionCard=collapsibleSection(getString(R.string.connection_device_section),"connection");pairing=line();connection=line();device=line();mac=line();rssi=line();connectionCard.addView(pairing);connectionCard.addView(connection);connectionCard.addView(device);connectionCard.addView(mac);connectionCard.addView(rssi);
+        LinearLayout displayCard=collapsibleSection(getString(R.string.display_section),"display");
+        Switch keepOn=new Switch(this); keepOn.setText(R.string.keep_screen_on); keepOn.setChecked(preferences().getBoolean(PREF_KEEP_SCREEN_ON,true));
+        keepOn.setPadding(0,dp(8),0,dp(8));keepOn.setOnCheckedChangeListener((button,checked)->{preferences().edit().putBoolean(PREF_KEEP_SCREEN_ON,checked).apply();applyKeepScreenOn(checked);appendEvent(getString(checked?R.string.screen_on_enabled:R.string.screen_on_disabled));});displayCard.addView(keepOn);
+        if(state.pairing!=T4AState.Pairing.PAIRED){buildPairingActions();return;}
+        LinearLayout ridingCard=collapsibleSection(getString(R.string.riding_preferences_section),"riding");unit=line();ridingCard.addView(unit);addEnumTo(ridingCard,DP_UNIT,new String[]{getString(R.string.miles),getString(R.string.kilometers)},new Object[]{"mile","km"});cruise=line();ridingCard.addView(cruise);addBooleanTo(ridingCard,DP_CRUISE,getString(R.string.disable),false,getString(R.string.enable),true);start=line();ridingCard.addView(start);addEnumTo(ridingCard,DP_START,new String[]{getString(R.string.zero_start),getString(R.string.initial_push)},new Object[]{"zero_start","not_zero_start"});
+        LinearLayout diagnostics=collapsibleSection(getString(R.string.diagnostics_section),"diagnostics");odoTotal=line();odoTrip=line();usageTime=line();diagnostics.addView(odoTotal);diagnostics.addView(odoTrip);diagnostics.addView(usageTime);allDps=text("",12);allDps.setTextIsSelectable(true);diagnostics.addView(allDps);
+        LinearLayout pairingCard=collapsibleSection(getString(R.string.pairing_section),"pairing");Button remove=actionCard(getString(R.string.remove_pairing),RED,()->new AlertDialog.Builder(this).setTitle(R.string.remove_pairing_question).setMessage(R.string.remove_pairing_message).setNegativeButton(R.string.cancel,null).setPositiveButton(R.string.remove,(d,w)->backend.unpair()).show());remove.setTag("always");pairingCard.addView(remove);
     }
 
-    private String displayDpName(String id, SchemaBean s) {
-        return switch (id) {
-            case DP_LOCK -> getString(R.string.dp_lock);
-            case DP_LIGHT -> getString(R.string.dp_light);
-            case DP_UNIT -> getString(R.string.dp_unit);
-            case DP_ODO_TOTAL -> getString(R.string.dp_odo_total);
-            case DP_CRUISE -> getString(R.string.dp_cruise);
-            case DP_SPEED_LIMIT -> getString(R.string.dp_limit);
-            case DP_START_MODE -> getString(R.string.dp_start);
-            case DP_TIME -> getString(R.string.dp_time);
-            case DP_BATTERY_PERCENT -> getString(R.string.dp_bat_pct);
-            case DP_SPEED_VALUE -> getString(R.string.dp_speed);
-            case DP_ODO_TRIP -> getString(R.string.dp_odo_trip);
-            case DP_CURRENT -> getString(R.string.dp_current);
-            case DP_VOLTAGE -> getString(R.string.dp_voltage);
-            default -> s != null ? s.getCode().toUpperCase() : "DP " + id;
-        };
+    private void updateValues() {
+        if(speed!=null){boolean miles="mile".equals(state.dps.get(DP_UNIT));double speedValue=scaled(state.dps.get(DP_SPEED),10)*(miles?0.621371:1);set(speed,getString(R.string.speed_value,speedValue));set(speedUnit,getString(miles?R.string.metric_mph:R.string.metric_kmh));if(speedProgress!=null)speedProgress.setSpeed((float)speedValue);int value=integer(state.dps.get(DP_BATTERY));set(battery,getString(R.string.percent,value));battery.setTextColor(value>20?GREEN:RED);if(batteryIcon!=null)batteryIcon.setImageDrawable(batteryDrawable(value));updateBatteryBar(value);}
+        set(rssi,getString(R.string.signal,state.rssi==0?getString(R.string.unavailable):getString(R.string.dbm,state.rssi)));boolean unlocked=truth(state.dps.get(DP_LOCK));set(lock,getString(R.string.lock_state,lockLabel(state.dps.get(DP_LOCK)).toUpperCase(Locale.ROOT)));if(lock!=null){lock.setTextColor(unlocked?GREEN:RED);lock.setTypeface(Typeface.DEFAULT,Typeface.BOLD);}set(level,getString(R.string.mode_current,levelLabel(state.dps.get(DP_LEVEL))));
+        set(pairing,getString(R.string.pairing_status,pairingLabel(state.pairing)));set(connection,getString(state.connected?R.string.connected:R.string.disconnected));if(connection!=null)connection.setTextColor(state.connected?GREEN:RED);if(connectionIcon!=null){connectionIcon.setText("");setStartIcon(connectionIcon,"cmd-check-circle",state.connected?GREEN:RED,46);connectionIcon.setBackgroundColor(Color.TRANSPARENT);}set(device,getString(R.string.device,empty(state.deviceName)));set(mac,getString(R.string.mac,empty(state.mac)));
+        set(unit,getString(R.string.unit_status,state.dps.get(DP_UNIT)));set(cruise,getString(R.string.cruise_status,boolLabel(state.dps.get(DP_CRUISE))));set(start,getString(R.string.start_status,state.dps.get(DP_START)));set(odoTotal,getString(showTotalOdometer?R.string.total_odometer:R.string.trip_odometer,distance(showTotalOdometer?state.dps.get(DP_TOTAL):state.dps.get(DP_TRIP))));if(odometerIcon!=null)odometerIcon.setImageDrawable(iconDrawable(showTotalOdometer?"cmd-speedometer":"cmd-map-marker-distance",BLUE,23));set(odoTrip,getString(R.string.trip_odometer,distance(state.dps.get(DP_TRIP))));set(usageTime,getString(R.string.usage_time,state.dps.get(DP_TIME)));
+        select(modeButtons,levelIndex(state.dps.get(DP_LEVEL)),new int[]{0xFF08A6B7,GREEN,0xFFFF8A00,RED});
+        updateToggle(lightSwitch,truth(state.dps.get(DP_LIGHT)),twoLine(R.string.light,R.string.state_off),twoLine(R.string.light,R.string.state_on),DP_LIGHT);
+        updateToggle(startSwitch,"not_zero_start".equals(String.valueOf(state.dps.get(DP_START))),twoLine(R.string.start_mode,R.string.state_zero),twoLine(R.string.start_mode,R.string.state_kick),DP_START);
+        updateToggle(cruiseSwitch,truth(state.dps.get(DP_CRUISE)),twoLine(R.string.cruise,R.string.state_off),twoLine(R.string.cruise,R.string.state_on),DP_CRUISE);
+        updateAutoLock();
+        if(allDps!=null){StringBuilder values=new StringBuilder();for(Map.Entry<String,Object> entry:new TreeMap<>(state.dps).entrySet()){T4AState.DpInfo info=state.schema.get(entry.getKey());String name=info==null||info.code==null?getString(R.string.dp_fallback,entry.getKey()):info.code;values.append(getString(R.string.dp_entry,name,entry.getKey(),entry.getValue()));}set(allDps,values.toString());}
     }
 
-    private boolean isTrue(Object v) { if (v == null) return false; String s = v.toString(); return "true".equals(s) || "1".equals(s); }
-    private float parseSafeFloat(Object o) { if (o == null) return 0f; try { return Float.parseFloat(o.toString()) / 10.0f; } catch (Exception e) { return 0f; } }
-    private int parseSafeInt(Object o) { if (o == null) return 0; try { return Integer.parseInt(o.toString()); } catch (Exception e) { return 0; } }
-    private LinearLayout createGroup(String t) { 
-        LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(0, dp(5), 0, dp(5)); 
-        TextView tv = new TextView(this); tv.setText(t); tv.setTextColor(0xFF1565C0); tv.setTextSize(16); tv.setPadding(0, dp(5), 0, dp(2)); 
-        c.addView(tv); return c; 
+    private void buildPairingActions(){if(state.pairing==T4AState.Pairing.READY){Button b=alwaysButton(getString(R.string.pair_t4a));b.setOnClickListener(v->backend.pair());contentPanel.addView(b);}else if(state.pairing!=T4AState.Pairing.SCANNING&&state.pairing!=T4AState.Pairing.PAIRING){Button b=alwaysButton(getString(R.string.find_t4a));b.setOnClickListener(v->backend.scan());contentPanel.addView(b);}}
+    private void addBooleanTo(LinearLayout parent,String id,String a,boolean av,String b,boolean bv){LinearLayout row=new LinearLayout(this);row.addView(actionCard(a,BLUE,()->backend.publish(id,av)),weight());row.addView(actionCard(b,GREEN,()->backend.publish(id,bv)),weight());parent.addView(row);}
+    private Button[] addEnumTo(LinearLayout parent,String id,String[] labels,Object[] values){LinearLayout row=new LinearLayout(this);Button[] buttons=new Button[labels.length];String[] modeIcons={"cmd-walk","cmd-leaf","cmd-flag-checkered","cmd-speedometer"};for(int i=0;i<labels.length;i++){Object value=values[i];int color=i==0?0xFF08A6B7:i==1?GREEN:i==2?0xFFFF8A00:RED;buttons[i]=actionCard(labels[i],color,()->backend.publish(id,value));buttons[i].setTag(labels[i]);if(DP_LEVEL.equals(id)){Drawable icon=iconDrawable(modeIcons[i],color,24);buttons[i].setCompoundDrawables(null,icon,null,null);buttons[i].setCompoundDrawablePadding(dp(4));buttons[i].setTextSize(12);buttons[i].setTypeface(Typeface.DEFAULT,Typeface.BOLD);}LinearLayout.LayoutParams lp=weight();if(DP_LEVEL.equals(id))lp.height=dp(96);row.addView(buttons[i],lp);}parent.addView(row);return buttons;}
+    private ImageButton addStateToggle(LinearLayout parent,String title,String id,Object offValue,Object onValue){int color=controlColor(id);LinearLayout tile=vertical();tile.setGravity(Gravity.CENTER);tile.setPadding(dp(5),dp(4),dp(5),dp(4));tile.setBackground(round(Color.WHITE,14,color,1));TextView label=text(title,10);label.setTypeface(Typeface.DEFAULT,Typeface.BOLD);label.setTextColor(NAVY);label.setGravity(Gravity.CENTER);ImageButton control=new ImageButton(this);control.setTag(label);control.setImageDrawable(stateIcon(id,false,color));control.setBackgroundColor(Color.TRANSPARENT);control.setPadding(dp(5),dp(5),dp(5),dp(5));tile.addView(control,new LinearLayout.LayoutParams(dp(40),dp(40)));tile.addView(label,new LinearLayout.LayoutParams(-1,0,1));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(76),1);lp.setMargins(dp(3),dp(4),dp(3),dp(4));parent.addView(tile,lp);control.setOnClickListener(v->{boolean checked="on".contentEquals(control.getContentDescription());control.setEnabled(false);backend.publish(id,checked?offValue:onValue);});return control;}
+    private void updateToggle(ImageButton control,boolean checked,String offLabel,String onLabel,String dpId){if(control==null)return;int color=controlColor(dpId);control.setContentDescription(checked?"on":"off");control.setImageDrawable(stateIcon(dpId,checked,color));TextView label=control.getTag() instanceof TextView?(TextView)control.getTag():null;if(label!=null){label.setText(checked?onLabel:offLabel);label.setTextColor(checked?color:NAVY);}View tile=(View)control.getParent();tile.setBackground(round(checked?withAlpha(color,0x12):Color.WHITE,14,color,checked?2:1));control.setEnabled(state.connected&&!state.pendingDps.contains(dpId));tile.setAlpha(control.isEnabled()?1f:0.55f);}
+    private int controlColor(String dpId){if(DP_LIGHT.equals(dpId))return 0xFFFF8A00;if(DP_START.equals(dpId))return GREEN;return BLUE;}
+    private Drawable stateIcon(String dpId,boolean checked,int color){String icon=DP_LIGHT.equals(dpId)?"cmd-car-light-dimmed":DP_START.equals(dpId)?"cmd-run":"cmd-car-cruise-control";return iconDrawable(icon,checked?color:0xFF667085,28);}
+    private Drawable iconDrawable(String icon,int color,int size){IconicsDrawable drawable=new IconicsDrawable(this,icon);drawable.setColorList(ColorStateList.valueOf(color));drawable.setSizeXPx(dp(size));drawable.setSizeYPx(dp(size));return drawable;}
+    private Drawable batteryDrawable(int percent){return iconDrawable("cmd-battery-charging",percent>20?GREEN:RED,32);}
+    private void setStartIcon(TextView view,String icon,int color,int size){view.setCompoundDrawables(iconDrawable(icon,color,size),null,null,null);}
+    private void select(Button[] buttons,int selected,int[] colors){if(buttons==null)return;for(int i=0;i<buttons.length;i++){String label=String.valueOf(buttons[i].getTag());boolean active=i==selected;buttons[i].setText(label);buttons[i].setTypeface(Typeface.DEFAULT,Typeface.BOLD);buttons[i].setTextColor(active?colors[i]:withAlpha(colors[i],0xDD));buttons[i].setElevation(dp(active?3:1));buttons[i].setBackground(round(active?withAlpha(colors[i],0x16):Color.WHITE,14,colors[i],active?2:1));}}
+    private int withAlpha(int color,int alpha){return Color.argb(alpha,Color.red(color),Color.green(color),Color.blue(color));}
+    private int levelIndex(Object value){if(value==null)return-1;return switch(value.toString()){case"level_0"->0;case"level_1"->1;case"level_2"->2;case"level_3"->3;default->-1;};}
+    private void setActionsEnabled(View view,boolean enabled){if(view instanceof Button b&&!(view instanceof Switch))b.setEnabled(enabled||"always".equals(b.getTag()));if(view instanceof LinearLayout g)for(int i=0;i<g.getChildCount();i++)setActionsEnabled(g.getChildAt(i),enabled);}
+    private void clearRefs(){speed=speedUnit=battery=rssi=pairing=connection=device=mac=connectionIcon=lock=level=unit=cruise=start=odoTotal=odoTrip=usageTime=allDps=null;batteryBar=null;batteryIcon=null;odometerIcon=null;speedProgress=null;modeButtons=null;lightSwitch=startSwitch=cruiseSwitch=autoLockButton=null;autoLockLabel=null;}
+    private void applyKeepScreenOn(boolean enabled){if(enabled)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
+    private void toggleOdometer(){showTotalOdometer=!showTotalOdometer;preferences().edit().putBoolean(PREF_TOTAL_ODOMETER,showTotalOdometer).commit();updateValues();}
+    private void configureSystemBars(){getWindow().setStatusBarColor(0xFFF7F8FB);getWindow().setNavigationBarColor(0xFFF7F8FB);WindowInsetsController controller=getWindow().getDecorView().getWindowInsetsController();if(controller!=null)controller.setSystemBarsAppearance(WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);}
+    private SharedPreferences preferences(){return getSharedPreferences("t4a_settings",MODE_PRIVATE);}
+    private Button actionCard(String label,int color,Runnable command){Button b=new Button(this);b.setText(label);b.setTextColor(color);b.setTextSize(14);b.setAllCaps(false);b.setGravity(Gravity.CENTER);b.setPadding(dp(5),dp(8),dp(5),dp(8));b.setBackground(round(Color.WHITE,12,color,1));b.setOnClickListener(v->command.run());return b;}
+    private LinearLayout lockActionCard(String label,String icon,int color,Runnable command){LinearLayout card=vertical();card.setGravity(Gravity.CENTER);card.setBackground(round(Color.WHITE,12,color,1));ImageButton button=new ImageButton(this);button.setImageDrawable(iconDrawable(icon,color,22));button.setBackgroundColor(Color.TRANSPARENT);button.setPadding(dp(4),dp(4),dp(4),dp(4));TextView labelView=text(label,11);labelView.setTextColor(color);labelView.setGravity(Gravity.CENTER);card.addView(button,new LinearLayout.LayoutParams(dp(34),dp(34)));card.addView(labelView);View.OnClickListener action=v->command.run();card.setOnClickListener(action);button.setOnClickListener(action);return card;}
+    private LinearLayout autoLockCard(){LinearLayout card=vertical();card.setGravity(Gravity.CENTER);card.setBackground(round(Color.WHITE,12,BLUE,1));autoLockButton=new ImageButton(this);autoLockButton.setBackgroundColor(Color.TRANSPARENT);autoLockButton.setPadding(dp(4),dp(4),dp(4),dp(4));autoLockLabel=text(getString(R.string.automatic_lock),11);autoLockLabel.setGravity(Gravity.CENTER);autoLockLabel.setTextColor(BLUE);card.addView(autoLockButton,new LinearLayout.LayoutParams(dp(34),dp(34)));card.addView(autoLockLabel);View.OnClickListener action=v->backend.setAutoLockEnabled(!state.autoLockEnabled);card.setOnClickListener(action);autoLockButton.setOnClickListener(action);return card;}
+    private void updateAutoLock(){if(autoLockButton==null)return;boolean enabled=state.autoLockEnabled;autoLockButton.setImageDrawable(iconDrawable("cmd-bluetooth",enabled?BLUE:0xFF667085,22));autoLockLabel.setText(enabled?twoLine(R.string.automatic_lock,R.string.state_active):getString(R.string.automatic_lock));autoLockLabel.setTypeface(Typeface.DEFAULT,enabled?Typeface.BOLD:Typeface.NORMAL);View card=(View)autoLockButton.getParent();card.setBackground(round(enabled?withAlpha(BLUE,0x12):Color.WHITE,12,BLUE,enabled?2:1));}
+    private Button alwaysButton(String label){Button b=new Button(this);b.setText(label);b.setTag("always");return b;}
+    private LinearLayout card(){LinearLayout box=vertical();box.setPadding(dp(10),dp(10),dp(10),dp(10));box.setBackground(round(Color.WHITE,16,0xFFE4E8F0,1));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(5),0,dp(5));box.setLayoutParams(lp);box.setElevation(dp(2));return box;}
+    private TextView sectionTitle(String value){TextView title=text(value,18);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);title.setTextColor(BLUE);title.setPadding(0,0,0,dp(8));return title;}
+    private LinearLayout collapsibleSection(String title,String key){LinearLayout shell=card();LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);TextView label=sectionTitle(title);label.setPadding(0,0,0,0);TextView arrow=text("",18);arrow.setTextColor(BLUE);arrow.setGravity(Gravity.CENTER);header.addView(label,new LinearLayout.LayoutParams(0,dp(36),1));header.addView(arrow,new LinearLayout.LayoutParams(dp(36),dp(36)));LinearLayout body=vertical();boolean expanded=preferences().getBoolean("section_"+key,true);body.setVisibility(expanded?View.VISIBLE:View.GONE);arrow.setText(expanded?"⌃":"⌄");header.setOnClickListener(v->{boolean show=body.getVisibility()!=View.VISIBLE;body.setVisibility(show?View.VISIBLE:View.GONE);arrow.setText(show?"⌃":"⌄");preferences().edit().putBoolean("section_"+key,show).apply();});header.setBackground(round(0xFFF8FAFD,10,0,0));header.setPadding(dp(4),0,dp(2),0);shell.addView(header);shell.addView(body);contentPanel.addView(shell);return body;}
+    private LinearLayout metricWithIcon(String icon,int color){LinearLayout box=new LinearLayout(this);box.setGravity(Gravity.CENTER);box.setPadding(dp(4),dp(2),dp(4),dp(2));ImageView image=new ImageView(this);image.setImageDrawable(iconDrawable(icon,color,23));box.addView(image,new LinearLayout.LayoutParams(dp(28),dp(28)));TextView value=text("",11);value.setTextColor(NAVY);value.setPadding(dp(7),0,0,0);box.addView(value,new LinearLayout.LayoutParams(-2,-2));return box;}
+    private View metricDivider(){View divider=new View(this);divider.setBackgroundColor(0xFFD5DBE6);return divider;}
+    private LinearLayout.LayoutParams weight(){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(82),1);lp.setMargins(dp(3),dp(5),dp(3),dp(5));return lp;}
+    private GradientDrawable round(int fill,int radiusDp,int stroke,int strokeDp){GradientDrawable d=new GradientDrawable();d.setColor(fill);d.setCornerRadius(dp(radiusDp));if(strokeDp>0)d.setStroke(dp(strokeDp),stroke);return d;}
+    private void updateBatteryBar(int percent){if(batteryBar==null)return;batteryBar.removeAllViews();for(int i=0;i<16;i++){View segment=new View(this);int threshold=(i+1)*100/16;int color=threshold<=percent?(i<3?RED:i<8?0xFFFFB300:GREEN):0xFFE8EBF0;segment.setBackground(round(color,3,0,0));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.setMargins(dp(1),0,dp(1),0);batteryBar.addView(segment,lp);}}
+    private LinearLayout vertical(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
+    private TextView line(){TextView v=text("",15);v.setPadding(0,dp(4),0,dp(1));return v;}
+    private TextView text(String value,float size){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(0xFF101820);return v;}
+    private void set(TextView view,String value){if(view!=null&&!value.contentEquals(view.getText()))view.setText(value);}
+    private String twoLine(int title,int stateValue){return getString(R.string.two_line_state,getString(title),getString(stateValue));}
+    private String speedLimit(int mode,int limit){return getString(R.string.speed_limit,getString(mode),limit);}
+    private String empty(String value){return value.isEmpty()?"--":value;}
+    private String boolLabel(Object value){return getString(truth(value)?R.string.state_on:R.string.state_off).toLowerCase(Locale.ROOT);}
+    private String lockLabel(Object value){return getString(truth(value)?R.string.state_unlocked:R.string.state_locked);}
+    private String levelLabel(Object value){if(value==null)return getString(R.string.unknown);return switch(value.toString()){case"level_0"->getString(R.string.mode_walk);case"level_1"->getString(R.string.mode_eco);case"level_2"->getString(R.string.mode_race);case"level_3"->getString(R.string.mode_sport);default->value.toString();};}
+    private String pairingLabel(T4AState.Pairing value){return getString(switch(value){case PAIRED->R.string.pairing_paired;case PAIRING->R.string.pairing_in_progress;case READY->R.string.pairing_ready;case SCANNING->R.string.pairing_scanning;case REMOVING->R.string.pairing_removing;case NO_HOME->R.string.pairing_no_home;default->R.string.pairing_unpaired;});}
+    private String distance(Object value){return getString(R.string.distance_km,scaled(value,10));}
+    private boolean truth(Object value){return value!=null&&(Boolean.TRUE.equals(value)||"true".equalsIgnoreCase(value.toString())||"1".equals(value.toString()));}
+    private int integer(Object value){try{return value==null?0:Integer.parseInt(value.toString());}catch(NumberFormatException ignored){return 0;}}
+    private double scaled(Object value,double divisor){try{return value==null?0:Double.parseDouble(value.toString())/divisor;}catch(NumberFormatException ignored){return 0;}}
+    private void ensurePermissions(){if(checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)!=PackageManager.PERMISSION_GRANTED||checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.ACCESS_FINE_LOCATION},REQUEST_BLUETOOTH);}
+    private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
+
+    private final class SpeedBar extends View {
+        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        private float speedValue;
+        SpeedBar(){super(MainActivity.this);setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);}
+        void setSpeed(float value){speedValue=Math.max(0,Math.min(50,value));invalidate();}
+        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float gap=dp(2),left=dp(4),top=dp(8),barBottom=getHeight()-dp(28),usable=getWidth()-2*left-gap*9,segment=usable/10f;for(int i=0;i<10;i++){float x=left+i*(segment+gap);float limit=(i+1)*5f;paint.setColor(speedValue>=limit?0x5538B956:0xFFF0F2F6);canvas.drawRoundRect(new RectF(x,top,x+segment,barBottom),dp(3),dp(3),paint);}float marker=left+(getWidth()-2*left)*(Math.min(speedValue,50f)/50f);paint.setColor(GREEN);canvas.drawRoundRect(new RectF(marker-dp(1),barBottom-dp(20),marker+dp(1),barBottom),dp(1),dp(1),paint);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(1));paint.setColor(0xFFB8C2D3);canvas.drawRoundRect(new RectF(left,top,getWidth()-left,barBottom),dp(6),dp(6),paint);paint.setStyle(Paint.Style.FILL);paint.setColor(BLUE);paint.setTextSize(dp(11));paint.setTextAlign(Paint.Align.CENTER);for(int i=0;i<9;i++){float separator=left+(i+1)*segment+i*gap+gap/2f;canvas.drawText(String.valueOf((i+1)*5),separator,getHeight()-dp(7),paint);}paint.setTextAlign(Paint.Align.LEFT);}
     }
-    private void ensurePermissions() { requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION}, 100); }
-    private void setStatus(String t, int c) { if (status != null) { status.setText(t); status.setTextColor(c); } }
-    private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
-    private void showDeviceFlow() { if (authPanel != null) authPanel.setVisibility(View.GONE); if (devicePanel != null) devicePanel.setVisibility(View.VISIBLE); }
 }

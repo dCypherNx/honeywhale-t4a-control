@@ -2,19 +2,18 @@ package br.com.t4acontrol;
 
 import android.app.Application;
 
-import com.thingclips.smart.home.sdk.ThingHomeSdk;
+import br.com.t4acontrol.backend.T4ASdk;
 
 public final class T4AApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        ThingHomeSdk.setDebugMode(BuildConfig.DEBUG);
-        ThingHomeSdk.init(this);
+        T4ASdk.initialize(this, BuildConfig.DEBUG);
     }
 
     @Override
     public void onTerminate() {
-        ThingHomeSdk.onDestroy();
+        T4ASdk.destroy();
         super.onTerminate();
     }
 }

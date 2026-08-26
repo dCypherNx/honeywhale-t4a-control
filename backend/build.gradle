@@ -1,0 +1,27 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'br.com.t4acontrol.backend'
+    compileSdkVersion 36
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 35
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation files('../app/libs/security-algorithm-1.0.0-beta.aar')
+    implementation 'com.alibaba:fastjson:1.1.67.android'
+    implementation 'com.squareup.okhttp3:okhttp-urlconnection:4.12.0'
+    implementation 'com.thingclips.smart:thingsmart:7.8.0'
+}
+
+configurations.configureEach {
+    exclude group: 'com.thingclips.smart', module: 'thingsmart-modularCampAnno'
+}
