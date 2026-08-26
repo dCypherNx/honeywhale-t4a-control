@@ -30,13 +30,23 @@ tasks.register('verifyTuyaBoundary') {
     group = 'verification'
     description = 'Garante que tipos ThingClips fiquem restritos ao adaptador e bootstrap Tuya.'
 
+    def requiredBoundarySources = [
+            file('src/main/java/br/com/t4acontrol/backend/T4APlatform.java'),
+            file('src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java')
+    ]
     def domainSources = fileTree('src/main/java') {
         include '**/*.java'
         exclude '**/TuyaT4APlatform.java', '**/T4ASdk.java'
     }
-    inputs.files(domainSources)
+    inputs.files(domainSources, requiredBoundarySources)
 
     doLast {
+        def missing = requiredBoundarySources.findAll { !it.isFile() }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                    'Arquivos obrigatórios da fronteira ausentes: ' +
+                            missing.collect { project.relativePath(it) }.join(', '))
+        }
         def violations = domainSources.findAll { source ->
             def text = source.getText('UTF-8')
             text.contains('com.thingclips.') || text.contains('ThingHomeSdk')
