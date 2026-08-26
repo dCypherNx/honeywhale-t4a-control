@@ -28,17 +28,20 @@ configurations.configureEach {
 
 tasks.register('verifyTuyaBoundary') {
     group = 'verification'
-    description = 'Garante que tipos ThingClips fiquem restritos ao adaptador e bootstrap Tuya.'
+    description = 'Garante contratos separados e tipos ThingClips restritos ao adaptador/bootstrap.'
 
     def requiredBoundarySources = [
-            file('src/main/java/br/com/t4acontrol/backend/T4APlatform.java'),
+            file('src/main/java/br/com/t4acontrol/backend/T4AContracts.java'),
+            file('src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java'),
+            file('src/main/java/br/com/t4acontrol/backend/T4ATransport.java'),
             file('src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java')
     ]
+    def backendSource = file('src/main/java/br/com/t4acontrol/backend/T4ABackend.java')
     def domainSources = fileTree('src/main/java') {
         include '**/*.java'
         exclude '**/TuyaT4APlatform.java', '**/T4ASdk.java'
     }
-    inputs.files(domainSources, requiredBoundarySources)
+    inputs.files(domainSources, requiredBoundarySources, backendSource)
 
     doLast {
         def missing = requiredBoundarySources.findAll { !it.isFile() }
@@ -55,6 +58,10 @@ tasks.register('verifyTuyaBoundary') {
             throw new GradleException(
                     'Dependência Tuya fora da fronteira permitida: ' +
                             violations.collect { project.relativePath(it) }.join(', '))
+        }
+        if (backendSource.getText('UTF-8').contains('TuyaT4APlatform')) {
+            throw new GradleException(
+                    'T4ABackend não pode criar o adaptador Tuya; use o composition root do app.')
         }
     }
 }

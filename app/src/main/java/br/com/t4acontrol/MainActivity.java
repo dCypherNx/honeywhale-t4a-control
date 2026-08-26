@@ -113,7 +113,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     super.onCreate(savedInstanceState);
     buildUi();
     configureSystemBars();
-    backend = new T4ABackend(this, this);
+    backend = ((T4AApplication) getApplication()).createBackend(this);
     showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true);
     applyKeepScreenOn(preferences().getBoolean(PREF_KEEP_SCREEN_ON, true));
     ensurePermissions();

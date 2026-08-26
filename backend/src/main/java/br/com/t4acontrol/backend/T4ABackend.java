@@ -36,7 +36,8 @@ public final class T4ABackend {
       DISTANCE_LONG = "long";
 
   private final Listener listener;
-  private final T4APlatform platform;
+  private final T4AProvisioner provisioner;
+  private final T4ATransport transport;
   private final SharedPreferences preferences;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Map<String, Object> dps = new HashMap<>();
@@ -49,8 +50,8 @@ public final class T4ABackend {
   private boolean connected;
   private String message = "";
   private long homeId;
-  private T4APlatform.Device device;
-  private T4APlatform.DiscoveredDevice candidate;
+  private T4AContracts.Device device;
+  private T4AContracts.DiscoveredDevice candidate;
   private int rssi;
   private boolean running;
   private boolean foreground = true;
@@ -66,7 +67,7 @@ public final class T4ABackend {
         public void run() {
           if (!running) return;
           refreshFromCache();
-          if (device != null && !platform.isConnected(device.id)) {
+          if (device != null && !transport.isConnected(device.id)) {
             connectPairedDevice();
           }
           if (connected && System.currentTimeMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
@@ -78,13 +79,14 @@ public final class T4ABackend {
         }
       };
 
-  public T4ABackend(Context context, Listener listener) {
-    this(context, new TuyaT4APlatform(), listener);
-  }
-
-  public T4ABackend(Context context, T4APlatform platform, Listener listener) {
+  public T4ABackend(
+      Context context,
+      T4AProvisioner provisioner,
+      T4ATransport transport,
+      Listener listener) {
     this.listener = listener;
-    this.platform = platform;
+    this.provisioner = provisioner;
+    this.transport = transport;
     this.preferences =
         context.getApplicationContext().getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
   }
@@ -92,7 +94,7 @@ public final class T4ABackend {
   public void start() {
     running = true;
     foreground = true;
-    String restoredAccount = platform.currentAccount();
+    String restoredAccount = provisioner.currentAccount();
     if (restoredAccount == null) {
       authenticated = false;
       emit("Entre para acessar o T4A");
@@ -116,17 +118,21 @@ public final class T4ABackend {
   public void destroy() {
     running = false;
     handler.removeCallbacksAndMessages(null);
-    platform.destroy();
+    try {
+      transport.destroy();
+    } finally {
+      if (provisioner != (Object) transport) provisioner.destroy();
+    }
   }
 
   public void login(String email, String password) {
     message = "Autenticando…";
     emitState();
-    platform.login(
+    provisioner.login(
         "55",
         email,
         password,
-        new T4APlatform.Callback<String>() {
+        new T4AContracts.Callback<String>() {
           @Override
           public void onSuccess(String restoredAccount) {
             handler.post(
@@ -150,18 +156,18 @@ public final class T4ABackend {
     candidate = null;
     pairing = T4AState.Pairing.SCANNING;
     emit("Procurando T4A…");
-    platform.startDiscovery(
+    provisioner.startDiscovery(
         15000,
-        new T4APlatform.DiscoveryListener() {
+        new T4AContracts.DiscoveryListener() {
           @Override
-          public void onDevice(T4APlatform.DiscoveredDevice found) {
+          public void onDevice(T4AContracts.DiscoveredDevice found) {
             handler.post(
                 () -> {
                   if (found == null || found.bound || candidate != null) return;
                   candidate = found;
                   rssi = found.rssi;
                   pairing = T4AState.Pairing.READY;
-                  platform.stopDiscovery();
+                  provisioner.stopDiscovery();
                   emit("T4A pronto para parear");
                 });
           }
@@ -177,12 +183,12 @@ public final class T4ABackend {
     if (candidate == null || homeId == 0) return;
     pairing = T4AState.Pairing.PAIRING;
     emit("Pareando…");
-    platform.pair(
+    provisioner.pair(
         homeId,
         candidate,
-        new T4APlatform.Callback<T4APlatform.Device>() {
+        new T4AContracts.Callback<T4AContracts.Device>() {
           @Override
-          public void onSuccess(T4APlatform.Device result) {
+          public void onSuccess(T4AContracts.Device result) {
             handler.post(() -> attach(result));
           }
 
@@ -214,10 +220,10 @@ public final class T4ABackend {
     }
     Map<String, Object> command = Collections.singletonMap(dpId, value);
     raw("TX " + JSON.toJSONString(command));
-    platform.publish(
+    transport.publish(
         device.id,
         command,
-        new T4APlatform.ResultCallback() {
+        new T4AContracts.ResultCallback() {
           @Override
           public void onSuccess() {
             if (!QUIET_DPS.contains(dpId))
@@ -256,9 +262,9 @@ public final class T4ABackend {
     if (device == null) return;
     pairing = T4AState.Pairing.REMOVING;
     emit("Removendo pareamento…");
-    platform.remove(
+    provisioner.remove(
         device.id,
-        new T4APlatform.ResultCallback() {
+        new T4AContracts.ResultCallback() {
           @Override
           public void onSuccess() {
             handler.post(() -> clearDevice("T4A liberado para outro aplicativo"));
@@ -273,10 +279,10 @@ public final class T4ABackend {
   }
 
   private void queryHomes() {
-    platform.loadPrimaryHome(
-        new T4APlatform.Callback<T4APlatform.Home>() {
+    provisioner.loadPrimaryHome(
+        new T4AContracts.Callback<T4AContracts.Home>() {
           @Override
-          public void onSuccess(T4APlatform.Home home) {
+          public void onSuccess(T4AContracts.Home home) {
             handler.post(
                 () -> {
                   if (home == null || home.id == 0) {
@@ -297,15 +303,15 @@ public final class T4ABackend {
         });
   }
 
-  private void attach(T4APlatform.Device value) {
-    platform.detach();
+  private void attach(T4AContracts.Device value) {
+    transport.detach();
     device = value;
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
     schema.clear();
     if (value.schema != null) {
-      for (Map.Entry<String, T4APlatform.DpSchema> entry : value.schema.entrySet()) {
-        T4APlatform.DpSchema item = entry.getValue();
+      for (Map.Entry<String, T4AContracts.DpSchema> entry : value.schema.entrySet()) {
+        T4AContracts.DpSchema item = entry.getValue();
         schema.put(
             entry.getKey(), new T4AState.DpInfo(item.code, item.mode, item.type));
       }
@@ -315,16 +321,16 @@ public final class T4ABackend {
       mergeDps(value.dps, false);
     }
     applyRememberedLock();
-    platform.attach(
+    transport.attach(
         value,
-        new T4APlatform.DeviceListener() {
+        new T4AContracts.DeviceListener() {
           @Override
           public void onDpUpdate(String id, Map<String, Object> update) {
             handler.post(
                 () -> {
                   raw("RX " + JSON.toJSONString(update));
                   mergeDps(update, true);
-                  connected = platform.isConnected(value.id);
+                  connected = transport.isConnected(value.id);
                   emitState();
                 });
           }
@@ -354,25 +360,25 @@ public final class T4ABackend {
 
   private void connectPairedDevice() {
     if (device == null) return;
-    platform.connect(device);
+    transport.connect(device);
     message = connected ? "T4A conectado" : "T4A pareado · conectando…";
     emitState();
   }
 
   private void refreshFromCache() {
     if (device == null) return;
-    T4APlatform.Device latest = platform.cachedDevice(device.id);
+    T4AContracts.Device latest = transport.cachedDevice(device.id);
     if (latest != null) {
       device = latest;
       mergeDps(latest.dps, false);
     }
-    connected = platform.isConnected(device.id);
+    connected = transport.isConnected(device.id);
     message = connected ? "T4A conectado" : "T4A pareado · aguardando aproximação";
     emitState();
   }
 
   private void clearDevice(String reason) {
-    platform.detach();
+    transport.detach();
     device = null;
     candidate = null;
     connected = false;
@@ -484,7 +490,7 @@ public final class T4ABackend {
     long requestStarted = System.currentTimeMillis();
     lastRssiRead = requestStarted;
     try {
-      platform.readRssi(
+      transport.readRssi(
           device.mac,
           (success, value) ->
               handler.post(

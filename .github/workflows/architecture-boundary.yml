@@ -23,7 +23,9 @@ jobs:
         shell: pwsh
         run: |
           $required = @(
-            'backend/src/main/java/br/com/t4acontrol/backend/T4APlatform.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/T4AContracts.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
             'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java'
           )
           $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
@@ -41,4 +43,11 @@ jobs:
             exit 1
           }
 
-          Write-Output 'Required sources are committed and the Tuya boundary is clean.'
+          $backend = Get-Content -LiteralPath `
+            'backend/src/main/java/br/com/t4acontrol/backend/T4ABackend.java' -Raw
+          if ($backend.Contains('TuyaT4APlatform')) {
+            Write-Error 'T4ABackend must not instantiate the Tuya adapter.'
+            exit 1
+          }
+
+          Write-Output 'Provisioning/transport contracts are committed and the Tuya boundary is clean.'

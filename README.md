@@ -14,7 +14,7 @@ Funcional e implementado:
 - comandos absolutos de farol e bloqueio;
 - seleção explícita de modo, unidade, piloto automático e tipo de partida;
 - painel de velocidade, bateria, odômetro e percurso;
-- separação entre apresentação (`MainActivity`) e Tuya/BLE (`backend`).
+- separação entre apresentação, provisionamento e transporte BLE.
 
 Ainda não implementado ou validado:
 
@@ -27,13 +27,16 @@ Ainda não implementado ou validado:
 ## Arquitetura
 
 - `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya.
-- `backend/T4ABackend`: máquina de estados e regras do T4A. Depende apenas do contrato neutro `T4APlatform`.
-- `backend/T4APlatform`: fronteira substituível para conta, inventário, provisionamento e transporte. Seus modelos e callbacks não expõem tipos do fornecedor.
-- `backend/TuyaT4APlatform`: único adaptador que traduz o contrato próprio para login, casas, scan, ativação, conexão BLE, DPS, RSSI e desvinculação ThingClips.
+- `backend/T4ABackend`: máquina de estados e regras do T4A. Recebe provisionamento e transporte separados; não cria o adaptador Tuya.
+- `backend/T4AProvisioner`: fronteira substituível para conta, inventário, descoberta, ativação e desvinculação.
+- `backend/T4ATransport`: fronteira substituível para sessão BLE, conexão, DPS, cache e RSSI.
+- `backend/T4AContracts`: modelos e callbacks neutros compartilhados pelas duas fronteiras.
+- `backend/TuyaT4APlatform`: adaptador temporário que implementa ambas as fronteiras usando ThingClips.
+- `T4AApplication`: ponto de composição que escolhe as implementações concretas entregues ao backend.
 - `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
 - `backend/T4ASdk`: bootstrap e encerramento do SDK enquanto o adaptador Tuya continuar presente.
 
-O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips. O GitHub Actions repete a verificação em um checkout limpo em cada PR e push para `master`, garantindo também que os arquivos obrigatórios estejam no commit. Uma futura implementação BLE própria deverá implementar `T4APlatform`, sem alterar a UI nem as regras de estado em `T4ABackend`.
+O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips ou se `T4ABackend` tentar criar diretamente o adaptador Tuya. O GitHub Actions repete a verificação em um checkout limpo em cada PR e push para `master`, garantindo também que os contratos separados estejam no commit. Uma futura implementação BLE própria deverá implementar somente `T4ATransport`; o provisionamento Tuya poderá permanecer separado, sem alterar a UI nem as regras de estado em `T4ABackend`.
 
 ## Premissas de comandos e estados
 

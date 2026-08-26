@@ -1,5 +1,14 @@
 package br.com.t4acontrol.backend;
 
+import br.com.t4acontrol.backend.T4AContracts.Callback;
+import br.com.t4acontrol.backend.T4AContracts.Device;
+import br.com.t4acontrol.backend.T4AContracts.DeviceListener;
+import br.com.t4acontrol.backend.T4AContracts.DiscoveredDevice;
+import br.com.t4acontrol.backend.T4AContracts.DiscoveryListener;
+import br.com.t4acontrol.backend.T4AContracts.DpSchema;
+import br.com.t4acontrol.backend.T4AContracts.Home;
+import br.com.t4acontrol.backend.T4AContracts.ResultCallback;
+import br.com.t4acontrol.backend.T4AContracts.RssiCallback;
 import com.alibaba.fastjson.JSON;
 import com.thingclips.smart.android.ble.api.LeScanSetting;
 import com.thingclips.smart.android.ble.api.ScanDeviceBean;
@@ -25,15 +34,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** ThingClips implementation of the platform boundary. No Tuya type escapes this class. */
-public final class TuyaT4APlatform implements T4APlatform {
+/** ThingClips implementation of both replaceable boundaries. No Tuya type escapes this class. */
+public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
   private final Map<String, ScanDeviceBean> discoveries = new HashMap<>();
   private IThingDevice activeDevice;
 
   @Override
   public String currentAccount() {
     User user = ThingHomeSdk.getUserInstance().getUser();
-    return user == null ? null : T4APlatform.value(user.getEmail());
+    return user == null ? null : T4AContracts.value(user.getEmail());
   }
 
   @Override
@@ -47,7 +56,7 @@ public final class TuyaT4APlatform implements T4APlatform {
             new ILoginCallback() {
               @Override
               public void onSuccess(User user) {
-                String account = user == null ? "" : T4APlatform.value(user.getEmail());
+                String account = user == null ? "" : T4AContracts.value(user.getEmail());
                 callback.onSuccess(account.isEmpty() ? email : account);
               }
 
@@ -297,7 +306,9 @@ public final class TuyaT4APlatform implements T4APlatform {
   }
 
   private static String discoveryId(ScanDeviceBean device) {
-    return T4APlatform.value(device.getUuid()) + "|" + T4APlatform.value(device.getAddress());
+    return T4AContracts.value(device.getUuid())
+        + "|"
+        + T4AContracts.value(device.getAddress());
   }
 
   private static Device toDevice(DeviceBean source) {
