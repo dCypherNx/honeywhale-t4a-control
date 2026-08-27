@@ -62,6 +62,7 @@ public final class T4ABackend {
   private Object pendingLockValue;
   private long pendingLockUntil;
   private boolean batteryHasLiveSubFull;
+  private Integer lastLiveBatteryPercent;
 
   private final Runnable maintenance =
       new Runnable() {
@@ -310,7 +311,6 @@ public final class T4ABackend {
     device = value;
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
-    batteryHasLiveSubFull = false;
     schema.clear();
     if (value.schema != null) {
       for (Map.Entry<String, T4AContracts.DpSchema> entry : value.schema.entrySet()) {
@@ -389,6 +389,7 @@ public final class T4ABackend {
     clearPendingLock();
     dps.clear();
     batteryHasLiveSubFull = false;
+    lastLiveBatteryPercent = null;
     schema.clear();
     pendingDps.clear();
     pairing = T4AState.Pairing.UNPAIRED;
@@ -431,10 +432,10 @@ public final class T4ABackend {
   private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
     if (update == null) return;
     Map<String, Object> accepted = canonicalDps(update);
-    // Velocidade e bateria são telemetrias instantâneas: cache/INITIAL não podem alterá-las.
+    // Velocidade é instantânea. Bateria de cache/INITIAL só pode confirmar um RX já conhecido.
     if (!confirmsCommand) {
       accepted.remove("2");
-      accepted.remove(DP_BATTERY);
+      filterCachedBattery(accepted);
     } else {
       filterLiveBattery(accepted);
     }
@@ -464,6 +465,16 @@ public final class T4ABackend {
     dps.putAll(accepted);
   }
 
+  private void filterCachedBattery(Map<String, Object> accepted) {
+    if (!accepted.containsKey(DP_BATTERY)) return;
+    Integer percent = batteryPercent(accepted.get(DP_BATTERY));
+    if (percent == null
+        || percent < 0
+        || percent > 100
+        || lastLiveBatteryPercent == null
+        || !lastLiveBatteryPercent.equals(percent)) accepted.remove(DP_BATTERY);
+  }
+
   private void filterLiveBattery(Map<String, Object> accepted) {
     if (!accepted.containsKey(DP_BATTERY)) return;
     Integer percent = batteryPercent(accepted.get(DP_BATTERY));
@@ -473,12 +484,17 @@ public final class T4ABackend {
     }
     if (percent < 100) {
       batteryHasLiveSubFull = true;
+      lastLiveBatteryPercent = percent;
       return;
     }
-    // O log real do T4A mostra RX=100 espúrios intercalados entre leituras físicas <100.
-    // Depois que a sessão observou uma leitura sub-100, não permitimos que esses pacotes
-    // restaurem artificialmente o SOC exibido para 100%. O RX bruto continua no raw log.
-    if (batteryHasLiveSubFull) accepted.remove(DP_BATTERY);
+    // Os logs reais mostram RX=100 espúrios intercalados entre leituras físicas <100.
+    // Depois que a sessão observou uma leitura sub-100, esses pacotes não podem restaurar
+    // artificialmente o SOC exibido. O RX bruto continua integralmente no raw log.
+    if (batteryHasLiveSubFull) {
+      accepted.remove(DP_BATTERY);
+      return;
+    }
+    lastLiveBatteryPercent = percent;
   }
 
   private Integer batteryPercent(Object value) {
