@@ -35,43 +35,41 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Restore private Tuya build inputs
-        shell: bash
+        shell: pwsh
         env:
           TUYA_APP_KEY: ${{ secrets.TUYA_APP_KEY }}
           TUYA_APP_SECRET: ${{ secrets.TUYA_APP_SECRET }}
-          TUYA_SECURITY_AAR_B64: ${{ secrets.TUYA_SECURITY_AAR_B64 }}
-          TUYA_TS_BMP_B64: ${{ secrets.TUYA_TS_BMP_B64 }}
+          TUYA_BUILD_FILES_PASSWORD: ${{ secrets.TUYA_BUILD_FILES_PASSWORD }}
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = 'Stop'
 
-          if [[ -z "${TUYA_APP_KEY}" ]]; then
-            echo 'Missing required GitHub Secret: TUYA_APP_KEY' >&2
-            exit 1
-          fi
-          if [[ -z "${TUYA_APP_SECRET}" ]]; then
-            echo 'Missing required GitHub Secret: TUYA_APP_SECRET' >&2
-            exit 1
-          fi
-          if [[ -z "${TUYA_SECURITY_AAR_B64}" ]]; then
-            echo 'Missing required GitHub Secret: TUYA_SECURITY_AAR_B64' >&2
-            exit 1
-          fi
-          if [[ -z "${TUYA_TS_BMP_B64}" ]]; then
-            echo 'Missing required GitHub Secret: TUYA_TS_BMP_B64' >&2
-            exit 1
-          fi
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_KEY)) {
+            throw 'Missing required GitHub Secret: TUYA_APP_KEY'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_SECRET)) {
+            throw 'Missing required GitHub Secret: TUYA_APP_SECRET'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_BUILD_FILES_PASSWORD)) {
+            throw 'Missing required GitHub Secret: TUYA_BUILD_FILES_PASSWORD'
+          }
+          if (-not (Test-Path -LiteralPath 'ci/tuya-build-inputs.enc' -PathType Leaf)) {
+            throw 'Missing encrypted Tuya build bundle: ci/tuya-build-inputs.enc'
+          }
 
-          printf 'TUYA_APP_KEY=%s\nTUYA_APP_SECRET=%s\nTUYA_SDK_VERSION=7.8.0\n' \
-            "${TUYA_APP_KEY}" "${TUYA_APP_SECRET}" > tuya.properties
+          @"
+          TUYA_APP_KEY=$env:TUYA_APP_KEY
+          TUYA_APP_SECRET=$env:TUYA_APP_SECRET
+          TUYA_SDK_VERSION=7.8.0
+          "@ | Set-Content -LiteralPath 'tuya.properties' -Encoding utf8NoBOM
 
-          mkdir -p app/libs app/src/main/assets
-          printf '%s' "${TUYA_SECURITY_AAR_B64}" | base64 --decode \
-            > app/libs/security-algorithm-1.0.0-beta.aar
-          printf '%s' "${TUYA_TS_BMP_B64}" | base64 --decode \
-            > app/src/main/assets/t_s.bmp
+          ./scripts/TuyaBuildBundle.ps1 -Decrypt
 
-          test -s app/libs/security-algorithm-1.0.0-beta.aar
-          test -s app/src/main/assets/t_s.bmp
+          if (-not (Test-Path -LiteralPath 'app/libs/security-algorithm-1.0.0-beta.aar' -PathType Leaf)) {
+            throw 'Tuya security AAR was not restored.'
+          }
+          if (-not (Test-Path -LiteralPath 'app/src/main/assets/t_s.bmp' -PathType Leaf)) {
+            throw 'Tuya t_s.bmp was not restored.'
+          }
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
