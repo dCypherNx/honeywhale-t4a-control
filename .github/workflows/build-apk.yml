@@ -1,0 +1,100 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+      - 'feature/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore private Tuya build inputs
+        shell: bash
+        env:
+          TUYA_APP_KEY: ${{ secrets.TUYA_APP_KEY }}
+          TUYA_APP_SECRET: ${{ secrets.TUYA_APP_SECRET }}
+          TUYA_SECURITY_AAR_B64: ${{ secrets.TUYA_SECURITY_AAR_B64 }}
+          TUYA_TS_BMP_B64: ${{ secrets.TUYA_TS_BMP_B64 }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TUYA_APP_KEY}" ]]; then
+            echo 'Missing required GitHub Secret: TUYA_APP_KEY' >&2
+            exit 1
+          fi
+          if [[ -z "${TUYA_APP_SECRET}" ]]; then
+            echo 'Missing required GitHub Secret: TUYA_APP_SECRET' >&2
+            exit 1
+          fi
+          if [[ -z "${TUYA_SECURITY_AAR_B64}" ]]; then
+            echo 'Missing required GitHub Secret: TUYA_SECURITY_AAR_B64' >&2
+            exit 1
+          fi
+          if [[ -z "${TUYA_TS_BMP_B64}" ]]; then
+            echo 'Missing required GitHub Secret: TUYA_TS_BMP_B64' >&2
+            exit 1
+          fi
+
+          printf 'TUYA_APP_KEY=%s\nTUYA_APP_SECRET=%s\nTUYA_SDK_VERSION=7.8.0\n' \
+            "${TUYA_APP_KEY}" "${TUYA_APP_SECRET}" > tuya.properties
+
+          mkdir -p app/libs app/src/main/assets
+          printf '%s' "${TUYA_SECURITY_AAR_B64}" | base64 --decode \
+            > app/libs/security-algorithm-1.0.0-beta.aar
+          printf '%s' "${TUYA_TS_BMP_B64}" | base64 --decode \
+            > app/src/main/assets/t_s.bmp
+
+          test -s app/libs/security-algorithm-1.0.0-beta.aar
+          test -s app/src/main/assets/t_s.bmp
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Verify Tuya architecture boundary
+        run: ./gradlew --no-daemon :backend:verifyTuyaBoundary
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Stage APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          test -s "${APK}"
+          mkdir -p dist
+          cp "${APK}" "dist/T4A-Control-debug-${GITHUB_SHA::7}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: t4a-control-debug-${{ github.sha }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
