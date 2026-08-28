@@ -28,6 +28,7 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
   private static final String CLIENT_ID = "client_id";
   private static final String BASE_TOPIC = "base_topic";
   private static final String KEEP_ALIVE = "keep_alive_seconds";
+  private static final String REVISION = "revision";
 
   private final SharedPreferences preferences;
 
@@ -58,6 +59,7 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
     if (error != MqttConfiguration.ValidationError.NONE)
       throw new IllegalArgumentException("Invalid MQTT configuration: " + error);
 
+    long nextRevision = preferences.getLong(REVISION, 0L) + 1L;
     preferences
         .edit()
         .putBoolean(ENABLED, configuration.enabled)
@@ -69,6 +71,7 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
         .putString(CLIENT_ID, configuration.clientId)
         .putString(BASE_TOPIC, configuration.baseTopic)
         .putInt(KEEP_ALIVE, configuration.keepAliveSeconds)
+        .putLong(REVISION, nextRevision)
         .apply();
   }
 
@@ -82,6 +85,11 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
     } catch (Exception error) {
       throw new IllegalStateException("Unable to clear MQTT encryption key", error);
     }
+  }
+
+  @Override
+  public long revision() {
+    return preferences.getLong(REVISION, 0L);
   }
 
   private String encryptPassword(String password) {
