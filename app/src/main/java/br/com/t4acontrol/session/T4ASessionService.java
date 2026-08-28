@@ -16,6 +16,7 @@ import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.T4AApplication;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AState;
+import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
 import br.com.t4acontrol.mqtt.MqttSettingsActivity;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -23,11 +24,12 @@ import java.util.concurrent.CopyOnWriteArraySet;
 /**
  * Process-level owner of the live T4A session.
  *
- * <p>The service owns exactly one {@link T4ABackend}. Activities can come and go without tearing
- * down provisioning, BLE transport or the last known state. Provider-specific wiring stays in the
- * application composition root; this service only talks to the neutral backend contract.
+ * <p>The service owns exactly one {@link T4ABackend} and one MQTT telemetry coordinator.
+ * Activities can come and go without tearing down either runtime. Provider-specific wiring stays
+ * in the application composition root.
  */
-public final class T4ASessionService extends Service implements T4ABackend.Listener {
+public final class T4ASessionService extends Service
+    implements T4ABackend.Listener, MqttTelemetryCoordinator.Listener {
   public static final String ACTION_STOP = "br.com.t4acontrol.session.STOP";
 
   private static final String TAG = "T4ASession";
@@ -39,6 +41,7 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   private final String instanceId = Long.toHexString(SystemClock.elapsedRealtime());
 
   private T4ABackend backend;
+  private MqttTelemetryCoordinator mqttTelemetry;
   private T4AState lastState;
 
   @Override
@@ -50,7 +53,10 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
         NOTIFICATION_ID,
         notification("Sessão T4A iniciando…"),
         ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
-    backend = ((T4AApplication) getApplication()).createSessionBackend(this);
+    T4AApplication application = (T4AApplication) getApplication();
+    mqttTelemetry = application.createMqttTelemetryCoordinator(this);
+    mqttTelemetry.start();
+    backend = application.createSessionBackend(this);
     backend.start();
   }
 
@@ -87,17 +93,22 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   @Override
   public void onDestroy() {
     debug("DESTROY instance=" + instanceId);
-    listeners.clear();
+    if (mqttTelemetry != null) {
+      mqttTelemetry.stop();
+      mqttTelemetry = null;
+    }
     if (backend != null) {
       backend.destroy();
       backend = null;
     }
+    listeners.clear();
     super.onDestroy();
   }
 
   @Override
   public void onState(T4AState state) {
     lastState = state;
+    if (mqttTelemetry != null) mqttTelemetry.onState(state);
     updateNotification(state);
     for (T4ASession.Listener listener : listeners) listener.onState(state);
   }
@@ -112,6 +123,19 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   public void onRawLog(String entry) {
     debug("RAW " + entry);
     for (T4ASession.Listener listener : listeners) listener.onRawLog(entry);
+  }
+
+  @Override
+  public void onMqttEvent(String event) {
+    debug("MQTT EVENT " + event);
+    for (T4ASession.Listener listener : listeners) listener.onEvent(event);
+  }
+
+  @Override
+  public void onMqttRawLog(String entry) {
+    String value = "MQTT " + entry;
+    debug(value);
+    for (T4ASession.Listener listener : listeners) listener.onRawLog(value);
   }
 
   private void addListener(T4ASession.Listener listener) {
