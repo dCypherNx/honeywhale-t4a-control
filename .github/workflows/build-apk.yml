@@ -11,7 +11,7 @@ on:
       - 'feature/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-debug-apk:
@@ -86,8 +86,9 @@ jobs:
           set -euo pipefail
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -s "${APK}"
-          mkdir -p dist
+          mkdir -p dist release
           cp "${APK}" "dist/T4A-Control-debug-${GITHUB_SHA::7}.apk"
+          cp "${APK}" "release/T4A-Control-debug.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -96,3 +97,16 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish latest debug APK release
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete latest-debug --cleanup-tag --yes || true
+          gh release create latest-debug release/T4A-Control-debug.apk \
+            --target "${GITHUB_SHA}" \
+            --title "Latest debug APK" \
+            --notes "Automated debug build from ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
