@@ -1,8 +1,8 @@
-# MQTT configuration architecture
+# MQTT telemetry architecture
 
 ## Scope
 
-This branch introduces MQTT configuration only. It does not create a broker connection, publish telemetry, subscribe to topics, or accept remote control commands.
+This branch implements outbound MQTT telemetry. It connects to the configured broker, publishes retained availability and T4A telemetry, and reconnects after transport loss. It does not subscribe to any topic and does not accept remote control commands.
 
 ## Ownership
 
@@ -16,27 +16,43 @@ MqttSettingsActivity
 DefaultMqttSettings
         |
         v
-MqttConfigurationStore
-        |
-        v
-AndroidMqttConfigurationStore
+MqttConfigurationStore <-----------------------------+
+        |                                             |
+        v                                             |
+AndroidMqttConfigurationStore                         |
+                                                      |
+T4ASessionService                                     |
+        |                                             |
+        +--> T4ABackend --> T4AState                  |
+        |                     |                       |
+        |                     v                       |
+        +------------> MqttTelemetryCoordinator ------+
+                              |
+                              v
+                        MqttTransport
+                              |
+                              v
+                      PahoMqttTransport
+                              |
+                              v
+                         MQTT broker
 ```
 
-`MqttSettingsActivity` owns Android widgets and presentation only. It must not read/write MQTT `SharedPreferences`, use Android Keystore APIs, instantiate MQTT clients, or import backend MQTT persistence classes.
+`MqttSettingsActivity` owns Android widgets and presentation only. It does not read/write MQTT persistence, use Android Keystore APIs, instantiate MQTT clients, or import backend MQTT classes.
 
-`MqttSettings` is the UI-facing contract. It represents editable fields as strings so parsing and validation do not leak into widgets.
+`MqttSettings` is the UI-facing contract. `DefaultMqttSettings` parses editable values and delegates persistence.
 
-`DefaultMqttSettings` is the application adapter. It parses form values, maps backend validation to UI-neutral errors, and delegates persistence.
-
-`MqttConfiguration` is the backend model. It normalizes topic values and defines configuration validation.
-
-`MqttConfigurationStore` is the persistence boundary. Future MQTT transport code should depend on this boundary or on a dedicated configuration provider rather than reading UI state.
+`MqttConfiguration` is the backend model. `MqttConfigurationStore` is the persistence boundary and exposes a cheap revision value so the live runtime can detect saved configuration changes without coupling to the Activity.
 
 `AndroidMqttConfigurationStore` stores non-secret configuration in app-private preferences and encrypts the MQTT password with AES-GCM using an Android Keystore key. No secret is logged.
 
-`T4AApplication` remains the composition root and is the only app component that wires the UI contract to the backend persistence implementation.
+`MqttTelemetryCoordinator` owns broker connection policy, configuration reload, reconnect cadence, availability state, heartbeat and T4A-state-to-telemetry mapping. It knows only the provider-neutral `MqttTransport` interface.
 
-## Configuration fields
+`PahoMqttTransport` is the only class allowed to import Eclipse Paho. It is created by `T4AApplication`, the composition root.
+
+`T4ASessionService` owns the runtime lifetime. Activity destruction/recreation does not tear down BLE or MQTT.
+
+## Configuration
 
 - enabled
 - broker host
@@ -50,6 +66,39 @@ AndroidMqttConfigurationStore
 
 Defaults are port `1883`, client ID `t4a-control`, base topic `t4a`, and keep-alive `60` seconds.
 
-## Next step
+## Topics
 
-The telemetry publisher should be implemented as a separate runtime component owned by the persistent T4A session layer. It may consume `T4AState` and `MqttConfiguration`, but it must not depend on `MqttSettingsActivity` or Android widgets. MQTT remains telemetry-only unless the project explicitly changes that policy.
+Given base topic `t4a`:
+
+- `t4a/status`: retained QoS 1 string, `online` or `offline`.
+- `t4a/telemetry`: retained QoS 1 JSON document.
+
+The broker LWT is `offline` on `<base>/status`. A clean shutdown also publishes `offline` best-effort before disconnecting.
+
+Telemetry currently contains:
+
+- `connected`
+- `device_name`
+- `mac`
+- `rssi_dbm`
+- `battery_percent`
+- `speed_kmh`
+- `odometer_km`
+- `trip_km`
+- `ride_time_s`
+- `locked`
+- `headlight`
+- `cruise`
+- `mode`
+- `start_mode`
+- `unit_setting`
+- `timestamp_ms`
+
+A publish occurs when the semantic telemetry changes or after 30 seconds as a heartbeat.
+
+## Explicit non-goals
+
+- no MQTT subscriptions;
+- no remote T4A control through MQTT;
+- no Home Assistant discovery in this step;
+- no geolocation yet; location will be introduced as its own producer before being appended to telemetry.
