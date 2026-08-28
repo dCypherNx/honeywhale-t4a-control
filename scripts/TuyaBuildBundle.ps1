@@ -15,6 +15,13 @@ if ([string]::IsNullOrWhiteSpace($Password)) {
   throw 'TUYA_BUILD_FILES_PASSWORD is required.'
 }
 
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+function Resolve-RepoPath([string]$Path) {
+  if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }
+  return [IO.Path]::GetFullPath((Join-Path $repoRoot $Path))
+}
+
+$BundlePath = Resolve-RepoPath $BundlePath
 $magic = [Text.Encoding]::ASCII.GetBytes('T4ACI01')
 $iterations = 200000
 
@@ -121,8 +128,8 @@ function Unprotect-Bytes([byte[]]$Payload, [string]$Secret) {
 }
 
 if ($Encrypt) {
-  $aar = 'app/libs/security-algorithm-1.0.0-beta.aar'
-  $bmp = 'app/src/main/assets/t_s.bmp'
+  $aar = Resolve-RepoPath 'app/libs/security-algorithm-1.0.0-beta.aar'
+  $bmp = Resolve-RepoPath 'app/src/main/assets/t_s.bmp'
   if (-not (Test-Path -LiteralPath $aar -PathType Leaf)) { throw "Missing $aar" }
   if (-not (Test-Path -LiteralPath $bmp -PathType Leaf)) { throw "Missing $bmp" }
 
@@ -159,10 +166,12 @@ if ($Decrypt) {
   try {
     [IO.File]::WriteAllBytes($tempZip, $plain)
     Expand-Archive -LiteralPath $tempZip -DestinationPath $tempRoot -Force
-    New-Item -ItemType Directory -Force -Path 'app/libs' | Out-Null
-    New-Item -ItemType Directory -Force -Path 'app/src/main/assets' | Out-Null
-    Copy-Item -LiteralPath (Join-Path $tempRoot 'security-algorithm-1.0.0-beta.aar') -Destination 'app/libs/security-algorithm-1.0.0-beta.aar' -Force
-    Copy-Item -LiteralPath (Join-Path $tempRoot 't_s.bmp') -Destination 'app/src/main/assets/t_s.bmp' -Force
+    $targetAarDir = Resolve-RepoPath 'app/libs'
+    $targetAssetsDir = Resolve-RepoPath 'app/src/main/assets'
+    New-Item -ItemType Directory -Force -Path $targetAarDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $targetAssetsDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $tempRoot 'security-algorithm-1.0.0-beta.aar') -Destination (Join-Path $targetAarDir 'security-algorithm-1.0.0-beta.aar') -Force
+    Copy-Item -LiteralPath (Join-Path $tempRoot 't_s.bmp') -Destination (Join-Path $targetAssetsDir 't_s.bmp') -Force
     Write-Host 'Restored private Tuya build inputs.'
   }
   finally {
