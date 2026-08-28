@@ -9,6 +9,39 @@ import br.com.t4acontrol.backend.T4AState;
  * implementation. The service behind this contract owns the long-lived T4A session.
  */
 public interface T4ASession {
+  T4ASession EMPTY =
+      new T4ASession() {
+        @Override
+        public void addListener(Listener listener) {}
+
+        @Override
+        public void removeListener(Listener listener) {}
+
+        @Override
+        public void setUiForeground(boolean foreground) {}
+
+        @Override
+        public void login(String email, String password) {}
+
+        @Override
+        public void scan() {}
+
+        @Override
+        public void pair() {}
+
+        @Override
+        public void publish(String dpId, Object value) {}
+
+        @Override
+        public void setAutoLockEnabled(boolean enabled) {}
+
+        @Override
+        public void setAutoLockDistance(String distance) {}
+
+        @Override
+        public void unpair() {}
+      };
+
   interface Listener {
     void onState(T4AState state);
 
