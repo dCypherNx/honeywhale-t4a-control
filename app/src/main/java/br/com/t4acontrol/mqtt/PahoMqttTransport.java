@@ -45,8 +45,7 @@ public final class PahoMqttTransport implements MqttTransport {
             public void connectionLost(Throwable cause) {
               connecting = false;
               Listener current = listener;
-              if (current != null)
-                current.onDisconnected(cause == null ? "" : safe(cause.getMessage()));
+              if (current != null) current.onDisconnected(describe(cause));
             }
 
             @Override
@@ -93,14 +92,13 @@ public final class PahoMqttTransport implements MqttTransport {
                 org.eclipse.paho.client.mqttv3.IMqttToken asyncActionToken, Throwable exception) {
               connecting = false;
               Listener current = listener;
-              if (current != null)
-                current.onError("conexão", exception == null ? "" : safe(exception.getMessage()));
+              if (current != null) current.onError("conexão", describe(exception));
             }
           });
     } catch (MqttException | RuntimeException error) {
       connecting = false;
       Listener current = listener;
-      if (current != null) current.onError("conexão", safe(error.getMessage()));
+      if (current != null) current.onError("conexão", describe(error));
       closeClient();
     }
   }
@@ -126,6 +124,11 @@ public final class PahoMqttTransport implements MqttTransport {
   }
 
   @Override
+  public boolean isConnecting() {
+    return connecting;
+  }
+
+  @Override
   public void publish(String topic, String payload, int qos, boolean retained) {
     MqttAsyncClient current = client;
     if (current == null || !current.isConnected()) return;
@@ -133,7 +136,7 @@ public final class PahoMqttTransport implements MqttTransport {
       current.publish(topic, payload.getBytes(StandardCharsets.UTF_8), qos, retained);
     } catch (MqttException error) {
       Listener currentListener = listener;
-      if (currentListener != null) currentListener.onError("publicação", safe(error.getMessage()));
+      if (currentListener != null) currentListener.onError("publicação", describe(error));
     }
   }
 
@@ -159,7 +162,21 @@ public final class PahoMqttTransport implements MqttTransport {
     return scheme + "://" + configuration.host + ":" + configuration.port;
   }
 
-  private static String safe(String value) {
-    return value == null ? "" : value;
+  private static String describe(Throwable error) {
+    if (error == null) return "";
+    StringBuilder out = new StringBuilder(error.getClass().getSimpleName());
+    if (error instanceof MqttException mqtt)
+      out.append(" reasonCode=").append(mqtt.getReasonCode());
+    String message = error.getMessage();
+    if (message != null && !message.isBlank() && !message.equals(error.getClass().getSimpleName()))
+      out.append(" message=").append(message);
+    Throwable cause = error.getCause();
+    if (cause != null && cause != error) {
+      out.append(" cause=").append(cause.getClass().getSimpleName());
+      String causeMessage = cause.getMessage();
+      if (causeMessage != null && !causeMessage.isBlank())
+        out.append("(").append(causeMessage).append(")");
+    }
+    return out.toString();
   }
 }
