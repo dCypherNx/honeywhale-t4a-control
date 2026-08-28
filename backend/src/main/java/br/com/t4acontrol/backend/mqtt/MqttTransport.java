@@ -18,6 +18,8 @@ public interface MqttTransport {
 
   boolean isConnected();
 
+  boolean isConnecting();
+
   void publish(String topic, String payload, int qos, boolean retained);
 
   void close();
