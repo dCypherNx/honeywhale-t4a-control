@@ -65,7 +65,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     if (!running) return;
     running = false;
     handler.removeCallbacks(maintenance);
-    publishOfflineIfPossible();
+    publishOfflineIfPossible(configuration);
     transport.disconnect();
     transport.close();
   }
@@ -83,7 +83,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     if (!running || !configuration.enabled) return;
     event("MQTT conectado a " + endpoint(configuration));
     raw("STATUS online");
-    transport.publish(statusTopic(), "online", 1, true);
+    transport.publish(statusTopic(configuration), "online", 1, true);
     lastTelemetrySignature = "";
     publishTelemetry(true);
   }
@@ -104,6 +104,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     long revision = configurationStore.revision();
     if (!force && revision == configurationRevision) return;
 
+    MqttConfiguration previous = configuration;
     MqttConfiguration next = configurationStore.load();
     MqttConfiguration.ValidationError error = next.validate();
     if (error != MqttConfiguration.ValidationError.NONE) {
@@ -111,29 +112,29 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
       next = MqttConfiguration.defaults();
     }
 
-    boolean reconnect = connectionSettingsChanged(configuration, next);
-    boolean wasEnabled = configuration.enabled;
+    boolean reconnect = connectionSettingsChanged(previous, next);
+    boolean wasEnabled = previous.enabled;
+    if (transport.isConnected() && previous.enabled && (reconnect || !next.enabled)) {
+      publishOfflineIfPossible(previous);
+      transport.disconnect();
+    }
+
     configuration = next;
     configurationRevision = revision;
+    lastTelemetrySignature = "";
 
     if (!configuration.enabled) {
-      if (transport.isConnected()) publishOfflineIfPossible();
-      transport.disconnect();
       if (wasEnabled) event("MQTT desativado");
       return;
     }
 
-    if (reconnect && transport.isConnected()) {
-      publishOfflineIfPossible();
-      transport.disconnect();
-    }
     if (!wasEnabled) event("MQTT ativado");
   }
 
   private void ensureConnection() {
     if (!running || !configuration.enabled || transport.isConnected()) return;
     raw("CONNECT " + endpoint(configuration));
-    transport.connect(configuration, statusTopic(), "offline");
+    transport.connect(configuration, statusTopic(configuration), "offline");
   }
 
   private void publishTelemetry(boolean force) {
@@ -142,7 +143,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         || !transport.isConnected()
         || lastState == null) return;
 
-    Map<String, Object> telemetry = telemetry(lastState, false);
+    Map<String, Object> telemetry = telemetry(lastState);
     String signature = JSON.toJSONString(telemetry);
     long now = System.currentTimeMillis();
     if (!force
@@ -151,13 +152,13 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
     telemetry.put("timestamp_ms", now);
     String payload = JSON.toJSONString(telemetry);
-    raw("TX " + telemetryTopic() + " " + payload);
-    transport.publish(telemetryTopic(), payload, 1, true);
+    raw("TX " + telemetryTopic(configuration) + " " + payload);
+    transport.publish(telemetryTopic(configuration), payload, 1, true);
     lastTelemetrySignature = signature;
     lastTelemetryPublishAt = now;
   }
 
-  private Map<String, Object> telemetry(T4AState state, boolean includeTimestamp) {
+  private Map<String, Object> telemetry(T4AState state) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("connected", state.connected);
     out.put("device_name", state.deviceName);
@@ -174,26 +175,25 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     out.put("mode", string(state.dps.get("14")));
     out.put("start_mode", string(state.dps.get("16")));
     out.put("unit_setting", string(state.dps.get("11")));
-    if (includeTimestamp) out.put("timestamp_ms", System.currentTimeMillis());
     return out;
   }
 
-  private void publishOfflineIfPossible() {
-    if (!configuration.enabled || !transport.isConnected()) return;
+  private void publishOfflineIfPossible(MqttConfiguration value) {
+    if (!value.enabled || !transport.isConnected()) return;
     try {
       raw("STATUS offline");
-      transport.publish(statusTopic(), "offline", 1, true);
+      transport.publish(statusTopic(value), "offline", 1, true);
     } catch (RuntimeException ignored) {
       // LWT covers abnormal disconnects. A best-effort explicit offline state is enough here.
     }
   }
 
-  private String statusTopic() {
-    return configuration.baseTopic + "/status";
+  private static String statusTopic(MqttConfiguration value) {
+    return value.baseTopic + "/status";
   }
 
-  private String telemetryTopic() {
-    return configuration.baseTopic + "/telemetry";
+  private static String telemetryTopic(MqttConfiguration value) {
+    return value.baseTopic + "/telemetry";
   }
 
   private void event(String value) {
