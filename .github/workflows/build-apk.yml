@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build-debug-apk:
-    name: Build debug APK
+    name: Build CI debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -88,7 +88,7 @@ jobs:
       - name: Verify Tuya architecture boundary
         run: ./gradlew --no-daemon :backend:verifyTuyaBoundary
 
-      - name: Build debug APK
+      - name: Build CI debug APK
         env:
           ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
           ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
@@ -101,33 +101,33 @@ jobs:
           test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
           ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Stage APK
+      - name: Stage CI APK
         shell: bash
         run: |
           set -euo pipefail
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -s "${APK}"
           mkdir -p dist release
-          cp "${APK}" "dist/T4A-Control-debug-${GITHUB_SHA::7}.apk"
-          cp "${APK}" "release/T4A-Control-debug.apk"
+          cp "${APK}" "dist/T4A-Control-CI-debug-${GITHUB_SHA::7}.apk"
+          cp "${APK}" "release/T4A-Control-CI-debug.apk"
 
-      - name: Upload APK artifact
+      - name: Upload CI APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: t4a-control-debug-${{ github.sha }}
+          name: t4a-control-ci-debug-${{ github.sha }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish latest debug APK release
+      - name: Publish latest CI debug APK release
         if: github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release delete latest-debug --cleanup-tag --yes || true
-          gh release create latest-debug release/T4A-Control-debug.apk \
+          gh release delete latest-ci-debug --cleanup-tag --yes || true
+          gh release create latest-ci-debug release/T4A-Control-CI-debug.apk \
             --target "${GITHUB_SHA}" \
-            --title "Latest debug APK" \
-            --notes "Automated debug build from ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
+            --title "Latest CI debug APK" \
+            --notes "Automated CI debug build using package br.com.t4acontrol.ci from ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
