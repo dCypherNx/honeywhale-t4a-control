@@ -6,8 +6,13 @@ import br.com.t4acontrol.backend.T4ASdk;
 import br.com.t4acontrol.backend.TuyaT4APlatform;
 
 public final class T4AApplication extends Application {
-  /** Application composition root: the domain receives replaceable provisioning and transport. */
-  public T4ABackend createBackend(T4ABackend.Listener listener) {
+  /**
+   * Application composition root for a live T4A session.
+   *
+   * <p>Provider-specific construction remains here. The session service owns the returned backend;
+   * Activities must depend on the UI-facing session facade instead of constructing this graph.
+   */
+  public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     TuyaT4APlatform platform = new TuyaT4APlatform();
     return new T4ABackend(this, platform, platform, listener);
   }
