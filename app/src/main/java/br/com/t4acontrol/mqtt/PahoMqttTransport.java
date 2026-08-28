@@ -16,8 +16,6 @@ public final class PahoMqttTransport implements MqttTransport {
   private volatile Listener listener;
   private volatile MqttAsyncClient client;
   private volatile boolean connecting;
-  private volatile String activeUri = "";
-  private volatile String activeClientId = "";
 
   @Override
   public void setListener(Listener listener) {
@@ -79,8 +77,6 @@ public final class PahoMqttTransport implements MqttTransport {
       }
 
       client = next;
-      activeUri = uri;
-      activeClientId = configuration.clientId;
       connecting = true;
       next.connect(
           options,
@@ -114,7 +110,7 @@ public final class PahoMqttTransport implements MqttTransport {
     connecting = false;
     if (current == null) return;
     try {
-      if (current.isConnected()) current.disconnectForcibly(1000L, 1000L, false);
+      if (current.isConnected()) current.disconnectForcibly(1000L, 1000L);
     } catch (MqttException ignored) {
       // Best effort. LWT covers unexpected connection loss.
     } finally {
@@ -149,8 +145,6 @@ public final class PahoMqttTransport implements MqttTransport {
   private void closeClient() {
     MqttAsyncClient current = client;
     client = null;
-    activeUri = "";
-    activeClientId = "";
     if (current == null) return;
     try {
       current.close(true);
