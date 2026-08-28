@@ -26,7 +26,9 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/T4AContracts.java',
             'backend/src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java',
             'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
-            'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java'
+            'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java',
+            'app/src/main/java/br/com/t4acontrol/session/T4ASession.java',
+            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java'
           )
           $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
           if ($missing.Count -gt 0) {
@@ -50,4 +52,18 @@ jobs:
             exit 1
           }
 
-          Write-Output 'Provisioning/transport contracts are committed and the Tuya boundary is clean.'
+          $activity = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/MainActivity.java' -Raw
+          if ($activity -match 'T4ABackend|TuyaT4APlatform|ThingHomeSdk|com\.thingclips\.') {
+            Write-Error 'MainActivity must depend on T4ASession, not backend/provider implementations.'
+            exit 1
+          }
+
+          $service = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java' -Raw
+          if (-not $service.Contains('createSessionBackend(this)')) {
+            Write-Error 'T4ASessionService must own the session backend created by the composition root.'
+            exit 1
+          }
+
+          Write-Output 'Provisioning/transport/session contracts are committed and architecture boundaries are clean.'
