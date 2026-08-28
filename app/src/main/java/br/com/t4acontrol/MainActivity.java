@@ -542,6 +542,19 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     themeTitle.setPadding(0, dp(5), 0, 0);
     displayCard.addView(themeTitle);
     themeButtons = addThemeSelector(displayCard);
+
+    LinearLayout integrations =
+        collapsibleSection(getString(R.string.integrations_section), "integrations");
+    Button mqtt =
+        actionCard(
+            getString(R.string.configure_mqtt),
+            BLUE,
+            () ->
+                startActivity(
+                    new Intent(this, br.com.t4acontrol.mqtt.MqttSettingsActivity.class)));
+    mqtt.setTag("always");
+    integrations.addView(mqtt);
+
     if (state.pairing != T4AState.Pairing.PAIRED) {
       buildPairingActions();
       return;
