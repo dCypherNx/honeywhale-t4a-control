@@ -74,7 +74,15 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   @Override
   public boolean onUnbind(Intent intent) {
     debug("UNBIND instance=" + instanceId);
-    return super.onUnbind(intent);
+    // Ask Android to invoke onRebind() when a new Activity binds to this still-running service.
+    // This does not restart the service or backend; it only makes the lifecycle visible in DEBUG.
+    return true;
+  }
+
+  @Override
+  public void onRebind(Intent intent) {
+    super.onRebind(intent);
+    debug("REBIND instance=" + instanceId);
   }
 
   @Override
