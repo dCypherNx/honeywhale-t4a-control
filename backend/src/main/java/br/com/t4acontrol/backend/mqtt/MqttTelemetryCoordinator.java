@@ -132,7 +132,10 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   }
 
   private void ensureConnection() {
-    if (!running || !configuration.enabled || transport.isConnected()) return;
+    if (!running
+        || !configuration.enabled
+        || transport.isConnected()
+        || transport.isConnecting()) return;
     raw("CONNECT " + endpoint(configuration));
     transport.connect(configuration, statusTopic(configuration), "offline");
   }
