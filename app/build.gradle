@@ -9,6 +9,13 @@ if (!tuyaPropertiesFile.exists()) {
 }
 tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
+def signingKeystore = System.getenv('ANDROID_SIGNING_KEYSTORE')
+def signingStorePassword = System.getenv('ANDROID_SIGNING_STORE_PASSWORD')
+def signingKeyAlias = System.getenv('ANDROID_SIGNING_KEY_ALIAS')
+def signingKeyPassword = System.getenv('ANDROID_SIGNING_KEY_PASSWORD')
+def ciSigningEnabled = [signingKeystore, signingStorePassword, signingKeyAlias, signingKeyPassword]
+        .every { it != null && !it.trim().isEmpty() }
+
 android {
     namespace 'br.com.t4acontrol'
     compileSdk 36
@@ -34,7 +41,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (ciSigningEnabled) {
+            ci {
+                storeFile file(signingKeystore)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (ciSigningEnabled) {
+                signingConfig signingConfigs.ci
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
