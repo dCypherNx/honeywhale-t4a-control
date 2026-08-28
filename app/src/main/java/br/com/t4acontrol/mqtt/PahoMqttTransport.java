@@ -62,7 +62,8 @@ public final class PahoMqttTransport implements MqttTransport {
 
       MqttConnectOptions options = new MqttConnectOptions();
       options.setMqttVersion(MqttConnectOptions.MQTT_VERSION_3_1_1);
-      options.setAutomaticReconnect(true);
+      // Reconnect cadence belongs to MqttTelemetryCoordinator, not the provider adapter.
+      options.setAutomaticReconnect(false);
       options.setCleanSession(true);
       options.setConnectionTimeout(10);
       options.setKeepAliveInterval(configuration.keepAliveSeconds);
@@ -84,7 +85,7 @@ public final class PahoMqttTransport implements MqttTransport {
           new org.eclipse.paho.client.mqttv3.IMqttActionListener() {
             @Override
             public void onSuccess(org.eclipse.paho.client.mqttv3.IMqttToken asyncActionToken) {
-              // connectComplete is the canonical connected callback, including reconnects.
+              // connectComplete is the canonical connected callback.
             }
 
             @Override
@@ -147,7 +148,7 @@ public final class PahoMqttTransport implements MqttTransport {
     client = null;
     if (current == null) return;
     try {
-      current.close(true);
+      current.close();
     } catch (MqttException ignored) {
       // Nothing else owns this client instance.
     }
