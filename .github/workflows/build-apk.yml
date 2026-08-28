@@ -71,6 +71,17 @@ jobs:
             throw 'Tuya t_s.bmp was not restored.'
           }
 
+      - name: Restore persistent Android signing key
+        shell: bash
+        env:
+          ANDROID_SIGNING_KEY_B64: ${{ secrets.ANDROID_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_SIGNING_KEY_B64}"
+          mkdir -p ci/signing
+          printf '%s' "${ANDROID_SIGNING_KEY_B64}" | base64 --decode > ci/signing/t4a-ci.keystore
+          test -s ci/signing/t4a-ci.keystore
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
@@ -78,7 +89,17 @@ jobs:
         run: ./gradlew --no-daemon :backend:verifyTuyaBoundary
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+        env:
+          ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
+          test -n "${ANDROID_SIGNING_KEY_ALIAS}"
+          test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
+          ./gradlew --no-daemon :app:assembleDebug
 
       - name: Stage APK
         shell: bash
