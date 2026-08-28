@@ -17,7 +17,8 @@ Funcional e implementado:
 - separação entre apresentação, provisionamento e transporte BLE;
 - tratamento defensivo da telemetria de bateria a partir dos padrões observados nos logs reais de rodagem;
 - opção para manter a tela ligada enquanto a Activity está visível;
-- build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente.
+- build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente;
+- atualização in-place do APK funcional pelo artefato da CI, preservando sandbox, login Tuya e dispositivo previamente vinculado.
 
 Ainda não implementado ou validado:
 
@@ -83,6 +84,29 @@ br.com.t4acontrol
 
 O build remoto não deve aplicar `applicationIdSuffix` enquanto utilizar as credenciais atuais da Tuya. A versão 1.1.1 / `versionCode 12` formaliza essa correção.
 
+### Baseline de assinatura e depuração confirmado
+
+O APK funcional instalado foi comparado com o `debug.keystore` usado originalmente no desenvolvimento. Ambos apresentam o mesmo certificado:
+
+```text
+alias: androiddebugkey
+SHA-256: DA:4F:06:64:EC:97:A6:F2:D3:6E:31:1F:FA:E4:89:57:CF:97:24:47:A9:C0:1E:42:C3:98:7D:3D:64:B6:6D:10
+```
+
+Uma cópia dedicada desse mesmo keystore passou a ser a identidade persistente da CI. O artefato `v1.1.1` / `versionCode 12` gerado pela esteira foi verificado com o mesmo `applicationId` e o mesmo fingerprint e instalado com `adb install -r` sobre a instalação funcional.
+
+Após a atualização:
+
+- o aplicativo iniciou normalmente;
+- o `ThingSdk` inicializou com sucesso;
+- o `t_cdc.tcfg` foi aceito;
+- a sessão Tuya existente continuou autenticada;
+- o sandbox em `/data/user/0/br.com.t4acontrol` foi preservado;
+- o inventário recuperou o T4A previamente vinculado;
+- não ocorreu o erro de incompatibilidade entre AppKey, AppSecret e packageName observado no experimento `.ci`.
+
+Esse artefato da CI é, portanto, o baseline de depuração reproduzível para as próximas análises. A chave privada, suas senhas e seu conteúdo nunca devem ser adicionados ao repositório; somente o fingerprint público é documentado aqui.
+
 ### Acesso não destrutivo ao sandbox Android
 
 A instalação funcional atual é `DEBUGGABLE`. Usando ADB e `run-as br.com.t4acontrol` foi possível inspecionar seu sandbox sem root, sem limpar dados, sem desparear o T4A e sem alterar a sessão Tuya existente.
@@ -147,19 +171,39 @@ O crescimento coincide exatamente com a área anexada após o `used size` anteri
 
 Nenhum valor potencialmente secreto desses arquivos deve ser registrado no README, em issues, logs públicos ou commits.
 
+### Material de dispositivo observado no inventário do SDK
+
+Com o baseline de CI instalado e o sandbox preservado, o log de inicialização do `ThingSdk` mostrou que a resposta de inventário do dispositivo já contém metadados e material de segurança associados ao T4A. Entre os campos observados estão:
+
+```text
+devId
+productId
+uuid
+mac
+localKey
+secKey
+communicationModes
+btScyChannel
+```
+
+Os valores de `localKey` e `secKey`, assim como identificadores de conta/sessão, são considerados segredos e não devem ser publicados no repositório nem mantidos em raw logs compartilhados. Essa descoberta muda a prioridade da investigação: antes de tentar decodificar MMKV manualmente, deve-se correlacionar o material já exposto pela API do SDK com a autenticação e o handshake BLE.
+
+O objetivo continua sendo descobrir o conjunto mínimo de dados de dispositivo necessário para uma sessão BLE válida. Não há evidência, neste ponto, de que o token de login Tuya precise ou deva ser transportado para o ESP32.
+
 ## Roadmap da análise Tuya/BLE
 
 A investigação seguirá esta ordem, mantendo o aplicativo funcional como referência e evitando ações destrutivas:
 
-1. **Estabelecer uma instalação de depuração reproduzível pela CI.** Comparar o certificado da instalação atualmente funcional com o certificado persistente usado pelo GitHub Actions. O mesmo `applicationId` só permite atualização in-place quando as assinaturas também são compatíveis. Não desinstalar a aplicação funcional antes de resolver essa transição.
-2. **Ler MMKV com implementação compatível.** Analisar cópias locais de `ble_business_data`, `preferences_global_key` e respectivos `.crc` usando a própria biblioteca MMKV ou um leitor compatível, enumerando nomes/tipos sem publicar valores sensíveis.
-3. **Identificar os registros produzidos na reconexão.** Repetir snapshots controlados antes/depois e correlacionar exatamente quais chaves MMKV recebem os blocos de 29 e 24 bytes.
-4. **Correlacionar persistência com objetos expostos pelo SDK.** Instrumentar somente `TuyaT4APlatform`/fronteira Tuya para registrar metadados neutros do dispositivo e da sessão, mantendo o raw log BLE original inalterado.
-5. **Separar vínculo persistente de material efêmero.** Determinar quais dados sobrevivem ao encerramento do processo, quais são recriados a cada conexão e quais dependem da conta/nuvem.
-6. **Testar portabilidade entre instalações/dispositivos.** Depois que a assinatura de CI estiver estabilizada, validar o mesmo `applicationId` em outro dispositivo Android e observar se login, inventário e T4A previamente vinculado podem ser restaurados sem novo pareamento físico.
-7. **Definir um bundle neutro de provisionamento.** Exportar somente os identificadores/segredos mínimos realmente necessários ao transporte BLE próprio, em formato controlado pelo projeto, sem transportar token de conta Tuya para o ESP32.
-8. **Implementar transporte BLE independente no Android.** Criar uma implementação de `T4ATransport` sem ThingClips, mantendo inicialmente o `T4AProvisioner` Tuya para obtenção/renovação do material necessário.
-9. **Migrar o transporte para ESP32.** Usar o mesmo bundle neutro para estabelecer a sessão BLE diretamente entre ESP32 e T4A. O objetivo final é `ESP32 ⇄ BLE ⇄ T4A`, sem dependência operacional da nuvem Tuya.
+1. **Baseline CI/debug — concluído.** `br.com.t4acontrol`, assinatura original, artefato `DEBUGGABLE`, instalação in-place e preservação do sandbox foram validados experimentalmente.
+2. **Capturar uma representação neutra do inventário Tuya.** Instrumentar somente a fronteira `TuyaT4APlatform` para registrar de forma controlada nomes/tipos e metadados necessários do T4A, sem despejar segredos em Logcat. `localKey` e `secKey` devem ser manipulados como segredo e, quando necessário, armazenados somente em meio seguro.
+3. **Correlacionar inventário com a abertura da sessão BLE.** Registrar eventos e parâmetros na fronteira imediatamente antes/depois de conexão, autenticação e estabelecimento do canal, preservando o raw log BLE original e evitando alterar comportamento do SDK.
+4. **Determinar o papel de `localKey` e `secKey`.** Verificar experimentalmente se um ou ambos participam diretamente do handshake, derivam outra chave ou servem somente ao provisionamento/cloud. Não assumir sem evidência qual campo é a chave BLE final.
+5. **Separar material persistente de material efêmero.** Repetir conexões, force-stop e cenários offline para identificar quais parâmetros permanecem válidos e quais são renovados a cada sessão.
+6. **Usar MMKV como evidência complementar.** Somente se a instrumentação do SDK não explicar completamente a sessão, ler `ble_business_data`, `preferences_global_key` e respectivos `.crc` com implementação MMKV compatível e correlacionar seus pequenos registros de reconexão com os eventos observados.
+7. **Testar portabilidade entre instalações/dispositivos Android.** Validar o mesmo `applicationId`/identidade Tuya em outro dispositivo e observar se o T4A previamente vinculado é restaurado após login sem novo pareamento físico, distinguindo vínculo de conta de material local do aparelho.
+8. **Definir um bundle neutro de provisionamento.** Exportar somente identificadores, versões de protocolo e segredos mínimos comprovadamente necessários ao transporte BLE próprio, sem transportar token de conta Tuya para o ESP32.
+9. **Implementar transporte BLE independente no Android.** Criar uma implementação de `T4ATransport` sem ThingClips, mantendo inicialmente o `T4AProvisioner` Tuya para obtenção/renovação do material necessário.
+10. **Migrar o transporte para ESP32.** Usar o mesmo bundle neutro para estabelecer a sessão BLE diretamente entre ESP32 e T4A. O objetivo final é `ESP32 ⇄ BLE ⇄ T4A`, sem dependência operacional da nuvem Tuya.
 
 A hipótese de trabalho é deliberadamente mais restrita do que "copiar o login Tuya": o alvo é descobrir **qual material de autorização o provisionamento Android entrega ou deriva para permitir uma sessão BLE válida com um T4A já vinculado**.
 
@@ -205,15 +249,16 @@ Release asset:  T4A-Control-debug.apk
 
 Essa configuração foi escolhida para permitir que um APK vindo diretamente da esteira seja instalado e posteriormente investigado por ADB a partir do ChatGPT para Windows, mantendo código, commit e binário rastreáveis.
 
-### Restrição de assinatura na migração para o APK da CI
+### Assinatura canônica da CI
 
-O `applicationId` correto não é suficiente para substituir uma instalação existente. Android exige também que o APK novo seja assinado por um certificado compatível com o APK instalado. A instalação funcional atual não deve ser removida até que seu certificado seja comparado com o certificado persistente da CI.
+A migração para o APK da CI foi concluída sem desinstalação. O APK funcional e o artefato remoto usam o mesmo certificado Android Debug, cujo fingerprint SHA-256 público está documentado acima. A CI deve continuar usando essa mesma chave em todos os builds futuros que pretendam atualizar `br.com.t4acontrol` preservando os dados existentes.
 
-A sequência segura para adotar o APK de CI como baseline de depuração é:
+Regras permanentes:
 
-1. extrair/imprimir somente os fingerprints dos certificados do APK atualmente instalado e do artefato CI;
-2. se coincidirem, instalar o artefato como atualização normal;
-3. se forem diferentes, decidir a estratégia de migração antes de qualquer desinstalação, pois remover o aplicativo apaga o sandbox e pode invalidar material protegido pelo Android Keystore;
-4. depois da migração, manter a mesma chave de assinatura CI para todos os builds de depuração futuros.
+1. não gerar uma nova chave para substituir a assinatura atual de `br.com.t4acontrol`;
+2. manter backup privado da chave canônica fora do repositório;
+3. validar `applicationId` e fingerprint antes de qualquer mudança futura na estratégia de assinatura;
+4. usar `adb install -r` para atualizar o baseline de depuração sem apagar o sandbox;
+5. nunca publicar keystore, senhas, AppKey, AppSecret, conteúdo MMKV, `localKey`, `secKey`, tokens de conta ou chaves derivadas.
 
-Secrets, AppKey, AppSecret, conteúdo MMKV, chaves derivadas e outros dados de autenticação nunca devem ser adicionados ao repositório público.
+Secrets, AppKey, AppSecret, conteúdo MMKV, chaves de dispositivo, chaves derivadas e outros dados de autenticação nunca devem ser adicionados ao repositório público.
