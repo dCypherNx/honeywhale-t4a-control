@@ -20,6 +20,7 @@ public final class T4ABackend {
   }
 
   private static final String DP_LOCK = "1";
+  private static final String DP_BATTERY = "3";
   private static final Set<String> QUIET_DPS = Set.of("2", "3", "5", "6", "12");
   private static final long STATE_REFRESH_MS = 2000L;
   private static final long FOREGROUND_RECONNECT_MS = 5000L;
@@ -60,6 +61,8 @@ public final class T4ABackend {
   private int rssiFailures;
   private Object pendingLockValue;
   private long pendingLockUntil;
+  private boolean batteryHasLiveSubFull;
+  private Integer lastLiveBatteryPercent;
 
   private final Runnable maintenance =
       new Runnable() {
@@ -385,6 +388,8 @@ public final class T4ABackend {
     rssi = 0;
     clearPendingLock();
     dps.clear();
+    batteryHasLiveSubFull = false;
+    lastLiveBatteryPercent = null;
     schema.clear();
     pendingDps.clear();
     pairing = T4AState.Pairing.UNPAIRED;
@@ -427,8 +432,13 @@ public final class T4ABackend {
   private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
     if (update == null) return;
     Map<String, Object> accepted = canonicalDps(update);
-    // Velocidade é telemetria instantânea: somente uma notificação DP pode alterá-la.
-    if (!confirmsCommand) accepted.remove("2");
+    // Velocidade é instantânea. Bateria de cache/INITIAL só pode confirmar um RX já conhecido.
+    if (!confirmsCommand) {
+      accepted.remove("2");
+      filterCachedBattery(accepted);
+    } else {
+      filterLiveBattery(accepted);
+    }
     if (confirmsCommand)
       for (String id : accepted.keySet()) {
         if (!DP_LOCK.equals(id) && pendingDps.remove(id) != null && !QUIET_DPS.contains(id))
@@ -453,6 +463,47 @@ public final class T4ABackend {
       accepted.put(DP_LOCK, preferences.getBoolean(PREF_LOCK_VALUE, true));
     }
     dps.putAll(accepted);
+  }
+
+  private void filterCachedBattery(Map<String, Object> accepted) {
+    if (!accepted.containsKey(DP_BATTERY)) return;
+    Integer percent = batteryPercent(accepted.get(DP_BATTERY));
+    if (percent == null
+        || percent < 0
+        || percent > 100
+        || lastLiveBatteryPercent == null
+        || !lastLiveBatteryPercent.equals(percent)) accepted.remove(DP_BATTERY);
+  }
+
+  private void filterLiveBattery(Map<String, Object> accepted) {
+    if (!accepted.containsKey(DP_BATTERY)) return;
+    Integer percent = batteryPercent(accepted.get(DP_BATTERY));
+    if (percent == null || percent < 0 || percent > 100) {
+      accepted.remove(DP_BATTERY);
+      return;
+    }
+    if (percent < 100) {
+      batteryHasLiveSubFull = true;
+      lastLiveBatteryPercent = percent;
+      return;
+    }
+    // Os logs reais mostram RX=100 espúrios intercalados entre leituras físicas <100.
+    // Depois que a sessão observou uma leitura sub-100, esses pacotes não podem restaurar
+    // artificialmente o SOC exibido. O RX bruto continua integralmente no raw log.
+    if (batteryHasLiveSubFull) {
+      accepted.remove(DP_BATTERY);
+      return;
+    }
+    lastLiveBatteryPercent = percent;
+  }
+
+  private Integer batteryPercent(Object value) {
+    if (value instanceof Number) return ((Number) value).intValue();
+    try {
+      return Integer.parseInt(String.valueOf(value));
+    } catch (NumberFormatException ignored) {
+      return null;
+    }
   }
 
   private Map<String, Object> canonicalDps(Map<String, Object> update) {
