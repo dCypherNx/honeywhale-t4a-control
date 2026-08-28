@@ -7,4 +7,7 @@ public interface MqttConfigurationStore {
   void save(MqttConfiguration configuration);
 
   void clear();
+
+  /** Cheap monotonic value used by runtime components to detect configuration changes. */
+  long revision();
 }
