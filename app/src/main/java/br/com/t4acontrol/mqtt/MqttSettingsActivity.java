@@ -17,6 +17,7 @@ import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -87,8 +88,7 @@ public final class MqttSettingsActivity extends Activity {
     activation.addView(status);
     body.addView(activation);
 
-    LinearLayout broker = card();
-    broker.addView(sectionTitle(R.string.mqtt_broker_section));
+    LinearLayout broker = collapsibleCard(body, R.string.mqtt_broker_section, "broker");
     host = field(broker, R.string.mqtt_host, R.string.mqtt_host_hint, InputType.TYPE_CLASS_TEXT);
     port =
         field(
@@ -104,10 +104,9 @@ public final class MqttSettingsActivity extends Activity {
             R.string.mqtt_keep_alive,
             R.string.mqtt_keep_alive_hint,
             InputType.TYPE_CLASS_NUMBER);
-    body.addView(broker);
 
-    LinearLayout credentials = card();
-    credentials.addView(sectionTitle(R.string.mqtt_credentials_section));
+    LinearLayout credentials =
+        collapsibleCard(body, R.string.mqtt_credentials_section, "credentials");
     username =
         field(
             credentials,
@@ -124,10 +123,9 @@ public final class MqttSettingsActivity extends Activity {
     secretNote.setTextColor(mutedColor());
     secretNote.setPadding(dp(3), 0, dp(3), dp(6));
     credentials.addView(secretNote);
-    body.addView(credentials);
 
-    LinearLayout identity = card();
-    identity.addView(sectionTitle(R.string.mqtt_identity_section));
+    LinearLayout identity =
+        collapsibleCard(body, R.string.mqtt_identity_section, "identity");
     clientId =
         field(
             identity,
@@ -144,7 +142,6 @@ public final class MqttSettingsActivity extends Activity {
     topicNote.setTextColor(mutedColor());
     topicNote.setPadding(dp(3), 0, dp(3), dp(6));
     identity.addView(topicNote);
-    body.addView(identity);
 
     Button save = new Button(this);
     save.setText(R.string.mqtt_save);
@@ -240,6 +237,47 @@ public final class MqttSettingsActivity extends Activity {
             ? getString(R.string.mqtt_status_saved)
             : getString(active ? R.string.mqtt_status_enabled : R.string.mqtt_status_disabled));
     status.setTextColor(active ? GREEN : mutedColor());
+  }
+
+  private LinearLayout collapsibleCard(LinearLayout parent, int titleId, String key) {
+    LinearLayout shell = card();
+    LinearLayout header = new LinearLayout(this);
+    header.setGravity(Gravity.CENTER_VERTICAL);
+    header.setMinimumHeight(dp(42));
+
+    TextView title = sectionTitle(titleId);
+    title.setPadding(dp(3), 0, 0, 0);
+    ImageView arrow = new ImageView(this);
+    arrow.setScaleType(ImageView.ScaleType.CENTER);
+    header.addView(title, new LinearLayout.LayoutParams(0, dp(42), 1));
+    header.addView(arrow, new LinearLayout.LayoutParams(dp(30), dp(30)));
+
+    LinearLayout content = vertical();
+    boolean expanded =
+        getSharedPreferences("t4a_settings", MODE_PRIVATE)
+            .getBoolean("mqtt_section_" + key, true);
+    content.setVisibility(expanded ? View.VISIBLE : View.GONE);
+    setSectionArrow(arrow, expanded);
+
+    header.setOnClickListener(
+        v -> {
+          boolean show = content.getVisibility() != View.VISIBLE;
+          content.setVisibility(show ? View.VISIBLE : View.GONE);
+          setSectionArrow(arrow, show);
+          getSharedPreferences("t4a_settings", MODE_PRIVATE)
+              .edit()
+              .putBoolean("mqtt_section_" + key, show)
+              .apply();
+        });
+
+    shell.addView(header);
+    shell.addView(content);
+    parent.addView(shell);
+    return content;
+  }
+
+  private void setSectionArrow(ImageView arrow, boolean expanded) {
+    arrow.setImageDrawable(icon(expanded ? "cmd-chevron-up" : "cmd-chevron-down", BLUE, 18));
   }
 
   private EditText field(LinearLayout parent, int labelId, int hintId, int inputType) {
