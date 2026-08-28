@@ -28,7 +28,13 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
             'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java',
             'app/src/main/java/br/com/t4acontrol/session/T4ASession.java',
-            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java'
+            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttConfiguration.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttConfigurationStore.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/AndroidMqttConfigurationStore.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettings.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/DefaultMqttSettings.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java'
           )
           $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
           if ($missing.Count -gt 0) {
@@ -66,4 +72,18 @@ jobs:
             exit 1
           }
 
-          Write-Output 'Provisioning/transport/session contracts are committed and architecture boundaries are clean.'
+          $mqttActivity = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java' -Raw
+          if ($mqttActivity -match 'br\.com\.t4acontrol\.backend|SharedPreferencesMqtt|AndroidMqttConfigurationStore') {
+            Write-Error 'MqttSettingsActivity must depend only on the UI-facing MqttSettings contract.'
+            exit 1
+          }
+
+          $mqttContract = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettings.java' -Raw
+          if ($mqttContract -match 'android\.|br\.com\.t4acontrol\.backend') {
+            Write-Error 'MqttSettings contract must remain Android- and backend-independent.'
+            exit 1
+          }
+
+          Write-Output 'Provisioning/transport/session/MQTT contracts are committed and architecture boundaries are clean.'
