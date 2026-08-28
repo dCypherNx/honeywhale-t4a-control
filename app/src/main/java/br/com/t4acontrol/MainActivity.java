@@ -5,7 +5,10 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
@@ -19,6 +22,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -35,8 +39,9 @@ import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AState;
+import br.com.t4acontrol.session.T4ASession;
+import br.com.t4acontrol.session.T4ASessionService;
 import com.mikepenz.iconics.IconicsDrawable;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -47,7 +52,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
-public final class MainActivity extends Activity implements T4ABackend.Listener {
+public final class MainActivity extends Activity implements T4ASession.Listener {
   private static final int REQUEST_BLUETOOTH = 100;
   private static final String DP_LOCK = "1",
       DP_SPEED = "2",
@@ -68,7 +73,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
       GREEN = 0xFF00A529,
       RED = 0xFFE91925;
 
-  private T4ABackend backend;
+  private T4ASession session = T4ASession.EMPTY;
   private T4AState state;
   private LinearLayout authPanel, devicePanel, contentPanel;
   private ScrollView rootScroll;
@@ -107,13 +112,34 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
   private int renderedEventCount = -1, renderedRawCount = -1;
   private boolean renderedLogSettings;
   private boolean darkModeAtBuild;
+  private boolean sessionBindingRequested;
+  private boolean uiForeground;
+
+  private final ServiceConnection sessionConnection =
+      new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+          if (!(service instanceof T4ASessionService.SessionBinder)) {
+            sessionBindingRequested = false;
+            return;
+          }
+          session = (T4ASession) service;
+          session.addListener(MainActivity.this);
+          session.setUiForeground(uiForeground);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+          session = T4ASession.EMPTY;
+          sessionBindingRequested = false;
+        }
+      };
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     buildUi();
     configureSystemBars();
-    backend = ((T4AApplication) getApplication()).createBackend(this);
     showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true);
     applyKeepScreenOn(preferences().getBoolean(PREF_KEEP_SCREEN_ON, true));
     ensurePermissions();
@@ -122,18 +148,21 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
   @Override
   protected void onResume() {
     super.onResume();
-    if (backend != null) backend.start();
+    uiForeground = true;
+    if (hasBluetoothPermissions()) connectSession();
+    session.setUiForeground(true);
   }
 
   @Override
   protected void onPause() {
-    if (backend != null) backend.setForeground(false);
+    uiForeground = false;
+    session.setUiForeground(false);
     super.onPause();
   }
 
   @Override
   protected void onDestroy() {
-    if (backend != null) backend.destroy();
+    disconnectSession();
     super.onDestroy();
   }
 
@@ -207,7 +236,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     login.setText(R.string.login);
     login.setOnClickListener(
         v -> {
-          backend.login(email.getText().toString().trim(), password.getText().toString());
+          session.login(email.getText().toString().trim(), password.getText().toString());
           password.setText("");
         });
     authPanel.addView(login);
@@ -467,11 +496,11 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
             getString(R.string.unlock),
             "cmd-lock-open",
             GREEN,
-            () -> backend.publish(DP_LOCK, true)),
+            () -> session.publish(DP_LOCK, true)),
         weight());
     locks.addView(
         lockActionCard(
-            getString(R.string.lock), "cmd-lock", RED, () -> backend.publish(DP_LOCK, false)),
+            getString(R.string.lock), "cmd-lock", RED, () -> session.publish(DP_LOCK, false)),
         weight());
     locks.addView(autoLockCard(), weight());
     controls.addView(locks);
@@ -570,7 +599,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
                     .setTitle(R.string.remove_pairing_question)
                     .setMessage(R.string.remove_pairing_message)
                     .setNegativeButton(R.string.cancel, null)
-                    .setPositiveButton(R.string.remove, (d, w) -> backend.unpair())
+                    .setPositiveButton(R.string.remove, (d, w) -> session.unpair())
                     .show());
     remove.setTag("always");
     pairingCard.addView(remove);
@@ -700,12 +729,12 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
   private void buildPairingActions() {
     if (state.pairing == T4AState.Pairing.READY) {
       Button b = alwaysButton(getString(R.string.pair_t4a));
-      b.setOnClickListener(v -> backend.pair());
+      b.setOnClickListener(v -> session.pair());
       contentPanel.addView(b);
     } else if (state.pairing != T4AState.Pairing.SCANNING
         && state.pairing != T4AState.Pairing.PAIRING) {
       Button b = alwaysButton(getString(R.string.find_t4a));
-      b.setOnClickListener(v -> backend.scan());
+      b.setOnClickListener(v -> session.scan());
       contentPanel.addView(b);
     }
   }
@@ -713,8 +742,8 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
   private void addBooleanTo(
       LinearLayout parent, String id, String a, boolean av, String b, boolean bv) {
     LinearLayout row = new LinearLayout(this);
-    row.addView(actionCard(a, BLUE, () -> backend.publish(id, av)), weight());
-    row.addView(actionCard(b, GREEN, () -> backend.publish(id, bv)), weight());
+    row.addView(actionCard(a, BLUE, () -> session.publish(id, av)), weight());
+    row.addView(actionCard(b, GREEN, () -> session.publish(id, bv)), weight());
     parent.addView(row);
   }
 
@@ -729,7 +758,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     Button[] buttons = new Button[labels.length];
     for (int i = 0; i < labels.length; i++) {
       String value = values[i];
-      buttons[i] = actionCard(labels[i], BLUE, () -> backend.setAutoLockDistance(value));
+      buttons[i] = actionCard(labels[i], BLUE, () -> session.setAutoLockDistance(value));
       buttons[i].setTag(labels[i]);
       buttons[i].setTextSize(11);
       buttons[i].setPadding(dp(2), dp(3), dp(2), dp(3));
@@ -748,7 +777,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     for (int i = 0; i < labelIds.length; i++) {
       Object value = values[i];
       String label = getString(labelIds[i]);
-      buttons[i] = actionCard(label, BLUE, () -> backend.publish(id, value));
+      buttons[i] = actionCard(label, BLUE, () -> session.publish(id, value));
       buttons[i].setTag(label);
       buttons[i].setTextSize(12);
       LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), 1);
@@ -785,7 +814,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     for (int i = 0; i < labels.length; i++) {
       Object value = values[i];
       int color = i == 0 ? 0xFF08A6B7 : i == 1 ? GREEN : i == 2 ? 0xFFFF8A00 : RED;
-      buttons[i] = actionCard(labels[i], color, () -> backend.publish(id, value));
+      buttons[i] = actionCard(labels[i], color, () -> session.publish(id, value));
       buttons[i].setTag(labels[i]);
       if (DP_LEVEL.equals(id)) {
         Drawable icon = iconDrawable(modeIcons[i], color, 22);
@@ -829,7 +858,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
           boolean checked = "on".contentEquals(control.getContentDescription());
           tile.setEnabled(false);
           control.setEnabled(false);
-          backend.publish(id, checked ? offValue : onValue);
+          session.publish(id, checked ? offValue : onValue);
         });
     return control;
   }
@@ -1124,7 +1153,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
     autoLockLabel.setTextColor(BLUE);
     card.addView(autoLockButton, new LinearLayout.LayoutParams(dp(34), dp(34)));
     card.addView(autoLockLabel);
-    View.OnClickListener action = v -> backend.setAutoLockEnabled(!state.autoLockEnabled);
+    View.OnClickListener action = v -> session.setAutoLockEnabled(!state.autoLockEnabled);
     card.setOnClickListener(action);
     autoLockButton.setOnClickListener(action);
     return card;
@@ -1360,9 +1389,7 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
   }
 
   private void ensurePermissions() {
-    if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED
-        || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED)
+    if (!hasBluetoothPermissions())
       requestPermissions(
           new String[] {
             Manifest.permission.BLUETOOTH_SCAN,
@@ -1370,6 +1397,53 @@ public final class MainActivity extends Activity implements T4ABackend.Listener 
             Manifest.permission.ACCESS_FINE_LOCATION
           },
           REQUEST_BLUETOOTH);
+  }
+
+  private boolean hasBluetoothPermissions() {
+    return checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+        && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+            == PackageManager.PERMISSION_GRANTED;
+  }
+
+  @Override
+  public void onRequestPermissionsResult(
+      int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if (requestCode != REQUEST_BLUETOOTH) return;
+    if (hasBluetoothPermissions()) {
+      if (uiForeground) connectSession();
+    } else {
+      Toast.makeText(
+              this,
+              "Permissões Bluetooth são necessárias para manter a sessão T4A.",
+              Toast.LENGTH_LONG)
+          .show();
+    }
+  }
+
+  private void connectSession() {
+    if (sessionBindingRequested || !hasBluetoothPermissions()) return;
+    Intent intent = new Intent(this, T4ASessionService.class);
+    try {
+      startForegroundService(intent);
+      sessionBindingRequested = bindService(intent, sessionConnection, BIND_AUTO_CREATE);
+    } catch (RuntimeException error) {
+      sessionBindingRequested = false;
+      Toast.makeText(this, "Não foi possível iniciar a sessão T4A.", Toast.LENGTH_LONG).show();
+    }
+  }
+
+  private void disconnectSession() {
+    session.removeListener(this);
+    session.setUiForeground(false);
+    session = T4ASession.EMPTY;
+    if (!sessionBindingRequested) return;
+    try {
+      unbindService(sessionConnection);
+    } catch (IllegalArgumentException ignored) {
+      // Binding may already have been removed by the system.
+    }
+    sessionBindingRequested = false;
   }
 
   private int dp(int value) {
