@@ -16,6 +16,7 @@ import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.T4AApplication;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AState;
+import br.com.t4acontrol.mqtt.MqttSettingsActivity;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -74,8 +75,6 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   @Override
   public boolean onUnbind(Intent intent) {
     debug("UNBIND instance=" + instanceId);
-    // Ask Android to invoke onRebind() when a new Activity binds to this still-running service.
-    // This does not restart the service or backend; it only makes the lifecycle visible in DEBUG.
     return true;
   }
 
@@ -146,6 +145,14 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
+    Intent mqttIntent = new Intent(this, MqttSettingsActivity.class);
+    PendingIntent mqtt =
+        PendingIntent.getActivity(
+            this,
+            2,
+            mqttIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
     Intent stopIntent = new Intent(this, T4ASessionService.class).setAction(ACTION_STOP);
     PendingIntent stop =
         PendingIntent.getService(
@@ -161,6 +168,7 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
         .setContentIntent(open)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
+        .addAction(new Notification.Action.Builder(null, "MQTT", mqtt).build())
         .addAction(new Notification.Action.Builder(null, "Encerrar", stop).build())
         .build();
   }
