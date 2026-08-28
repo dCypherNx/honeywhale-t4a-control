@@ -1001,7 +1001,11 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
 
   private void setActionsEnabled(View view, boolean enabled) {
     if (view instanceof Button b && !(view instanceof Switch))
-      b.setEnabled(enabled || "always".equals(b.getTag()) || contains(autoLockDistanceButtons, b));
+      b.setEnabled(
+              enabled
+                      || "always".equals(b.getTag())
+                      || contains(autoLockDistanceButtons, b)
+                      || contains(themeButtons, b));
     if (view instanceof LinearLayout g)
       for (int i = 0; i < g.getChildCount(); i++) setActionsEnabled(g.getChildAt(i), enabled);
   }
