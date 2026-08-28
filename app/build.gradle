@@ -55,6 +55,7 @@ android {
     buildTypes {
         debug {
             if (ciSigningEnabled) {
+                applicationIdSuffix '.ci'
                 signingConfig signingConfigs.ci
             }
         }
