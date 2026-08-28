@@ -9,6 +9,9 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.SystemClock;
+import android.util.Log;
+import br.com.t4acontrol.BuildConfig;
 import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.T4AApplication;
 import br.com.t4acontrol.backend.T4ABackend;
@@ -26,11 +29,13 @@ import java.util.concurrent.CopyOnWriteArraySet;
 public final class T4ASessionService extends Service implements T4ABackend.Listener {
   public static final String ACTION_STOP = "br.com.t4acontrol.session.STOP";
 
+  private static final String TAG = "T4ASession";
   private static final String CHANNEL_ID = "t4a_session";
   private static final int NOTIFICATION_ID = 4101;
 
   private final Set<T4ASession.Listener> listeners = new CopyOnWriteArraySet<>();
   private final SessionBinder binder = new SessionBinder();
+  private final String instanceId = Long.toHexString(SystemClock.elapsedRealtime());
 
   private T4ABackend backend;
   private T4AState lastState;
@@ -38,6 +43,7 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
   @Override
   public void onCreate() {
     super.onCreate();
+    debug("CREATE instance=" + instanceId);
     createNotificationChannel();
     startForeground(
         NOTIFICATION_ID,
@@ -49,6 +55,8 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
+    String action = intent == null ? "<restart>" : String.valueOf(intent.getAction());
+    debug("START instance=" + instanceId + " action=" + action);
     if (intent != null && ACTION_STOP.equals(intent.getAction())) {
       stopForeground(STOP_FOREGROUND_REMOVE);
       stopSelf();
@@ -59,11 +67,19 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
 
   @Override
   public IBinder onBind(Intent intent) {
+    debug("BIND instance=" + instanceId);
     return binder;
   }
 
   @Override
+  public boolean onUnbind(Intent intent) {
+    debug("UNBIND instance=" + instanceId);
+    return super.onUnbind(intent);
+  }
+
+  @Override
   public void onDestroy() {
+    debug("DESTROY instance=" + instanceId);
     listeners.clear();
     if (backend != null) {
       backend.destroy();
@@ -81,11 +97,13 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
 
   @Override
   public void onEvent(String event) {
+    debug("EVENT " + event);
     for (T4ASession.Listener listener : listeners) listener.onEvent(event);
   }
 
   @Override
   public void onRawLog(String entry) {
+    debug("RAW " + entry);
     for (T4ASession.Listener listener : listeners) listener.onRawLog(entry);
   }
 
@@ -97,6 +115,10 @@ public final class T4ASessionService extends Service implements T4ABackend.Liste
 
   private void removeListener(T4ASession.Listener listener) {
     if (listener != null) listeners.remove(listener);
+  }
+
+  private void debug(String message) {
+    if (BuildConfig.DEBUG) Log.d(TAG, message);
   }
 
   private void createNotificationChannel() {
