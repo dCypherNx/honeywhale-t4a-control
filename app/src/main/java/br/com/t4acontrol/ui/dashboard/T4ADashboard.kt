@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -244,12 +246,17 @@ private fun SpeedCard(
                 )
             }
 
-            Row(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            BoxWithConstraints(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(20.dp),
             ) {
-                (5..50 step 5).forEach { value ->
-                    Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp)
+                (5..45 step 5).forEach { value ->
+                    val centerX = maxWidth * (value / 50f)
+                    Box(
+                        modifier = Modifier.offset(x = centerX - 12.dp).width(24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp)
+                    }
                 }
             }
         }
@@ -289,6 +296,15 @@ private fun SpeedSegments(
             )
         }
 
+        for (value in 5..45 step 5) {
+            val separatorX = left + width * (value / 50f)
+            drawRect(
+                color = Color.White,
+                topLeft = Offset(separatorX - 0.5.dp.toPx(), top),
+                size = Size(1.dp.toPx(), bottom - top),
+            )
+        }
+
         if (mode != RidingMode.UNKNOWN && mode.limitKmh in 1..49) {
             val markerX = left + width * (mode.limitKmh / 50f)
             drawRect(
@@ -312,7 +328,8 @@ private fun MetricsCard(
     DashboardCard(surface, outline) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             MetricWithIcon(
-                icon = if (state.odometerLabel.contains("viagem", ignoreCase = true)) "cmd-map-marker-distance" else "cmd-speedometer",
+                icon = if (state.odometerLabel.equals("Percurso", ignoreCase = true)) "cmd-map-marker-distance" else "cmd-speedometer",
+                label = state.odometerLabel,
                 value = state.odometerValue,
                 foreground = foreground,
                 muted = muted,
@@ -321,6 +338,7 @@ private fun MetricsCard(
             Box(Modifier.width(1.dp).height(44.dp).background(outline))
             MetricWithIcon(
                 icon = "cmd-clock-outline",
+                label = "Tempo de uso",
                 value = state.usageTime,
                 foreground = foreground,
                 muted = muted,
@@ -333,6 +351,7 @@ private fun MetricsCard(
 @Composable
 private fun MetricWithIcon(
     icon: String,
+    label: String,
     value: String,
     foreground: Color,
     muted: Color,
@@ -349,12 +368,14 @@ private fun MetricWithIcon(
             iconSize = 23.dp,
             modifier = Modifier.size(28.dp),
         )
-        Text(
-            value,
-            color = if (value.isBlank()) muted else foreground,
-            fontSize = T4ADashboardTokens.MetricFontSize,
-            modifier = Modifier.padding(start = 7.dp),
-        )
+        Column(modifier = Modifier.padding(start = 7.dp)) {
+            Text(label, color = muted, fontSize = 10.sp)
+            Text(
+                value,
+                color = if (value.isBlank()) muted else foreground,
+                fontSize = T4ADashboardTokens.MetricFontSize,
+            )
+        }
     }
 }
 
@@ -393,6 +414,7 @@ private fun RidingControls(
             )
         }
 
+        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(RidingMode.WALK, RidingMode.ECO, RidingMode.RACE, RidingMode.SPORT).forEach { mode ->
                 ModeTile(
@@ -407,6 +429,7 @@ private fun RidingControls(
             }
         }
 
+        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleTile(
                 label = if (state.lightOn) "Farol\nLigado" else "Farol\nDesligado",
@@ -443,6 +466,7 @@ private fun RidingControls(
             ) { actions.setCruise(!state.cruiseOn) }
         }
 
+        Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ActionTile(
                 label = "Desbloquear",
