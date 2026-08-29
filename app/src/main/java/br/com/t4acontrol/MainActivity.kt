@@ -1,6 +1,7 @@
 package br.com.t4acontrol
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -9,23 +10,31 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Insets
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.MediaStore
+import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -312,17 +321,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         SettingsSection("Bateria", foreground) {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
             var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
-            Text(
-                "Intervalo mínimo para detectar nova recarga: ${BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]} h",
-                color = foreground,
-            )
+            Text("Intervalo mínimo para detectar nova recarga: ${BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]} h", color = foreground)
             Slider(
                 value = sliderIndex,
                 onValueChange = { sliderIndex = it },
                 onValueChangeFinished = {
-                    session.setBatteryRechargeMinGapHours(
-                        BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]
-                    )
+                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)])
                 },
                 valueRange = 0f..3f,
                 steps = 2,
@@ -407,27 +411,22 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun EventLog(settings: Boolean, foreground: ComposeColor) {
         val source = if (settings) rawHistory else eventHistory
         val entries = if (settings) source else source.takeLast(10)
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (settings) "Log raw" else "Eventos",
-                color = ComposeColor(0xFF075EF0),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            if (settings) {
-                TextButton(onClick = { copyRawLog() }) { Text("Copiar") }
-                TextButton(onClick = { saveRawLog() }) { Text("Salvar") }
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Text(if (settings) "Log raw" else "Eventos", color = ComposeColor(0xFF075EF0), fontWeight = FontWeight.Bold)
+            entries.asReversed().forEach { entry ->
+                Text(
+                    entry,
+                    color = foreground,
+                    fontFamily = if (settings) FontFamily.Monospace else FontFamily.Default,
+                    fontSize = if (settings) 10.sp else 12.sp,
+                )
             }
-        }
-        entries.asReversed().forEach {
-            Text(
-                it,
-                color = foreground,
-                fontSize = if (settings) 10.sp else 12.sp,
-                fontFamily = if (settings) FontFamily.Monospace else FontFamily.Default,
-            )
+            if (settings) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { copyRawLog() }) { Text("Copiar") }
+                    OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") }
+                }
+            }
         }
     }
 
@@ -447,32 +446,30 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     override fun onRawLog(value: String) {
-        runOnUiThread {
-            rawHistory += SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value
-        }
+        runOnUiThread { appendRaw(value) }
     }
 
     private fun appendEvent(value: String) {
-        eventHistory += DateFormat.getTimeInstance().format(Date()) + "  " + value
+        eventHistory.add(DateFormat.getTimeInstance().format(Date()) + "  " + value)
+    }
+
+    private fun appendRaw(value: String) {
+        rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value)
     }
 
     private fun rawLogText(): String = buildString {
-        append("T4A Control ")
-        append(BuildConfig.VERSION_NAME)
-        append(" (versionCode=")
-        append(BuildConfig.VERSION_CODE)
-        append(")\n")
+        append("T4A ${BuildConfig.VERSION_NAME} (versionCode ${BuildConfig.VERSION_CODE})\n")
         rawHistory.forEach { append(it).append('\n') }
     }
 
     private fun copyRawLog() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("T4A raw log", rawLogText()))
-        Toast.makeText(this, "Log raw copiado.", Toast.LENGTH_SHORT).show()
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.raw_log), rawLogText()))
+        Toast.makeText(this, R.string.raw_log_copied, Toast.LENGTH_SHORT).show()
     }
 
     private fun saveRawLog() {
-        val fileName = "t4a-raw-" + SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date()) + ".log"
+        val fileName = "t4a-raw-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())}.log"
         var uri: android.net.Uri? = null
         try {
             val values = android.content.ContentValues().apply {
@@ -482,52 +479,52 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: error("MediaStore insert returned null")
-            contentResolver.openOutputStream(uri, "w")!!.use {
-                it.write(rawLogText().toByteArray(Charsets.UTF_8))
-            }
+                ?: throw java.io.IOException("MediaStore insert returned null")
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                output.write(rawLogText().toByteArray(Charsets.UTF_8))
+            } ?: throw java.io.IOException("MediaStore output stream unavailable")
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)
             contentResolver.update(uri, values, null, null)
             Toast.makeText(this, "Log salvo em Downloads/T4A: $fileName", Toast.LENGTH_LONG).show()
-        } catch (_: Exception) {
-            uri?.let { runCatching { contentResolver.delete(it, null, null) } }
+        } catch (error: Exception) {
+            uri?.let {
+                runCatching { contentResolver.delete(it, null, null) }
+            }
             Toast.makeText(this, "Não foi possível salvar o log raw.", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun showBatteryRechargePromptIfNeeded(value: T4AState?) {
-        if (!uiForeground || value?.pendingBatteryRechargePercent == null || value.pendingBatteryRechargeDetectedAt == null) return
-        if (batteryRechargeDialog?.isShowing == true) return
+    private fun showBatteryRechargePromptIfNeeded(current: T4AState?) {
+        if (!uiForeground || current?.pendingBatteryRechargePercent == null || batteryRechargeDialog != null) return
+        val percent = current.pendingBatteryRechargePercent
         batteryRechargeDialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Possível nova recarga")
-            .setMessage("A bateria reapareceu em ${value.pendingBatteryRechargePercent}%. Iniciar um novo ciclo de bateria?")
-            .setNegativeButton("Não") { _, _ -> session.resolveBatteryRecharge(false) }
-            .setPositiveButton("Sim") { _, _ -> session.resolveBatteryRecharge(true) }
-            .setCancelable(false)
-            .create()
-            .also { dialog ->
-                dialog.setOnDismissListener { batteryRechargeDialog = null }
-                dialog.show()
+            .setTitle("Recarga detectada")
+            .setMessage("A bateria subiu para $percent%. Deseja iniciar um novo ciclo de bateria?")
+            .setPositiveButton("Novo ciclo") { _, _ ->
+                session.resolveBatteryRecharge(true)
+                batteryRechargeDialog = null
             }
+            .setNegativeButton("Manter ciclo") { _, _ ->
+                session.resolveBatteryRecharge(false)
+                batteryRechargeDialog = null
+            }
+            .setOnCancelListener { batteryRechargeDialog = null }
+            .create()
+        batteryRechargeDialog?.show()
     }
 
     private fun confirmUnpair() {
         android.app.AlertDialog.Builder(this)
-            .setTitle("Remover pareamento?")
-            .setMessage("O T4A será removido da conta e precisará ser pareado novamente.")
-            .setNegativeButton("Cancelar", null)
+            .setTitle("Remover pareamento")
+            .setMessage("Deseja remover o pareamento atual do T4A?")
             .setPositiveButton("Remover") { _, _ -> session.unpair() }
+            .setNegativeButton("Cancelar", null)
             .show()
     }
 
     private fun batteryRechargeGapIndex(hours: Int): Int =
-        BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 0
-
-    private fun applyKeepScreenOn(enabled: Boolean) {
-        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
+        BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
 
     private fun applyTheme(value: String) {
         themeMode = value
@@ -535,25 +532,30 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         configurationTick++
     }
 
-    private fun isDarkMode(): Boolean {
-        return when (themeMode) {
-            "dark" -> true
-            "light" -> false
-            else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        }
+    private fun isDarkMode(): Boolean = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
 
     private fun configureSystemBars(darkMode: Boolean) {
         window.statusBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
         window.navigationBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
         window.decorView.windowInsetsController?.let { controller ->
-            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            controller.setSystemBarsAppearance(if (darkMode) 0 else mask, mask)
+            val appearance = if (darkMode) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            controller.setSystemBarsAppearance(
+                appearance,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+            )
         }
     }
 
     private fun preferences() = getSharedPreferences("t4a_settings", MODE_PRIVATE)
+
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 
     private fun ensurePermissions() {
         if (!hasBluetoothPermissions()) {
@@ -574,7 +576,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
-        permissions: Array<out String>,
+        permissions: Array<String>,
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
@@ -596,7 +598,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         try {
             startForegroundService(intent)
             sessionBindingRequested = bindService(intent, sessionConnection, BIND_AUTO_CREATE)
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
             sessionBindingRequested = false
             Toast.makeText(this, "Não foi possível iniciar a sessão T4A.", Toast.LENGTH_LONG).show()
         }
