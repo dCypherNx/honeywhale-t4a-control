@@ -43,6 +43,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -383,7 +384,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             modifier = Modifier.fillMaxWidth(),
         ) {
             BATTERY_RECHARGE_GAP_HOURS.forEachIndexed { index, hours ->
-                androidx.compose.material3.SegmentedButton(
+                SegmentedButton(
                     selected = selectedIndex == index,
                     onClick = {
                         onValueChange(index.toFloat())
