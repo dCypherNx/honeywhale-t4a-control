@@ -16,6 +16,15 @@ def signingKeyPassword = System.getenv('ANDROID_SIGNING_KEY_PASSWORD')
 def ciSigningEnabled = [signingKeystore, signingStorePassword, signingKeyAlias, signingKeyPassword]
         .every { it != null && !it.trim().isEmpty() }
 
+def injectedVersionName = System.getenv('T4A_VERSION_NAME')
+def injectedVersionCode = System.getenv('T4A_VERSION_CODE')
+def appVersionName = injectedVersionName != null && !injectedVersionName.trim().isEmpty()
+        ? injectedVersionName.trim()
+        : '1.1.1'
+def appVersionCode = injectedVersionCode != null && !injectedVersionCode.trim().isEmpty()
+        ? Integer.parseInt(injectedVersionCode.trim())
+        : 12
+
 android {
     namespace 'br.com.t4acontrol'
     compileSdk 36
@@ -29,8 +38,8 @@ android {
         applicationId 'br.com.t4acontrol'
         minSdk 31
         targetSdk 35
-        versionCode 12
-        versionName '1.1.1'
+        versionCode appVersionCode
+        versionName appVersionName
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),
