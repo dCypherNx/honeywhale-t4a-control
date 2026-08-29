@@ -17,7 +17,6 @@ import android.provider.MediaStore
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.ImageView
-import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -32,20 +31,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -94,14 +91,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private var sessionBindingRequested = false
     private var uiForeground = false
     private var batteryRechargeDialog: android.app.AlertDialog? = null
-
     private var state by mutableStateOf<T4AState?>(null)
     private var settings by mutableStateOf(false)
     private var showTotalOdometer by mutableStateOf(true)
     private var themeMode by mutableStateOf("system")
     private var configurationTick by mutableIntStateOf(0)
     private var lastStatusEvent = ""
-
     private val eventHistory = mutableStateListOf<String>()
     private val rawHistory = mutableStateListOf<String>()
 
@@ -135,16 +130,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
 
         override fun setLight(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_LIGHT, enabled)
-
-        override fun setInitialPush(enabled: Boolean) =
-            session.publish(T4ADashboardMapper.DP_START, if (enabled) "not_zero_start" else "zero_start")
-
+        override fun setInitialPush(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_START, if (enabled) "not_zero_start" else "zero_start")
         override fun setCruise(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_CRUISE, enabled)
-
         override fun setLocked(locked: Boolean) = session.publish(T4ADashboardMapper.DP_LOCK, !locked)
-
         override fun setAutoLock(enabled: Boolean) = session.setAutoLockEnabled(enabled)
-
         override fun toggleOdometer() {
             showTotalOdometer = !showTotalOdometer
             preferences().edit().putBoolean(PREF_TOTAL_ODOMETER, showTotalOdometer).apply()
@@ -157,7 +146,6 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         themeMode = preferences().getString(PREF_THEME, "system") ?: "system"
         applyKeepScreenOn(preferences().getBoolean(PREF_KEEP_SCREEN_ON, true))
         ensurePermissions()
-
         setContent {
             configurationTick
             val darkMode = isDarkMode()
@@ -197,7 +185,6 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val background = if (darkMode) ComposeColor(0xFF0D1117) else ComposeColor(0xFFF7F8FB)
         val foreground = if (darkMode) ComposeColor(0xFFF1F5F9) else ComposeColor(0xFF101820)
         val current = state
-
         MaterialTheme {
             BackHandler(enabled = settings) { settings = false }
             Box(
@@ -211,31 +198,26 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Header(foreground)
-
                     if (current == null) {
                         Text("Inicializando sessão T4A…", color = foreground)
                         return@Column
                     }
-
                     if (!current.authenticated) {
                         LoginPanel(foreground)
                         return@Column
                     }
-
                     if (current.pairing != T4AState.Pairing.PAIRED) {
                         Text(current.message, color = foreground)
                         PairingPanel(current, foreground)
                         EventLog(settings = false, foreground = foreground)
                         return@Column
                     }
-
                     if (settings) {
                         SettingsPanel(current, foreground)
                         EventLog(settings = true, foreground = foreground)
                     } else {
-                        val dashboardState = T4ADashboardMapper.map(current, showTotalOdometer)
                         T4ADashboard(
-                            state = dashboardState,
+                            state = T4ADashboardMapper.map(current, showTotalOdometer),
                             actions = dashboardActions,
                             darkMode = darkMode,
                         )
@@ -323,19 +305,25 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         SettingsSection(getString(R.string.battery_section), foreground, "battery") {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
-            var seekIndex by remember(current.batteryRechargeMinGapHours) { mutableIntStateOf(currentIndex) }
+            var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
             Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
             Text(
-                getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[seekIndex.coerceIn(0, 3)]),
+                getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]),
                 color = ComposeColor(0xFF075EF0),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth(),
             )
-            NativeBatteryRechargeSeekBar(
-                index = seekIndex,
-                onIndexChanged = { seekIndex = it },
-                onCommit = { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) },
+            Slider(
+                value = sliderIndex,
+                onValueChange = { sliderIndex = it },
+                onValueChangeFinished = {
+                    val index = sliderIndex.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
+                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index])
+                },
+                valueRange = 0f..3f,
+                steps = 2,
+                modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.fillMaxWidth()) {
                 BATTERY_RECHARGE_GAP_HOURS.forEach { hours ->
@@ -409,7 +397,6 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val header = if (isDarkMode()) ComposeColor(0xFF202836) else ComposeColor(0xFFF8FAFD)
         val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
         var expanded by remember(key) { mutableStateOf(preferences().getBoolean("section_$key", true)) }
-
         Column(
             Modifier.fillMaxWidth()
                 .shadow(2.dp, RoundedCornerShape(16.dp))
@@ -427,13 +414,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     .padding(start = 7.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    title,
-                    color = ComposeColor(0xFF075EF0),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).padding(vertical = 9.dp),
-                )
+                Text(title, color = ComposeColor(0xFF075EF0), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
                 MdiIcon(
                     name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
                     color = ComposeColor(0xFF075EF0),
@@ -445,43 +426,9 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    content()
-                }
+                ) { content() }
             }
         }
-    }
-
-    @Composable
-    private fun NativeBatteryRechargeSeekBar(
-        index: Int,
-        onIndexChanged: (Int) -> Unit,
-        onCommit: (Int) -> Unit,
-    ) {
-        AndroidView(
-            factory = { context -> SeekBar(context) },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            update = { seekBar ->
-                seekBar.max = BATTERY_RECHARGE_GAP_HOURS.size - 1
-                seekBar.setPadding(8, 2, 8, 0)
-                if (!seekBar.isPressed && seekBar.progress != index) seekBar.progress = index
-                seekBar.setOnSeekBarChangeListener(
-                    object : SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(view: SeekBar, progress: Int, fromUser: Boolean) {
-                            if (fromUser) onIndexChanged(progress.coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex))
-                        }
-
-                        override fun onStartTrackingTouch(view: SeekBar) = Unit
-
-                        override fun onStopTrackingTouch(view: SeekBar) {
-                            val committed = view.progress.coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
-                            onIndexChanged(committed)
-                            onCommit(committed)
-                        }
-                    }
-                )
-            },
-        )
     }
 
     @Composable
@@ -562,7 +509,6 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     override fun onEvent(value: String) { runOnUiThread { appendEvent(value) } }
     override fun onRawLog(value: String) { runOnUiThread { appendRaw(value) } }
-
     private fun appendEvent(value: String) { eventHistory.add(DateFormat.getTimeInstance().format(Date()) + "  " + value) }
     private fun appendRaw(value: String) { rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value) }
 
