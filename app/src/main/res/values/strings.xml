@@ -57,6 +57,14 @@
     <string name="settings">Ajustes</string>
     <string name="connection_device_section">Conexão e dispositivo</string>
     <string name="display_section">Tela e funcionamento</string>
+    <string name="battery_section">Bateria</string>
+    <string name="battery_recharge_detection">Tempo mínimo para detectar nova carga</string>
+    <string name="battery_recharge_detection_note">A heurística só sugerirá um novo ciclo após este intervalo; a redefinição sempre exigirá sua confirmação.</string>
+    <string name="battery_recharge_gap_value">%1$d h</string>
+    <string name="battery_recharge_possible_title">Possível recarga detectada</string>
+    <string name="battery_recharge_possible_message">A bateria voltou a %1$d%% e atende aos critérios de possível recarga. Deseja iniciar uma nova medição mínima e máxima da bateria?</string>
+    <string name="battery_recharge_confirm">Sim, iniciar novo ciclo</string>
+    <string name="battery_recharge_reject">Não, manter ciclo atual</string>
     <string name="integrations_section">Integrações</string>
     <string name="configure_mqtt">Configurar MQTT</string>
     <string name="keep_screen_on">Manter tela ligada durante o uso</string>
