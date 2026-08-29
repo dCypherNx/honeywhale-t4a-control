@@ -1,6 +1,6 @@
 # T4A Control para Android
 
-Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A pelo Tuya Smart SDK.
+Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A. O provisionamento e o transporte BLE continuam atualmente apoiados no Tuya Smart SDK, enquanto sessão persistente, MQTT, Home Assistant e geolocalização já possuem camadas próprias e desacopladas da UI.
 
 ## Estado atual (v1.1.1)
 
@@ -10,34 +10,56 @@ Funcional e implementado:
 - restauração do T4A previamente pareado;
 - descoberta, ativação e remoção do pareamento;
 - conexão e reconexão BLE automáticas;
+- sessão persistente em `T4ASessionService`, independente do ciclo de vida da `MainActivity`;
 - atualização dos DPS recebidos, inclusive mudanças externas;
 - comandos absolutos de farol e bloqueio;
 - seleção explícita de modo, unidade, piloto automático e tipo de partida;
+- bloqueio/desbloqueio automático por proximidade Bluetooth com limiares configuráveis;
 - painel de velocidade, bateria, odômetro e percurso;
-- separação entre apresentação, provisionamento e transporte BLE;
+- separação entre apresentação, sessão, provisionamento e transporte BLE;
 - tratamento defensivo da telemetria de bateria a partir dos padrões observados nos logs reais de rodagem;
 - opção para manter a tela ligada enquanto a Activity está visível;
+- configuração MQTT com TCP/TLS/WS/WSS e senha protegida pelo Android Keystore;
+- publicação MQTT **somente de saída**, sem comandos remotos para o T4A;
+- telemetria MQTT retained e disponibilidade/LWT;
+- Home Assistant MQTT Device Discovery com dispositivo T4A e entidades de telemetria;
+- geolocalização Android desacoplada do Tuya, publicada em `t4a/location` e incorporada à telemetria;
+- `device_tracker` GPS do Home Assistant definido no mesmo dispositivo T4A;
 - build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente;
 - atualização in-place do APK funcional pelo artefato da CI, preservando sandbox, login Tuya e dispositivo previamente vinculado.
 
-Ainda não implementado ou validado:
+Implementado, mas ainda pendente de validação física após a extensão mais recente:
 
-- MQTT e discovery para Home Assistant;
-- armazenamento de chaves de um protocolo BLE próprio no Android Keystore;
+- cadência adaptativa de localização em uso real: parado `20 s / 10 m`, em movimento `3 s / 2 m`;
+- continuidade da localização com a tela bloqueada enquanto a sessão BLE permanece conectada;
+- atualização efetiva do `device_tracker` GPS no Home Assistant durante deslocamento.
+
+Ainda não implementado:
+
+- importação de rota compartilhada pelo Google Maps;
+- persistência/modelo de percursos com paradas/waypoints ordenados;
+- orientação de navegação na tela principal;
+- armazenamento/exportação do bundle mínimo de credenciais para um protocolo BLE próprio;
 - funcionamento local independente do SDK/nuvem Tuya;
-- serviço em primeiro plano para conexão persistente com o aplicativo encerrado ou com a UI indisponível;
-- OTA, limite de velocidade e desbloqueio automático por proximidade.
+- OTA e limite de velocidade próprio.
 
 ## Arquitetura
 
-- `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya.
+- `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya e não é proprietária da sessão.
+- `session/T4ASession`: contrato da UI para observar estado e enviar intenções/comandos.
+- `session/T4ASessionService`: proprietário de longa duração de BLE, MQTT e localização; mantém a sessão ativa quando a Activity desaparece.
 - `backend/T4ABackend`: máquina de estados e regras do T4A. Recebe provisionamento e transporte separados; não cria o adaptador Tuya.
 - `backend/T4AProvisioner`: fronteira substituível para conta, inventário, descoberta, ativação e desvinculação.
 - `backend/T4ATransport`: fronteira substituível para sessão BLE, conexão, DPS, cache e RSSI.
 - `backend/T4AContracts`: modelos e callbacks neutros compartilhados pelas duas fronteiras.
 - `backend/TuyaT4APlatform`: adaptador temporário que implementa ambas as fronteiras usando ThingClips.
-- `T4AApplication`: ponto de composição que escolhe as implementações concretas entregues ao backend.
-- `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
+- `backend/T4AState`: snapshot imutável entregue à UI e aos consumidores neutros.
+- `backend/mqtt/MqttTelemetryCoordinator`: política de conexão/reconexão MQTT, heartbeat, disponibilidade, telemetria, localização e discovery.
+- `backend/mqtt/HomeAssistantDiscovery`: gera o Device Discovery sem depender de Android ou Paho.
+- `backend/location/LocationSnapshot`: representação geográfica neutra compartilhável com a futura navegação.
+- `location/AndroidLocationProvider`: único adaptador Android de localização; não conhece Tuya nem Paho.
+- `mqtt/PahoMqttTransport`: único adaptador Eclipse Paho.
+- `T4AApplication`: ponto de composição que escolhe implementações concretas entregues ao runtime.
 - `backend/T4ASdk`: bootstrap e encerramento do SDK enquanto o adaptador Tuya continuar presente.
 
 O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips ou se `T4ABackend` tentar criar diretamente o adaptador Tuya. O GitHub Actions repete a verificação em um checkout limpo em cada PR e push para `master`, garantindo também que os contratos separados estejam no commit. Uma futura implementação BLE própria deverá implementar somente `T4ATransport`; o provisionamento Tuya poderá permanecer separado, sem alterar a UI nem as regras de estado em `T4ABackend`.
@@ -207,20 +229,29 @@ A investigação seguirá esta ordem, mantendo o aplicativo funcional como refer
 
 A hipótese de trabalho é deliberadamente mais restrita do que "copiar o login Tuya": o alvo é descobrir **qual material de autorização o provisionamento Android entrega ou deriva para permitir uma sessão BLE válida com um T4A já vinculado**.
 
-## Marco 2: achados e requisitos já identificados
+## Marco 2: estado e próximos passos
 
-Os testes de rodagem revelaram requisitos arquiteturais que devem ser tratados no Marco 2, junto com MQTT, geolocalização e navegação:
+O Marco 2 tem quatro partes explícitas:
 
-- a sessão BLE não deve depender do ciclo de vida da `MainActivity`;
-- bloquear/desbloquear a tela, trocar temporariamente de Activity ou recriar a UI não deve provocar novo `attach`, nova consulta de inventário ou perda da telemetria já ativa;
-- o backend/transport deverá viver em componente de duração maior que a UI, preferencialmente um `Foreground Service` ou uma sessão persistente equivalente, com a `MainActivity` apenas assinando o estado existente;
-- MQTT e geolocalização devem continuar funcionando mesmo quando a tela estiver bloqueada e a UI não estiver ativa;
-- ao retornar para a UI, o aplicativo deverá reassinar o estado corrente sem reinicializar a sessão BLE e sem introduzir `INITIAL` artificialmente por causa da Activity;
-- os testes no Galaxy S25 mostraram bloqueio de segurança por detecção de movimento compatível com possível roubo. `FLAG_KEEP_SCREEN_ON` continua útil contra timeout normal, mas não deve ser considerado mecanismo para impedir esse tipo de bloqueio de segurança;
-- o aplicativo deve permanecer funcional mesmo que esse bloqueio externo ocorra: a meta do Marco 2 é manter a conexão/telemetria e tornar o evento transparente para o transporte BLE;
-- a investigação futura deverá distinguir claramente `INITIAL` gerado por nova sessão real do T4A de `INITIAL` provocado por reanexação do SDK/backend.
+1. **Sessão persistente — concluída e fisicamente validada.** `T4ASessionService` é proprietário do backend; recriar/bloquear a UI não cria uma nova sessão BLE apenas por causa da Activity.
+2. **MQTT + Home Assistant — concluído e fisicamente validado.** WSS, retained telemetry, disponibilidade/LWT e Device Discovery estão operacionais. MQTT permanece estritamente publish-only e não controla o T4A.
+3. **Geolocalização — implementada, validação física pendente.** `AndroidLocationProvider` produz `LocationSnapshot`, publica `t4a/location` e alimenta telemetria/`device_tracker`. A política solicitada é 20 s + 10 m parado e 3 s + 2 m em movimento; os intervalos são desejos do `LocationRequest`, não garantias rígidas de entrega do Android.
+4. **Navegação — pendente e ainda pertencente ao Marco 2.** O APK deve receber uma rota compartilhada pelo Google Maps, preservar paradas/waypoints ordenados, permitir salvar percursos e mostrar na primeira tela a próxima instrução de direção com distância restante.
 
-A direção desejada para o Marco 2 é, portanto: **UI descartável, sessão BLE persistente e telemetria independente da tela**.
+Portanto, **o Marco 2 ainda não está encerrado**. O próximo passo imediato é validar geolocalização no aparelho. Com essa validação aprovada, a próxima implementação é a camada de navegação.
+
+A navegação deve reutilizar `LocationSnapshot`; não deve criar uma segunda pilha de GPS. Também não deve introduzir controle remoto do patinete por MQTT.
+
+Critérios de encerramento do Marco 2:
+
+- localização real publicada de forma coerente em movimento e parada;
+- continuidade de BLE/MQTT/localização com a UI inativa conforme o modelo de foreground service;
+- `device_tracker` do Home Assistant acompanhando o último fix aceito;
+- recepção de URL/rota compartilhada pelo Google Maps;
+- modelo persistente de percurso com waypoints/paradas ordenados;
+- progresso da rota calculado a partir da posição corrente;
+- ícone de manobra + distância até a próxima instrução exibidos na tela principal;
+- teste físico de um percurso curto com tela ativa e com pelo menos um ciclo de bloqueio/retorno da UI.
 
 ## Compilação, CI e depuração por ADB
 
