@@ -44,7 +44,7 @@ T4ASessionService                                     |
 
 `MqttConfiguration` is the backend model. `MqttConfigurationStore` is the persistence boundary and exposes a cheap revision value so the live runtime can detect saved configuration changes without coupling to the Activity.
 
-`AndroidMqttConfigurationStore` stores non-secret configuration in app-private preferences and encrypts the MQTT password with AES-GCM using an Android Keystore key. No secret is logged.
+`AndroidMqttConfigurationStore` stores non-secret configuration in app-private preferences and encrypts the MQTT password with AES-GCM using an Android Keystore key. No secret is logged. The legacy boolean TLS setting remains readable and is migrated to the explicit transport model on the next save.
 
 `MqttTelemetryCoordinator` owns broker connection policy, configuration reload, reconnect cadence, availability state, heartbeat and T4A-state-to-telemetry mapping. It knows only the provider-neutral `MqttTransport` interface.
 
@@ -57,14 +57,24 @@ T4ASessionService                                     |
 - enabled
 - broker host
 - port
-- TLS enabled
+- transport: `TCP`, `TLS`, `WS` or `WSS`
+- WebSocket path, used only for `WS`/`WSS`
 - username
 - password
 - client ID
 - base topic
 - keep-alive seconds
 
-Defaults are port `1883`, client ID `t4a-control`, base topic `t4a`, and keep-alive `60` seconds.
+Default ports are `1883` for TCP, `8883` for TLS, `80` for WS and `443` for WSS. The default WebSocket path is `/mqtt`. Client ID defaults to `t4a-control`, base topic to `t4a`, and keep-alive to `60` seconds.
+
+The transport maps to provider-neutral server URIs:
+
+- TCP: `tcp://host:port`
+- TLS: `ssl://host:port`
+- WS: `ws://host:port/path`
+- WSS: `wss://host:port/path`
+
+For the current external T4A infrastructure, the verified Cloudflare/Mosquitto endpoint is `wss://mqtt.jurgensen.net:443/mqtt`.
 
 ## Topics
 
