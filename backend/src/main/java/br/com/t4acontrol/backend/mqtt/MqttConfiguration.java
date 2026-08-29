@@ -57,6 +57,7 @@ public final class MqttConfiguration {
   public final String clientId;
   public final String baseTopic;
   public final int keepAliveSeconds;
+  public final boolean discoveryEnabled;
 
   public MqttConfiguration(
       boolean enabled,
@@ -68,7 +69,8 @@ public final class MqttConfiguration {
       String password,
       String clientId,
       String baseTopic,
-      int keepAliveSeconds) {
+      int keepAliveSeconds,
+      boolean discoveryEnabled) {
     this.enabled = enabled;
     this.host = clean(host);
     this.port = port;
@@ -80,6 +82,33 @@ public final class MqttConfiguration {
     this.clientId = clean(clientId);
     this.baseTopic = normalizeTopic(baseTopic);
     this.keepAliveSeconds = keepAliveSeconds;
+    this.discoveryEnabled = discoveryEnabled;
+  }
+
+  /** Constructor retained for callers created before Home Assistant discovery was configurable. */
+  public MqttConfiguration(
+      boolean enabled,
+      String host,
+      int port,
+      Transport transport,
+      String websocketPath,
+      String username,
+      String password,
+      String clientId,
+      String baseTopic,
+      int keepAliveSeconds) {
+    this(
+        enabled,
+        host,
+        port,
+        transport,
+        websocketPath,
+        username,
+        password,
+        clientId,
+        baseTopic,
+        keepAliveSeconds,
+        false);
   }
 
   /** Legacy constructor retained so older callers migrate to TCP/TLS without a breaking change. */
@@ -103,7 +132,8 @@ public final class MqttConfiguration {
         password,
         clientId,
         baseTopic,
-        keepAliveSeconds);
+        keepAliveSeconds,
+        false);
   }
 
   public static MqttConfiguration defaults() {
@@ -117,7 +147,8 @@ public final class MqttConfiguration {
         "",
         "t4a-control",
         "t4a",
-        DEFAULT_KEEP_ALIVE_SECONDS);
+        DEFAULT_KEEP_ALIVE_SECONDS,
+        false);
   }
 
   public ValidationError validate() {
