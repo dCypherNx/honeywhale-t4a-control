@@ -29,7 +29,7 @@ public final class T4ABackend {
   private static final long RSSI_REFRESH_MS = 2000L;
   private static final long RSSI_RESPONSE_TIMEOUT_MS = 6000L;
   private static final long LOCK_CONFIRM_TIMEOUT_MS = 5000L;
-  private static final long BATTERY_RECHARGE_MIN_GAP_MS = 6L * 60L * 60L * 1000L;
+  private static final long BATTERY_RECHARGE_MIN_GAP_MS = 1L * 60L * 60L * 1000L;
   private static final int BATTERY_RECHARGE_MIN_RISE = 5;
   private static final int BATTERY_RECHARGE_MAX_DISTANCE = 1;
   private static final String PREF_LOCK_KNOWN = "lock_known";
