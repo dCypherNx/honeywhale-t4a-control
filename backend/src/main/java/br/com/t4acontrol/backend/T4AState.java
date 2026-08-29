@@ -40,6 +40,9 @@ public final class T4AState {
   public final Set<String> pendingDps;
   public final boolean autoLockEnabled;
   public final String autoLockDistance;
+  public final Integer batteryObservedMin;
+  public final Integer batteryObservedMax;
+  public final Long batteryCycleStartedAt;
   public final String message;
 
   public T4AState(
@@ -55,6 +58,9 @@ public final class T4AState {
       Set<String> pendingDps,
       boolean autoLockEnabled,
       String autoLockDistance,
+      Integer batteryObservedMin,
+      Integer batteryObservedMax,
+      Long batteryCycleStartedAt,
       String message) {
     this.authenticated = authenticated;
     this.account = account;
@@ -68,6 +74,9 @@ public final class T4AState {
     this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
     this.autoLockEnabled = autoLockEnabled;
     this.autoLockDistance = autoLockDistance;
+    this.batteryObservedMin = batteryObservedMin;
+    this.batteryObservedMax = batteryObservedMax;
+    this.batteryCycleStartedAt = batteryCycleStartedAt;
     this.message = message;
   }
 }
