@@ -51,6 +51,7 @@ public final class T4ASessionService extends Service
   @Override
   public void onCreate() {
     super.onCreate();
+    debug("RAW VERSION {\"versionName\":\"" + BuildConfig.VERSION_NAME + "\",\"versionCode\":" + BuildConfig.VERSION_CODE + "}");
     debug("CREATE instance=" + instanceId);
     createNotificationChannel();
     startForeground(
