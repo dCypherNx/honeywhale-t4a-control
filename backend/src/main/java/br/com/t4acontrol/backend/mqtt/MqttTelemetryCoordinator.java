@@ -263,6 +263,9 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     if (state.rssi != 0) out.put("rssi_dbm", state.rssi);
 
     putIntegerIfPresent(out, "battery_percent", state.dps, "3");
+    if (state.batteryObservedMin != null) out.put("battery_observed_min", state.batteryObservedMin);
+    if (state.batteryObservedMax != null) out.put("battery_observed_max", state.batteryObservedMax);
+    if (state.batteryCycleStartedAt != null) out.put("battery_cycle_started_at", state.batteryCycleStartedAt);
     putScaledIfPresent(out, "speed_kmh", state.dps, "2", 10.0);
     putScaledIfPresent(out, "odometer_km", state.dps, "12", 10.0);
     putScaledIfPresent(out, "trip_km", state.dps, "5", 10.0);
