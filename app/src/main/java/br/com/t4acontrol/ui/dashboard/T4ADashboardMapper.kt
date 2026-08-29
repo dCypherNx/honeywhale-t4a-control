@@ -43,7 +43,7 @@ object T4ADashboardMapper {
             cruiseOn = truth(state.dps[DP_CRUISE]),
             autoLockOn = state.autoLockEnabled,
             odometerLabel = if (showTotalOdometer) "Odômetro total" else "Percurso",
-            odometerValue = String.format(Locale("pt", "BR"), "%.1f km", scaled(state.dps[odometerDp], 10.0)),
+            odometerValue = String.format(Locale.getDefault(), "%.1f km", scaled(state.dps[odometerDp], 10.0)),
             usageTime = duration(integer(state.dps[DP_TIME])),
             controlsEnabled = state.connected,
             lightEnabled = state.connected && DP_LIGHT !in state.pendingDps,
