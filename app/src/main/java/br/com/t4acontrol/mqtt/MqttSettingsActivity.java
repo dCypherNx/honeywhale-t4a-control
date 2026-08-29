@@ -1,7 +1,6 @@
 package br.com.t4acontrol.mqtt;
 
 import android.app.Activity;
-import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -32,18 +31,21 @@ public final class MqttSettingsActivity extends Activity {
   private static final int BLUE = 0xFF075EF0;
   private static final int GREEN = 0xFF00A529;
   private static final String PREF_THEME = "theme_mode";
+  private static final String[] TRANSPORT_VALUES = {"TCP", "TLS", "WS", "WSS"};
 
   private MqttSettings settings;
   private Switch enabled;
-  private Switch tls;
   private EditText host;
   private EditText port;
+  private EditText websocketPath;
   private EditText username;
   private EditText password;
   private EditText clientId;
   private EditText baseTopic;
   private EditText keepAlive;
   private TextView status;
+  private Button[] transportButtons;
+  private String selectedTransport = "TCP";
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -89,6 +91,7 @@ public final class MqttSettingsActivity extends Activity {
     body.addView(activation);
 
     LinearLayout broker = collapsibleCard(body, R.string.mqtt_broker_section, "broker");
+    addTransportSelector(broker);
     host = field(broker, R.string.mqtt_host, R.string.mqtt_host_hint, InputType.TYPE_CLASS_TEXT);
     port =
         field(
@@ -96,8 +99,16 @@ public final class MqttSettingsActivity extends Activity {
             R.string.mqtt_port,
             R.string.mqtt_port_hint,
             InputType.TYPE_CLASS_NUMBER);
-    tls = switchView(R.string.mqtt_tls);
-    broker.addView(tls);
+    websocketPath =
+        field(
+            broker,
+            R.string.mqtt_websocket_path,
+            R.string.mqtt_websocket_path_hint,
+            InputType.TYPE_CLASS_TEXT);
+    TextView pathNote = text(getString(R.string.mqtt_websocket_path_note), 11);
+    pathNote.setTextColor(mutedColor());
+    pathNote.setPadding(dp(3), 0, dp(3), dp(6));
+    broker.addView(pathNote);
     keepAlive =
         field(
             broker,
@@ -171,17 +182,8 @@ public final class MqttSettingsActivity extends Activity {
   }
 
   private void load() {
-    MqttSettings.Snapshot value = settings.load();
-    enabled.setChecked(value.enabled);
-    host.setText(value.host);
-    port.setText(value.port);
-    tls.setChecked(value.tls);
-    username.setText(value.username);
-    password.setText(value.password);
-    clientId.setText(value.clientId);
-    baseTopic.setText(value.baseTopic);
-    keepAlive.setText(value.keepAliveSeconds);
-    updateStatus(value.enabled, false);
+    applySnapshot(settings.load());
+    updateStatus(enabled.isChecked(), false);
   }
 
   private void save() {
@@ -190,7 +192,8 @@ public final class MqttSettingsActivity extends Activity {
             enabled.isChecked(),
             value(host),
             value(port),
-            tls.isChecked(),
+            selectedTransport,
+            value(websocketPath),
             value(username),
             value(password),
             value(clientId),
@@ -210,7 +213,8 @@ public final class MqttSettingsActivity extends Activity {
     enabled.setChecked(value.enabled);
     host.setText(value.host);
     port.setText(value.port);
-    tls.setChecked(value.tls);
+    selectTransport(value.transport, false);
+    websocketPath.setText(value.websocketPath);
     username.setText(value.username);
     password.setText(value.password);
     clientId.setText(value.clientId);
@@ -223,6 +227,8 @@ public final class MqttSettingsActivity extends Activity {
         switch (error) {
           case HOST_REQUIRED -> R.string.mqtt_error_host;
           case PORT_INVALID -> R.string.mqtt_error_port;
+          case TRANSPORT_INVALID -> R.string.mqtt_error_transport;
+          case WEBSOCKET_PATH_INVALID -> R.string.mqtt_error_websocket_path;
           case CLIENT_ID_REQUIRED -> R.string.mqtt_error_client_id;
           case BASE_TOPIC_REQUIRED -> R.string.mqtt_error_base_topic;
           case KEEP_ALIVE_INVALID -> R.string.mqtt_error_keep_alive;
@@ -237,6 +243,77 @@ public final class MqttSettingsActivity extends Activity {
             ? getString(R.string.mqtt_status_saved)
             : getString(active ? R.string.mqtt_status_enabled : R.string.mqtt_status_disabled));
     status.setTextColor(active ? GREEN : mutedColor());
+  }
+
+  private void addTransportSelector(LinearLayout parent) {
+    TextView label = text(getString(R.string.mqtt_transport), 12);
+    label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+    label.setPadding(dp(3), dp(7), dp(3), dp(3));
+    parent.addView(label);
+
+    int[] labels = {
+      R.string.mqtt_transport_tcp,
+      R.string.mqtt_transport_tls,
+      R.string.mqtt_transport_ws,
+      R.string.mqtt_transport_wss
+    };
+    LinearLayout row = new LinearLayout(this);
+    transportButtons = new Button[TRANSPORT_VALUES.length];
+    for (int i = 0; i < TRANSPORT_VALUES.length; i++) {
+      String transport = TRANSPORT_VALUES[i];
+      Button button = new Button(this);
+      button.setText(labels[i]);
+      button.setAllCaps(false);
+      button.setTextSize(12);
+      button.setPadding(dp(2), dp(2), dp(2), dp(2));
+      button.setOnClickListener(v -> selectTransport(transport, true));
+      transportButtons[i] = button;
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1);
+      lp.setMargins(dp(2), dp(2), dp(2), dp(4));
+      row.addView(button, lp);
+    }
+    parent.addView(row);
+    updateTransportButtons();
+  }
+
+  private void selectTransport(String transport, boolean adjustPort) {
+    String normalized = normalizeTransport(transport);
+    String previous = selectedTransport;
+    if (adjustPort && port != null) {
+      String currentPort = value(port);
+      if (currentPort.isEmpty() || currentPort.equals(String.valueOf(defaultPort(previous))))
+        port.setText(String.valueOf(defaultPort(normalized)));
+    }
+    selectedTransport = normalized;
+    updateTransportButtons();
+  }
+
+  private void updateTransportButtons() {
+    if (transportButtons == null) return;
+    for (int i = 0; i < transportButtons.length; i++) {
+      boolean selected = TRANSPORT_VALUES[i].equals(selectedTransport);
+      Button button = transportButtons[i];
+      button.setTextColor(selected ? Color.WHITE : foregroundColor());
+      button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
+      button.setBackground(
+          round(selected ? BLUE : surfaceColor(), 10, selected ? BLUE : outlineColor(), 1));
+    }
+  }
+
+  private String normalizeTransport(String value) {
+    if (value != null)
+      for (String candidate : TRANSPORT_VALUES)
+        if (candidate.equalsIgnoreCase(value.trim())) return candidate;
+    return "TCP";
+  }
+
+  private int defaultPort(String transport) {
+    return switch (normalizeTransport(transport)) {
+      case "TLS" -> 8883;
+      case "WS" -> 80;
+      case "WSS" -> 443;
+      default -> 1883;
+    };
   }
 
   private LinearLayout collapsibleCard(LinearLayout parent, int titleId, String key) {
