@@ -25,6 +25,7 @@ public interface MqttSettings {
     public final String clientId;
     public final String baseTopic;
     public final String keepAliveSeconds;
+    public final boolean discoveryEnabled;
 
     public Snapshot(
         boolean enabled,
@@ -36,7 +37,8 @@ public interface MqttSettings {
         String password,
         String clientId,
         String baseTopic,
-        String keepAliveSeconds) {
+        String keepAliveSeconds,
+        boolean discoveryEnabled) {
       this.enabled = enabled;
       this.host = host;
       this.port = port;
@@ -47,6 +49,7 @@ public interface MqttSettings {
       this.clientId = clientId;
       this.baseTopic = baseTopic;
       this.keepAliveSeconds = keepAliveSeconds;
+      this.discoveryEnabled = discoveryEnabled;
     }
   }
 
@@ -61,6 +64,7 @@ public interface MqttSettings {
     public final String clientId;
     public final String baseTopic;
     public final String keepAliveSeconds;
+    public final boolean discoveryEnabled;
 
     public Draft(
         boolean enabled,
@@ -72,7 +76,8 @@ public interface MqttSettings {
         String password,
         String clientId,
         String baseTopic,
-        String keepAliveSeconds) {
+        String keepAliveSeconds,
+        boolean discoveryEnabled) {
       this.enabled = enabled;
       this.host = host;
       this.port = port;
@@ -83,6 +88,7 @@ public interface MqttSettings {
       this.clientId = clientId;
       this.baseTopic = baseTopic;
       this.keepAliveSeconds = keepAliveSeconds;
+      this.discoveryEnabled = discoveryEnabled;
     }
   }
 
