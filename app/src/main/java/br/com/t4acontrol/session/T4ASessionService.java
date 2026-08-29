@@ -175,6 +175,12 @@ public final class T4ASessionService extends Service
   private void addListener(T4ASession.Listener listener) {
     if (listener == null) return;
     listeners.add(listener);
+    listener.onRawLog(
+        "VERSION {\"versionName\":\""
+            + BuildConfig.VERSION_NAME
+            + "\",\"versionCode\":"
+            + BuildConfig.VERSION_CODE
+            + "}");
     if (lastState != null) listener.onState(lastState);
   }
 
