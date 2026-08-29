@@ -21,6 +21,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
@@ -198,44 +201,47 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val current = state
 
         MaterialTheme {
-            Column(
+            Box(
                 Modifier.fillMaxSize()
                     .background(background)
-                    .verticalScroll(rememberScrollState())
                     .safeDrawingPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Header(foreground)
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Header(foreground)
 
-                if (current == null) {
-                    Text("Inicializando sessão T4A…", color = foreground)
-                    return@Column
-                }
+                    if (current == null) {
+                        Text("Inicializando sessão T4A…", color = foreground)
+                        return@Column
+                    }
 
-                if (!current.authenticated) {
-                    LoginPanel(foreground)
-                    return@Column
-                }
+                    if (!current.authenticated) {
+                        LoginPanel(foreground)
+                        return@Column
+                    }
 
-                if (current.pairing != T4AState.Pairing.PAIRED) {
-                    Text(current.message, color = foreground)
-                    PairingPanel(current, foreground)
-                    EventLog(settings = false, foreground = foreground)
-                    return@Column
-                }
+                    if (current.pairing != T4AState.Pairing.PAIRED) {
+                        Text(current.message, color = foreground)
+                        PairingPanel(current, foreground)
+                        EventLog(settings = false, foreground = foreground)
+                        return@Column
+                    }
 
-                if (settings) {
-                    SettingsPanel(current, foreground)
-                    EventLog(settings = true, foreground = foreground)
-                } else {
-                    val dashboardState = T4ADashboardMapper.map(current, showTotalOdometer)
-                    T4ADashboard(
-                        state = dashboardState,
-                        actions = dashboardActions,
-                        darkMode = darkMode,
-                    )
-                    EventLog(settings = false, foreground = foreground)
+                    if (settings) {
+                        SettingsPanel(current, foreground)
+                        EventLog(settings = true, foreground = foreground)
+                    } else {
+                        val dashboardState = T4ADashboardMapper.map(current, showTotalOdometer)
+                        T4ADashboard(
+                            state = dashboardState,
+                            actions = dashboardActions,
+                            darkMode = darkMode,
+                        )
+                        EventLog(settings = false, foreground = foreground)
+                    }
                 }
             }
         }
@@ -243,6 +249,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun Header(foreground: ComposeColor) {
+        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
+        val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = getString(R.string.app_name).uppercase(Locale.ROOT),
@@ -251,8 +259,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = { settings = !settings }) {
-                Text(if (settings) "Voltar" else "Configurações")
+            Box(
+                modifier = Modifier.size(52.dp)
+                    .background(surface, RoundedCornerShape(99.dp))
+                    .border(1.dp, ComposeColor(0xFF075EF0), RoundedCornerShape(99.dp))
+                    .clickable { settings = !settings },
+                contentAlignment = Alignment.Center,
+            ) {
+                MdiIcon(
+                    name = if (settings) "cmd-arrow-left" else "cmd-cog",
+                    color = ComposeColor(0xFF075EF0),
+                    iconSize = 24.dp,
+                    modifier = Modifier.size(32.dp),
+                )
             }
         }
     }
@@ -300,34 +319,41 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun SettingsPanel(current: T4AState, foreground: ComposeColor) {
-        Text("Configurações", color = foreground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        SettingsSection("Conexão e dispositivo", foreground) {
-            InfoLine("Conexão", if (current.connected) "Conectado" else "Desconectado", foreground)
+        Text(getString(R.string.settings), color = foreground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        SettingsSection(getString(R.string.connection_device_section), foreground) {
+            InfoLine("Conexão", getString(if (current.connected) R.string.connected else R.string.disconnected), foreground)
             InfoLine("Dispositivo", current.deviceName.ifBlank { "--" }, foreground)
             InfoLine("MAC", current.mac.ifBlank { "--" }, foreground)
-            InfoLine("RSSI", if (current.rssi == 0) "--" else "${current.rssi} dBm", foreground)
+            InfoLine("RSSI", if (current.rssi == 0) "--" else getString(R.string.dbm, current.rssi), foreground)
         }
 
-        SettingsSection("Exibição", foreground) {
+        SettingsSection(getString(R.string.display_section), foreground) {
             val keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
             var keepOn by remember { mutableStateOf(keepScreenOn) }
-            SettingSwitch("Manter tela ligada", keepOn, foreground) {
+            SettingSwitch(getString(R.string.keep_screen_on), keepOn, foreground) {
                 keepOn = it
                 preferences().edit().putBoolean(PREF_KEEP_SCREEN_ON, it).apply()
                 applyKeepScreenOn(it)
             }
-            Text("Tema", color = foreground, fontWeight = FontWeight.Bold)
+            Text(getString(R.string.theme_mode), color = foreground, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("system" to "Sistema", "light" to "Claro", "dark" to "Escuro").forEach { (value, label) ->
+                listOf(
+                    "system" to getString(R.string.theme_system),
+                    "light" to getString(R.string.theme_light),
+                    "dark" to getString(R.string.theme_dark),
+                ).forEach { (value, label) ->
                     OutlinedButton(onClick = { applyTheme(value) }) { Text(label) }
                 }
             }
         }
 
-        SettingsSection("Bateria", foreground) {
+        SettingsSection(getString(R.string.battery_section), foreground) {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
             var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
-            Text("Intervalo mínimo para detectar nova recarga: ${BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]} h", color = foreground)
+            Text(
+                "${getString(R.string.battery_recharge_detection)}: ${getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)])}",
+                color = foreground,
+            )
             Slider(
                 value = sliderIndex,
                 onValueChange = { sliderIndex = it },
@@ -341,56 +367,66 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             InfoLine("Máximo observado", current.batteryObservedMax?.let { "$it%" } ?: "--", foreground)
         }
 
-        SettingsSection("Bloqueio automático", foreground) {
-            SettingSwitch("Ativo", current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
+        SettingsSection(getString(R.string.automatic_lock), foreground) {
+            SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("short" to "Curta", "medium" to "Média", "long" to "Longa").forEach { (value, label) ->
+                listOf(
+                    "short" to getString(R.string.distance_short),
+                    "medium" to getString(R.string.distance_medium),
+                    "long" to getString(R.string.distance_long),
+                ).forEach { (value, label) ->
                     OutlinedButton(onClick = { session.setAutoLockDistance(value) }) { Text(label) }
                 }
             }
         }
 
-        SettingsSection("Preferências de pilotagem", foreground) {
-            Text("Unidade", color = foreground, fontWeight = FontWeight.Bold)
+        SettingsSection(getString(R.string.riding_preferences_section), foreground) {
+            Text(getString(R.string.unit_status, "").substringBefore(":"), color = foreground, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "mile") }) { Text("Milhas") }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "km") }) { Text("Quilômetros") }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "mile") }) { Text(getString(R.string.miles)) }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "km") }) { Text(getString(R.string.kilometers)) }
             }
-            Text("Cruzeiro", color = foreground, fontWeight = FontWeight.Bold)
+            Text(getString(R.string.cruise), color = foreground, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, false) }) { Text("Desativar") }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, true) }) { Text("Ativar") }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, false) }) { Text(getString(R.string.disable)) }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, true) }) { Text(getString(R.string.enable)) }
             }
-            Text("Partida", color = foreground, fontWeight = FontWeight.Bold)
+            Text(getString(R.string.start_mode), color = foreground, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "zero_start") }) { Text("Zero") }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "not_zero_start") }) { Text("Impulso") }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "zero_start") }) { Text(getString(R.string.zero_start)) }
+                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "not_zero_start") }) { Text(getString(R.string.initial_push)) }
             }
         }
 
-        SettingsSection("Integrações", foreground) {
+        SettingsSection(getString(R.string.integrations_section), foreground) {
             Button(onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) }) {
-                Text("Configurar MQTT")
+                Text(getString(R.string.configure_mqtt))
             }
         }
 
-        SettingsSection("Diagnóstico", foreground) {
+        SettingsSection(getString(R.string.diagnostics_section), foreground) {
             current.dps.toSortedMap().forEach { (id, value) ->
-                val name = current.schema[id]?.code ?: "DP $id"
+                val name = current.schema[id]?.code ?: getString(R.string.dp_fallback, id)
                 Text("$name ($id): $value", color = foreground, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             }
         }
 
-        SettingsSection("Pareamento", foreground) {
-            Button(onClick = { confirmUnpair() }) { Text("Remover pareamento") }
+        SettingsSection(getString(R.string.pairing_section), foreground) {
+            Button(onClick = { confirmUnpair() }) { Text(getString(R.string.remove_pairing)) }
         }
     }
 
     @Composable
     private fun SettingsSection(title: String, foreground: ComposeColor, content: @Composable () -> Unit) {
+        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
+        val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
         Column(
-            Modifier.fillMaxWidth().padding(vertical = 5.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(16.dp))
+                .background(surface, RoundedCornerShape(16.dp))
+                .border(1.dp, outline, RoundedCornerShape(16.dp))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, color = ComposeColor(0xFF075EF0), fontSize = 18.sp, fontWeight = FontWeight.Bold)
             content()
@@ -417,7 +453,15 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun EventLog(settings: Boolean, foreground: ComposeColor) {
         val source = if (settings) rawHistory else eventHistory
         val entries = if (settings) source else source.takeLast(10)
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
+        val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
+        Column(
+            Modifier.fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(16.dp))
+                .background(surface, RoundedCornerShape(16.dp))
+                .border(1.dp, outline, RoundedCornerShape(16.dp))
+                .padding(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MdiIcon(
                     name = "cmd-format-list-bulleted",
@@ -427,7 +471,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 )
                 Spacer(Modifier.size(8.dp))
                 Text(
-                    if (settings) "Log raw" else "Eventos",
+                    getString(if (settings) R.string.raw_log else R.string.events),
                     color = ComposeColor(0xFF075EF0),
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -443,7 +487,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             }
             if (settings) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { copyRawLog() }) { Text("Copiar") }
+                    OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
                     OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") }
                 }
             }
@@ -562,10 +606,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     private fun confirmUnpair() {
         android.app.AlertDialog.Builder(this)
-            .setTitle("Remover pareamento")
-            .setMessage("Deseja remover o pareamento atual do T4A?")
-            .setPositiveButton("Remover") { _, _ -> session.unpair() }
-            .setNegativeButton("Cancelar", null)
+            .setTitle(getString(R.string.remove_pairing_question))
+            .setMessage(getString(R.string.remove_pairing_message))
+            .setPositiveButton(getString(R.string.remove)) { _, _ -> session.unpair() }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
