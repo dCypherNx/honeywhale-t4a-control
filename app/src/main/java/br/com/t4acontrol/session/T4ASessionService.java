@@ -1,11 +1,13 @@
 package br.com.t4acontrol.session;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Binder;
 import android.os.IBinder;
@@ -16,7 +18,9 @@ import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.T4AApplication;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AState;
+import br.com.t4acontrol.backend.location.LocationSnapshot;
 import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
+import br.com.t4acontrol.location.AndroidLocationProvider;
 import br.com.t4acontrol.mqtt.MqttSettingsActivity;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -24,9 +28,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 /**
  * Process-level owner of the live T4A session.
  *
- * <p>The service owns exactly one {@link T4ABackend} and one MQTT telemetry coordinator.
- * Activities can come and go without tearing down either runtime. Provider-specific wiring stays
- * in the application composition root.
+ * <p>The service owns exactly one {@link T4ABackend}, one MQTT telemetry coordinator and one
+ * Android location adapter. Activities can come and go without tearing down the runtime.
  */
 public final class T4ASessionService extends Service
     implements T4ABackend.Listener, MqttTelemetryCoordinator.Listener {
@@ -42,6 +45,7 @@ public final class T4ASessionService extends Service
 
   private T4ABackend backend;
   private MqttTelemetryCoordinator mqttTelemetry;
+  private AndroidLocationProvider locationProvider;
   private T4AState lastState;
 
   @Override
@@ -52,10 +56,31 @@ public final class T4ASessionService extends Service
     startForeground(
         NOTIFICATION_ID,
         notification("Sessão T4A iniciando…"),
-        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        foregroundServiceTypes());
     T4AApplication application = (T4AApplication) getApplication();
     mqttTelemetry = application.createMqttTelemetryCoordinator(this);
     mqttTelemetry.start();
+    locationProvider =
+        new AndroidLocationProvider(
+            this,
+            new AndroidLocationProvider.Listener() {
+              @Override
+              public void onLocation(LocationSnapshot snapshot) {
+                debug(
+                    "LOCATION lat="
+                        + snapshot.latitude
+                        + " lon="
+                        + snapshot.longitude
+                        + " accuracy="
+                        + snapshot.accuracyMeters);
+                if (mqttTelemetry != null) mqttTelemetry.onLocation(snapshot);
+              }
+
+              @Override
+              public void onUnavailable(String reason) {
+                debug("LOCATION unavailable: " + reason);
+              }
+            });
     backend = application.createSessionBackend(this);
     backend.start();
   }
@@ -93,6 +118,10 @@ public final class T4ASessionService extends Service
   @Override
   public void onDestroy() {
     debug("DESTROY instance=" + instanceId);
+    if (locationProvider != null) {
+      locationProvider.close();
+      locationProvider = null;
+    }
     if (mqttTelemetry != null) {
       mqttTelemetry.stop();
       mqttTelemetry = null;
@@ -109,6 +138,10 @@ public final class T4ASessionService extends Service
   public void onState(T4AState state) {
     lastState = state;
     if (mqttTelemetry != null) mqttTelemetry.onState(state);
+    if (locationProvider != null) {
+      locationProvider.setMoving(scooterMoving(state));
+      locationProvider.setActive(state.connected);
+    }
     updateNotification(state);
     for (T4ASession.Listener listener : listeners) listener.onState(state);
   }
@@ -206,6 +239,35 @@ public final class T4ASessionService extends Service
     getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, notification(text));
   }
 
+  private int foregroundServiceTypes() {
+    int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+    if (hasLocationPermission()) types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+    return types;
+  }
+
+  private boolean hasLocationPermission() {
+    return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED;
+  }
+
+  private void refreshForegroundTypes() {
+    try {
+      startForeground(NOTIFICATION_ID, notification("Sessão T4A ativa"), foregroundServiceTypes());
+    } catch (RuntimeException error) {
+      debug("LOCATION foreground type unavailable: " + error.getClass().getSimpleName());
+    }
+  }
+
+  private boolean scooterMoving(T4AState state) {
+    if (state == null || !state.dps.containsKey("2")) return false;
+    try {
+      return Double.parseDouble(String.valueOf(state.dps.get("2"))) / 10.0 > 1.0;
+    } catch (NumberFormatException ignored) {
+      return false;
+    }
+  }
+
   public final class SessionBinder extends Binder implements T4ASession {
     @Override
     public void addListener(Listener listener) {
@@ -220,6 +282,10 @@ public final class T4ASessionService extends Service
     @Override
     public void setUiForeground(boolean foreground) {
       if (backend != null) backend.setForeground(foreground);
+      if (foreground) {
+        refreshForegroundTypes();
+        if (locationProvider != null) locationProvider.refreshPermissions();
+      }
     }
 
     @Override
