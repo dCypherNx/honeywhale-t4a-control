@@ -2,6 +2,12 @@ name: Architecture boundary
 
 on:
   pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
   push:
     branches:
       - master
@@ -10,6 +16,36 @@ permissions:
   contents: read
 
 jobs:
+  verify-version-classification:
+    if: github.event_name == 'pull_request'
+    name: Verify version branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate SemVer branch class
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch="${GITHUB_HEAD_REF}"
+          case "${branch}" in
+            feature/*)
+              classification='minor'
+              ;;
+            fix/*|bugfix/*|hotfix/*)
+              classification='patch'
+              ;;
+            major/*|breaking/*)
+              classification='major'
+              ;;
+            *)
+              echo "Branch '${branch}' does not encode a SemVer class." >&2
+              echo 'Use feature/*, fix|bugfix|hotfix/*, or major|breaking/*.' >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Version classification: ${classification} (${branch})"
+
   verify-boundary:
     name: Verify Tuya boundary
     runs-on: ubuntu-latest
@@ -28,7 +64,16 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
             'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java',
             'app/src/main/java/br/com/t4acontrol/session/T4ASession.java',
-            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java'
+            'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttConfiguration.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttConfigurationStore.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttTransport.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttTelemetryCoordinator.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/mqtt/AndroidMqttConfigurationStore.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettings.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/DefaultMqttSettings.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/PahoMqttTransport.java'
           )
           $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
           if ($missing.Count -gt 0) {
@@ -54,8 +99,8 @@ jobs:
 
           $activity = Get-Content -LiteralPath `
             'app/src/main/java/br/com/t4acontrol/MainActivity.java' -Raw
-          if ($activity -match 'T4ABackend|TuyaT4APlatform|ThingHomeSdk|com\.thingclips\.') {
-            Write-Error 'MainActivity must depend on T4ASession, not backend/provider implementations.'
+          if ($activity -match 'T4ABackend|TuyaT4APlatform|ThingHomeSdk|com\.thingclips\.|org\.eclipse\.paho') {
+            Write-Error 'MainActivity must depend on UI/session contracts, not provider implementations.'
             exit 1
           }
 
@@ -65,5 +110,38 @@ jobs:
             Write-Error 'T4ASessionService must own the session backend created by the composition root.'
             exit 1
           }
+          if ($service -match 'org\.eclipse\.paho') {
+            Write-Error 'T4ASessionService must depend on MQTT contracts/coordinator, not Paho.'
+            exit 1
+          }
 
-          Write-Output 'Provisioning/transport/session contracts are committed and architecture boundaries are clean.'
+          $mqttActivity = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java' -Raw
+          if ($mqttActivity -match 'br\.com\.t4acontrol\.backend|AndroidMqttConfigurationStore|org\.eclipse\.paho') {
+            Write-Error 'MqttSettingsActivity must depend only on the UI-facing MqttSettings contract.'
+            exit 1
+          }
+
+          $mqttContract = Get-Content -LiteralPath `
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettings.java' -Raw
+          if ($mqttContract -match 'android\.|br\.com\.t4acontrol\.backend|org\.eclipse\.paho') {
+            Write-Error 'MqttSettings contract must remain Android-, backend- and provider-independent.'
+            exit 1
+          }
+
+          $pahoAdapter = 'app/src/main/java/br/com/t4acontrol/mqtt/PahoMqttTransport.java'
+          $pahoLeak = Get-ChildItem 'app/src/main/java' -Recurse -Filter '*.java' |
+            Where-Object { $_.FullName -ne (Resolve-Path $pahoAdapter).Path } |
+            Select-String -Pattern 'org\.eclipse\.paho'
+          if ($pahoLeak) {
+            $pahoLeak | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+          $pahoSource = Get-Content -LiteralPath $pahoAdapter -Raw
+          if ($pahoSource -match '\.subscribe\s*\(') {
+            Write-Error 'MQTT runtime is telemetry-only; subscriptions/remote control are forbidden.'
+            exit 1
+          }
+
+          Write-Output 'Provisioning/transport/session/MQTT contracts are committed and architecture boundaries are clean.'

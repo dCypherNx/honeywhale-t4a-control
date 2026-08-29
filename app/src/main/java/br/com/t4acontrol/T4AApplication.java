@@ -4,8 +4,17 @@ import android.app.Application;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4ASdk;
 import br.com.t4acontrol.backend.TuyaT4APlatform;
+import br.com.t4acontrol.backend.mqtt.AndroidMqttConfigurationStore;
+import br.com.t4acontrol.backend.mqtt.MqttConfigurationStore;
+import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
+import br.com.t4acontrol.mqtt.DefaultMqttSettings;
+import br.com.t4acontrol.mqtt.MqttSettings;
+import br.com.t4acontrol.mqtt.PahoMqttTransport;
 
 public final class T4AApplication extends Application {
+  private MqttConfigurationStore mqttConfigurationStore;
+  private MqttSettings mqttSettings;
+
   /**
    * Application composition root for a live T4A session.
    *
@@ -17,10 +26,24 @@ public final class T4AApplication extends Application {
     return new T4ABackend(this, platform, platform, listener);
   }
 
+  /** Returns the UI-facing MQTT settings interface; persistence stays behind the composition root. */
+  public MqttSettings mqttSettings() {
+    return mqttSettings;
+  }
+
+  /** Creates the runtime MQTT telemetry coordinator with its provider adapter hidden here. */
+  public MqttTelemetryCoordinator createMqttTelemetryCoordinator(
+      MqttTelemetryCoordinator.Listener listener) {
+    return new MqttTelemetryCoordinator(
+        mqttConfigurationStore, new PahoMqttTransport(), listener);
+  }
+
   @Override
   public void onCreate() {
     super.onCreate();
     T4ASdk.initialize(this, BuildConfig.DEBUG);
+    mqttConfigurationStore = new AndroidMqttConfigurationStore(getApplicationContext());
+    mqttSettings = new DefaultMqttSettings(mqttConfigurationStore);
   }
 
   @Override

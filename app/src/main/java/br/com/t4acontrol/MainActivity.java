@@ -542,6 +542,19 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     themeTitle.setPadding(0, dp(5), 0, 0);
     displayCard.addView(themeTitle);
     themeButtons = addThemeSelector(displayCard);
+
+    LinearLayout integrations =
+        collapsibleSection(getString(R.string.integrations_section), "integrations");
+    Button mqtt =
+        actionCard(
+            getString(R.string.configure_mqtt),
+            BLUE,
+            () ->
+                startActivity(
+                    new Intent(this, br.com.t4acontrol.mqtt.MqttSettingsActivity.class)));
+    mqtt.setTag("always");
+    integrations.addView(mqtt);
+
     if (state.pairing != T4AState.Pairing.PAIRED) {
       buildPairingActions();
       return;
@@ -988,7 +1001,11 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
 
   private void setActionsEnabled(View view, boolean enabled) {
     if (view instanceof Button b && !(view instanceof Switch))
-      b.setEnabled(enabled || "always".equals(b.getTag()) || contains(autoLockDistanceButtons, b));
+      b.setEnabled(
+              enabled
+                      || "always".equals(b.getTag())
+                      || contains(autoLockDistanceButtons, b)
+                      || contains(themeButtons, b));
     if (view instanceof LinearLayout g)
       for (int i = 0; i < g.getChildCount(); i++) setActionsEnabled(g.getChildAt(i), enabled);
   }

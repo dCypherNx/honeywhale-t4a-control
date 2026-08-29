@@ -1,8 +1,8 @@
 # T4A Control para Android
 
-Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A pelo Tuya Smart SDK.
+Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A. O provisionamento e o transporte BLE continuam atualmente apoiados no Tuya Smart SDK, enquanto sessão persistente, MQTT, Home Assistant e geolocalização já possuem camadas próprias e desacopladas da UI.
 
-## Estado atual (v1.1.1)
+## Estado atual
 
 Funcional e implementado:
 
@@ -10,34 +10,59 @@ Funcional e implementado:
 - restauração do T4A previamente pareado;
 - descoberta, ativação e remoção do pareamento;
 - conexão e reconexão BLE automáticas;
+- sessão persistente em `T4ASessionService`, independente do ciclo de vida da `MainActivity`;
 - atualização dos DPS recebidos, inclusive mudanças externas;
 - comandos absolutos de farol e bloqueio;
 - seleção explícita de modo, unidade, piloto automático e tipo de partida;
+- bloqueio/desbloqueio automático por proximidade Bluetooth com limiares configuráveis;
 - painel de velocidade, bateria, odômetro e percurso;
-- separação entre apresentação, provisionamento e transporte BLE;
-- tratamento defensivo da telemetria de bateria a partir dos padrões observados nos logs reais de rodagem;
+- separação entre apresentação, sessão, provisionamento e transporte BLE;
+- tratamento defensivo provisório da telemetria de bateria a partir dos padrões observados nos logs reais de rodagem;
 - opção para manter a tela ligada enquanto a Activity está visível;
+- configuração MQTT com TCP/TLS/WS/WSS e senha protegida pelo Android Keystore;
+- publicação MQTT **somente de saída**, sem comandos remotos para o T4A;
+- telemetria MQTT retained e disponibilidade/LWT;
+- Home Assistant MQTT Device Discovery com dispositivo T4A e entidades de telemetria;
+- geolocalização Android desacoplada do Tuya, publicada em `t4a/location` e incorporada à telemetria;
+- cadência adaptativa de localização fisicamente validada em uso real: parado `20 s / 10 m`, em movimento `3 s / 2 m` como parâmetros desejados do Android;
+- `device_tracker` GPS do Home Assistant definido no mesmo dispositivo T4A;
+- identificação MQTT estável do T4A a partir do MAC normalizado, independentemente de o SDK fornecer `DC23529724A0` ou `DC:23:52:97:24:A0`;
 - build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente;
+- versionamento SemVer automatizado pela CI/CD, com classificação derivada do nome da branch, versão limpa em `master` e sufixo sequencial curto em builds de feature/fix/major;
 - atualização in-place do APK funcional pelo artefato da CI, preservando sandbox, login Tuya e dispositivo previamente vinculado.
 
-Ainda não implementado ou validado:
+Validações ainda úteis, mas que não bloqueiam o encerramento da feature MQTT/geolocalização:
 
-- MQTT e discovery para Home Assistant;
-- armazenamento de chaves de um protocolo BLE próprio no Android Keystore;
+- continuidade específica da localização com a tela bloqueada enquanto a sessão BLE permanece conectada;
+- acompanhamento visual do `device_tracker` GPS no Home Assistant durante um deslocamento mais longo.
+
+Ainda não implementado:
+
+- importação de rota compartilhada pelo Google Maps;
+- persistência/modelo de percursos com paradas/waypoints ordenados;
+- orientação de navegação na tela principal;
+- estimativa confiável de SOC da bateria a partir das leituras instáveis recebidas durante carga/descarga dinâmica;
+- armazenamento/exportação do bundle mínimo de credenciais para um protocolo BLE próprio;
 - funcionamento local independente do SDK/nuvem Tuya;
-- serviço em primeiro plano para conexão persistente com o aplicativo encerrado ou com a UI indisponível;
-- OTA, limite de velocidade e desbloqueio automático por proximidade.
+- OTA e limite de velocidade próprio.
 
 ## Arquitetura
 
-- `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya.
+- `MainActivity`: cria e atualiza Views, solicita permissões e traduz gestos em intenções. Não importa classes ThingClips/Tuya e não é proprietária da sessão.
+- `session/T4ASession`: contrato da UI para observar estado e enviar intenções/comandos.
+- `session/T4ASessionService`: proprietário de longa duração de BLE, MQTT e localização; mantém a sessão ativa quando a Activity desaparece.
 - `backend/T4ABackend`: máquina de estados e regras do T4A. Recebe provisionamento e transporte separados; não cria o adaptador Tuya.
 - `backend/T4AProvisioner`: fronteira substituível para conta, inventário, descoberta, ativação e desvinculação.
 - `backend/T4ATransport`: fronteira substituível para sessão BLE, conexão, DPS, cache e RSSI.
 - `backend/T4AContracts`: modelos e callbacks neutros compartilhados pelas duas fronteiras.
 - `backend/TuyaT4APlatform`: adaptador temporário que implementa ambas as fronteiras usando ThingClips.
-- `T4AApplication`: ponto de composição que escolhe as implementações concretas entregues ao backend.
-- `backend/T4AState`: snapshot imutável entregue à UI; evita que Views acessem objetos mutáveis do SDK.
+- `backend/T4AState`: snapshot imutável entregue à UI e aos consumidores neutros.
+- `backend/mqtt/MqttTelemetryCoordinator`: política de conexão/reconexão MQTT, heartbeat, disponibilidade, telemetria, localização e discovery.
+- `backend/mqtt/HomeAssistantDiscovery`: gera o Device Discovery sem depender de Android ou Paho.
+- `backend/location/LocationSnapshot`: representação geográfica neutra compartilhável com a futura navegação.
+- `location/AndroidLocationProvider`: único adaptador Android de localização; não conhece Tuya nem Paho.
+- `mqtt/PahoMqttTransport`: único adaptador Eclipse Paho.
+- `T4AApplication`: ponto de composição que escolhe implementações concretas entregues ao runtime.
 - `backend/T4ASdk`: bootstrap e encerramento do SDK enquanto o adaptador Tuya continuar presente.
 
 O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe de domínio voltar a importar ThingClips ou se `T4ABackend` tentar criar diretamente o adaptador Tuya. O GitHub Actions repete a verificação em um checkout limpo em cada PR e push para `master`, garantindo também que os contratos separados estejam no commit. Uma futura implementação BLE própria deverá implementar somente `T4ATransport`; o provisionamento Tuya poderá permanecer separado, sem alterar a UI nem as regras de estado em `T4ABackend`.
@@ -49,24 +74,42 @@ O build executa `verifyTuyaBoundary` antes da compilação e falha se uma classe
 - Exceto pelo bloqueio descrito abaixo, a interface só deve alterar um estado depois de receber o respectivo valor do T4A. Não deve presumir nem antecipar o resultado de um comando.
 - Farol, unidade milha/km e velocidade podem mudar fisicamente no T4A. O aplicativo deve sempre substituir o valor exibido pelo estado mais recente recebido do dispositivo.
 - O bloqueio é comandado somente pelo aplicativo. O aplicativo deve persistir a última ação de bloquear ou desbloquear e usá-la como estado conhecido do bloqueio.
-- Ao reconectar, o T4A sempre informa bloqueio como desbloqueado, inclusive quando permanece fisicamente bloqueado. Esse valor inicial de reconexão não deve sobrescrever a última ação de bloqueio lembrada pelo aplicativo.
-- Uma resposta posterior que possa ser associada ao comando de bloqueio atual deve ser registrada para diagnóstico, sem transformar o valor incorreto de reconexão em verdade local.
+- A leitura de `blelock_switch` entregue no `INITIAL` é sistematicamente falsa e informa o estado equivalente a desbloqueado mesmo quando o T4A permanece fisicamente bloqueado. Esse valor de `INITIAL` nunca deve sobrescrever a última ação de bloqueio lembrada pelo aplicativo.
+- Uma resposta `RX` posterior associada ao comando de bloqueio atual deve ser registrada para diagnóstico e pode confirmar a ação atual, sem transformar o valor incorreto do `INITIAL` em verdade local.
 
-Para os DPS comuns, o backend nunca informa sucesso alterando o estado local: o valor exibido muda apenas quando chega uma atualização recebida do dispositivo ou do cache atualizado pelo SDK. O bloqueio é a exceção deliberada, pois seu estado conhecido deriva da última ação persistida pelo aplicativo.
+Para os DPS comuns, o backend nunca informa sucesso alterando o estado local: o valor exibido muda apenas quando chega uma atualização recebida do dispositivo ou do cache atualizado pelo SDK. O bloqueio é a exceção deliberada, pois seu estado conhecido deriva da última ação persistida pelo aplicativo e desconsidera o `INITIAL` sabidamente falso.
+
+## MQTT, Home Assistant e geolocalização
+
+A feature MQTT/geolocalização foi encerrada após validação física no T4A/S25. O runtime mantém as seguintes propriedades:
+
+- MQTT 3.1.1, retained QoS 1, LWT e status `online`/`offline`;
+- transporte TCP, TLS, WS e WSS, com `wss://mqtt.jurgensen.net:443/mqtt` validado fisicamente;
+- nenhum `subscribe()` e nenhum controle remoto do T4A via MQTT;
+- valores DPS desconhecidos são omitidos da telemetria em vez de fabricados como `0`, `false` ou string vazia;
+- Home Assistant Device Discovery cria um único dispositivo estável a partir do MAC normalizado;
+- o `serial_number` do Discovery usa representação canônica com dois pontos, evitando republicação apenas porque o SDK mudou a formatação textual do MAC;
+- `t4a/location` publica o último fix GPS aceito;
+- a posição também é incorporada a `t4a/telemetry`;
+- em movimento são publicados, quando disponíveis, `gps_speed_kmh`, `bearing_deg` e `altitude_m`;
+- `LocationSnapshot` permanece a fonte neutra que será reutilizada pela futura navegação, sem criar uma segunda pilha de localização.
+
+O teste real de 29/08/2026 mostrou a precisão GPS convergindo de um primeiro fix amplo para aproximadamente 3,8–15 m em boa parte do deslocamento, com atualizações de posição durante aceleração, frenagem e mudança de modo do T4A. Esses resultados são suficientes para encerrar a implementação da feature; ajustes finos de filtro de posição poderão ser feitos quando a camada de navegação fornecer critérios concretos de uso.
 
 ## Telemetria de bateria: achados dos testes reais
 
-Os logs de duas viagens contínuas mostraram que `battery_percentage` não pode ser tratado como um SOC absoluto sem validação:
+Os logs de viagens contínuas mostraram que `battery_percentage` não pode ser tratado como um SOC absoluto sem validação:
 
-- durante a rodagem existem leituras `RX` fisicamente plausíveis abaixo de 100%, com tendência de descarga e forte variação sob carga;
+- durante a rodagem existem leituras `RX` abaixo de 100% com forte variação sob carga;
 - ocorrem `RX=100` espúrios intercalados entre leituras sub-100, inclusive durante aceleração, portanto esses valores não podem restaurar o SOC depois que a sessão já observou uma leitura válida abaixo de 100%;
-- em repouso, as leituras sob carga recuperam vários pontos percentuais, evidenciando *voltage sag* relevante;
+- em repouso, a leitura pode recuperar muitos pontos percentuais, evidenciando *voltage sag* relevante;
 - um `INITIAL` de conexão fria pode trazer bateria stale/default, como 100%, mesmo quando a bateria real já está parcialmente descarregada;
-- um `INITIAL` de retomada pode ser válido e repetir exatamente a última leitura `RX`, como observado com 74% durante a viagem;
-- por isso `INITIAL/cache` não estabelecem bateria por conta própria: somente confirmam o último valor `RX` confiável já conhecido pela mesma instância do backend;
+- `INITIAL/cache` não devem estabelecer bateria por conta própria;
 - o raw log permanece intocado para permitir nova calibração do algoritmo com percursos futuros.
 
-Ainda não há estimativa própria de SOC, suavização por janela, curva de descarga calibrada nem cálculo de autonomia restante. Esses itens exigem mais ciclos de uso e pertencem à evolução de telemetria.
+O teste real de 29/08/2026 reforçou que a solução atual ainda é apenas defensiva: durante o percurso foram observadas sequências como `100 → 76 → 74 → 72 → 69 → 95` e novas oscilações grandes associadas à carga. A correção definitiva **não faz parte da feature MQTT/geolocalização**. O próximo trabalho será aberto separadamente em uma branch `fix/*`, classificada automaticamente como `patch`, para investigar e definir a semântica de uma bateria confiável antes de alterar o valor publicado como `battery_percent`.
+
+Ainda não há estimativa própria de SOC, suavização por janela validada, curva de descarga calibrada nem cálculo de autonomia restante. Esses itens exigem análise específica e novos ciclos de uso.
 
 ## Investigação de portabilidade Tuya e autenticação BLE
 
@@ -82,7 +125,7 @@ Por isso o projeto voltou a usar exclusivamente:
 br.com.t4acontrol
 ```
 
-O build remoto não deve aplicar `applicationIdSuffix` enquanto utilizar as credenciais atuais da Tuya. A versão 1.1.1 / `versionCode 12` formaliza essa correção.
+O build remoto não deve aplicar `applicationIdSuffix` enquanto utilizar as credenciais atuais da Tuya. A versão 1.1.1 / `versionCode 12` formaliza essa correção histórica do baseline.
 
 ### Baseline de assinatura e depuração confirmado
 
@@ -93,7 +136,7 @@ alias: androiddebugkey
 SHA-256: DA:4F:06:64:EC:97:A6:F2:D3:6E:31:1F:FA:E4:89:57:CF:97:24:47:A9:C0:1E:42:C3:98:7D:3D:64:B6:6D:10
 ```
 
-Uma cópia dedicada desse mesmo keystore passou a ser a identidade persistente da CI. O artefato `v1.1.1` / `versionCode 12` gerado pela esteira foi verificado com o mesmo `applicationId` e o mesmo fingerprint e instalado com `adb install -r` sobre a instalação funcional.
+Uma cópia dedicada desse mesmo keystore passou a ser a identidade persistente da CI. O artefato histórico `v1.1.1` / `versionCode 12` gerado pela esteira foi verificado com o mesmo `applicationId` e o mesmo fingerprint e instalado com `adb install -r` sobre a instalação funcional.
 
 Após a atualização:
 
@@ -207,20 +250,27 @@ A investigação seguirá esta ordem, mantendo o aplicativo funcional como refer
 
 A hipótese de trabalho é deliberadamente mais restrita do que "copiar o login Tuya": o alvo é descobrir **qual material de autorização o provisionamento Android entrega ou deriva para permitir uma sessão BLE válida com um T4A já vinculado**.
 
-## Marco 2: achados e requisitos já identificados
+## Marco 2: estado e próximos passos
 
-Os testes de rodagem revelaram requisitos arquiteturais que devem ser tratados no Marco 2, junto com MQTT, geolocalização e navegação:
+O Marco 2 tem quatro partes explícitas:
 
-- a sessão BLE não deve depender do ciclo de vida da `MainActivity`;
-- bloquear/desbloquear a tela, trocar temporariamente de Activity ou recriar a UI não deve provocar novo `attach`, nova consulta de inventário ou perda da telemetria já ativa;
-- o backend/transport deverá viver em componente de duração maior que a UI, preferencialmente um `Foreground Service` ou uma sessão persistente equivalente, com a `MainActivity` apenas assinando o estado existente;
-- MQTT e geolocalização devem continuar funcionando mesmo quando a tela estiver bloqueada e a UI não estiver ativa;
-- ao retornar para a UI, o aplicativo deverá reassinar o estado corrente sem reinicializar a sessão BLE e sem introduzir `INITIAL` artificialmente por causa da Activity;
-- os testes no Galaxy S25 mostraram bloqueio de segurança por detecção de movimento compatível com possível roubo. `FLAG_KEEP_SCREEN_ON` continua útil contra timeout normal, mas não deve ser considerado mecanismo para impedir esse tipo de bloqueio de segurança;
-- o aplicativo deve permanecer funcional mesmo que esse bloqueio externo ocorra: a meta do Marco 2 é manter a conexão/telemetria e tornar o evento transparente para o transporte BLE;
-- a investigação futura deverá distinguir claramente `INITIAL` gerado por nova sessão real do T4A de `INITIAL` provocado por reanexação do SDK/backend.
+1. **Sessão persistente — concluída e fisicamente validada.** `T4ASessionService` é proprietário do backend; recriar/bloquear a UI não cria uma nova sessão BLE apenas por causa da Activity.
+2. **MQTT + Home Assistant — concluído e fisicamente validado.** WSS, retained telemetry, disponibilidade/LWT e Device Discovery estão operacionais. MQTT permanece estritamente publish-only e não controla o T4A.
+3. **Geolocalização — concluída e fisicamente validada no fluxo principal.** `AndroidLocationProvider` produz `LocationSnapshot`, publica `t4a/location` e alimenta a telemetria. O teste real confirmou aquisição adaptativa durante deslocamento. A continuidade específica com tela bloqueada e a visualização do `device_tracker` em percurso longo permanecem como validações complementares, não como desenvolvimento pendente desta feature.
+4. **Navegação — pendente e ainda pertencente ao Marco 2.** O APK deve receber uma rota compartilhada pelo Google Maps, preservar paradas/waypoints ordenados, permitir salvar percursos e mostrar na primeira tela a próxima instrução de direção com distância restante.
 
-A direção desejada para o Marco 2 é, portanto: **UI descartável, sessão BLE persistente e telemetria independente da tela**.
+A feature MQTT/geolocalização pode ser integrada à `master`. Antes de iniciar a navegação, o próximo trabalho deliberadamente separado será um **fix da bateria**, pois os logs reais mostram que a semântica de `battery_percentage` é mais complexa do que uma filtragem pontual.
+
+A navegação deverá reutilizar `LocationSnapshot`; não deve criar uma segunda pilha de GPS. Também não deve introduzir controle remoto do patinete por MQTT.
+
+Critérios de encerramento completo do Marco 2:
+
+- MQTT/Discovery e localização real publicados de forma coerente;
+- recepção de URL/rota compartilhada pelo Google Maps;
+- modelo persistente de percurso com waypoints/paradas ordenados;
+- progresso da rota calculado a partir da posição corrente;
+- ícone de manobra + distância até a próxima instrução exibidos na tela principal;
+- teste físico de um percurso curto com navegação ativa.
 
 ## Compilação, CI e depuração por ADB
 
@@ -231,21 +281,64 @@ A direção desejada para o Marco 2 é, portanto: **UI descartável, sessão BLE
 - targetSdk: 35
 - Tuya Smart SDK: 7.8.0
 - applicationId: `br.com.t4acontrol`
-- versionCode: 12
-- versionName: 1.1.1
+- `versionName` e `versionCode` dos APKs de CI são injetados pelo workflow `Build APK`.
 
-O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
+O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento continua usando o fallback histórico `versionName 1.1.1` / `versionCode 12` e é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
 
-O workflow `.github/workflows/build-apk.yml` restaura os inputs privados da Tuya, executa `verifyTuyaBoundary`, assina o build com a chave persistente configurada nos Secrets e publica um APK **debuggable** com o mesmo `applicationId` registrado na Tuya.
+### Versionamento CI/CD
+
+O workflow `.github/workflows/build-apk.yml` é a autoridade para versionar APKs produzidos pela CI/CD. A versão estável canônica é representada por uma tag Git `vMAJOR.MINOR.PATCH`. Enquanto ainda não existir uma tag estável igual ou superior ao baseline atual, `1.1.1` funciona somente como valor de bootstrap; depois disso a maior tag SemVer passa a ser a fonte de verdade.
+
+A classificação SemVer é definida **pela branch**, não pela existência de PR nem por labels:
+
+- `fix/*`, `bugfix/*` ou `hotfix/*` → `patch`;
+- `feature/*` → `minor`;
+- `major/*` ou `breaking/*` → `major`.
+
+Assim, `feature/mqtt-telemetry` é obrigatoriamente uma alteração `minor`. O workflow `Architecture boundary` valida essa classificação quando a branch participa de um PR para `master`, mas o `Build APK` usa a mesma regra diretamente em qualquer execução manual feita na própria branch.
+
+Regras de geração:
+
+- build manual em branch: calcula primeiro a versão SemVer projetada conforme a classe da branch e acrescenta o indicador sequencial `-f<run_number>`; por exemplo, partindo de `1.1.1`, uma `feature/*` gera `1.2.0-f81` e uma `fix/*` gera `1.1.2-f82`;
+- merge em `master`: o `Build APK` identifica a branch de origem do PR associado ao commit de merge, reaplica sua classificação e gera o incremento SemVer puro, sem sufixo;
+- depois que o APK de `master` compila com sucesso, o CI cria a tag estável `v<versionName>` apontando para exatamente aquele commit;
+- rerun do mesmo commit de `master` é idempotente: se a tag estável já aponta para o commit, a versão é reutilizada e não sofre novo incremento;
+- push direto para `master` sem origem classificável e sem tag estável correspondente falha na resolução de versão, evitando avanço não classificado;
+- execução manual em `master` reutiliza a versão estável corrente e não cria um incremento artificial;
+- `versionCode` usa `100000 + GITHUB_RUN_NUMBER`, permanecendo numérico e crescente entre novas execuções do workflow;
+- um rerun da mesma execução mantém o mesmo `versionCode` porque continua sendo o mesmo run lógico;
+- o `applicationId` permanece exatamente `br.com.t4acontrol`; versionamento nunca deve usar `applicationIdSuffix`.
+
+Exemplo da promoção da branch atual:
+
+```text
+base atual:  1.1.1
+feature:     1.2.0-f<run_number>
+merge:       1.2.0
+stable:      v1.2.0
+```
+
+Não se deve editar `versionName`/`versionCode` no Gradle para produzir um novo APK de CI. O Gradle mantém apenas os fallbacks necessários para build local; a identidade dos APKs distribuídos é calculada pelo CI/CD.
+
+O workflow restaura os inputs privados da Tuya, resolve e injeta a versão, executa `verifyTuyaBoundary`, assina o build com a chave persistente configurada nos Secrets e publica um APK **debuggable** com o mesmo `applicationId` registrado na Tuya.
 
 Artefatos esperados:
 
 ```text
-GitHub Actions: t4a-control-debug-<commit SHA>
-APK:            T4A-Control-debug-<short SHA>.apk
-Release tag:    latest-debug
-Release asset:  T4A-Control-debug.apk
+master:
+  versionName:      <versão SemVer promovida>
+  artifact/APK:     T4A-Control-<versão>-debug-<short SHA>.apk
+
+branch:
+  versionName:      <versão SemVer projetada>-f<run_number>
+  artifact/APK:     T4A-Control-<versão>-f<run_number>-debug-<short SHA>.apk
+
+Stable tag:         v<MAJOR>.<MINOR>.<PATCH>
+Release tag móvel:  latest-debug
+Release asset:      T4A-Control-debug.apk
 ```
+
+O release `latest-debug` mantém o nome estável do asset para não quebrar o fluxo de instalação, mas seu título e suas notas registram `versionName`, `versionCode`, classificação de incremento, PR de origem quando aplicável, branch e commit exatos.
 
 Essa configuração foi escolhida para permitir que um APK vindo diretamente da esteira seja instalado e posteriormente investigado por ADB a partir do ChatGPT para Windows, mantendo código, commit e binário rastreáveis.
 
