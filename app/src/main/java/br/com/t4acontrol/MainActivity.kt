@@ -1,7 +1,6 @@
 package br.com.t4acontrol
 
 import android.Manifest
-import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -10,31 +9,23 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.content.res.Configuration
-import android.graphics.Color
-import android.graphics.Insets
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.MediaStore
-import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -321,12 +312,17 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         SettingsSection("Bateria", foreground) {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
             var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
-            Text("Intervalo mínimo para detectar nova recarga: ${BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]} h", color = foreground)
+            Text(
+                "Intervalo mínimo para detectar nova recarga: ${BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]} h",
+                color = foreground,
+            )
             Slider(
                 value = sliderIndex,
                 onValueChange = { sliderIndex = it },
                 onValueChangeFinished = {
-                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)])
+                    session.setBatteryRechargeMinGapHours(
+                        BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]
+                    )
                 },
                 valueRange = 0f..3f,
                 steps = 2,
@@ -551,7 +547,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         window.statusBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
         window.navigationBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
         window.decorView.windowInsetsController?.let { controller ->
-            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
             controller.setSystemBarsAppearance(if (darkMode) 0 else mask, mask)
         }
     }
@@ -575,13 +572,21 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_BLUETOOTH) return
         if (hasBluetoothPermissions()) {
             if (uiForeground) connectSession()
         } else {
-            Toast.makeText(this, "Permissões Bluetooth são necessárias para manter a sessão T4A.", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Permissões Bluetooth são necessárias para manter a sessão T4A.",
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
