@@ -27,7 +27,7 @@ public final class PahoMqttTransport implements MqttTransport {
       MqttConfiguration configuration, String willTopic, String willPayload) {
     if (configuration == null || connecting || isConnected()) return;
 
-    String uri = serverUri(configuration);
+    String uri = configuration.serverUri();
     try {
       closeClient();
       MqttAsyncClient next =
@@ -155,11 +155,6 @@ public final class PahoMqttTransport implements MqttTransport {
     } catch (MqttException ignored) {
       // Nothing else owns this client instance.
     }
-  }
-
-  private static String serverUri(MqttConfiguration configuration) {
-    String scheme = configuration.tls ? "ssl" : "tcp";
-    return scheme + "://" + configuration.host + ":" + configuration.port;
   }
 
   private static String describe(Throwable error) {
