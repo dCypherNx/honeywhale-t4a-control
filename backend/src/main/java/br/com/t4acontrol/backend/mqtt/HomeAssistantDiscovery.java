@@ -121,7 +121,7 @@ public final class HomeAssistantDiscovery {
         binarySensor(
             "Bloqueio",
             deviceId + "_locked",
-            "{{ 'ON' if value_json.locked else 'OFF' }}",
+            "{{ 'OFF' if value_json.locked else 'ON' }}",
             "lock"));
     out.put(
         "headlight",
