@@ -63,6 +63,10 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java',
             'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
             'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java',
+            'app/src/main/java/br/com/t4acontrol/MainActivity.kt',
+            'app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboardState.kt',
+            'app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboardMapper.kt',
+            'app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboard.kt',
             'app/src/main/java/br/com/t4acontrol/session/T4ASession.java',
             'app/src/main/java/br/com/t4acontrol/session/T4ASessionService.java',
             'backend/src/main/java/br/com/t4acontrol/backend/mqtt/MqttConfiguration.java',
@@ -98,9 +102,18 @@ jobs:
           }
 
           $activity = Get-Content -LiteralPath `
-            'app/src/main/java/br/com/t4acontrol/MainActivity.java' -Raw
+            'app/src/main/java/br/com/t4acontrol/MainActivity.kt' -Raw
           if ($activity -match 'T4ABackend|TuyaT4APlatform|ThingHomeSdk|com\.thingclips\.|org\.eclipse\.paho') {
             Write-Error 'MainActivity must depend on UI/session contracts, not provider implementations.'
+            exit 1
+          }
+
+          $dashboardSources = Get-ChildItem `
+            'app/src/main/java/br/com/t4acontrol/ui/dashboard' -Recurse -File |
+            Where-Object { $_.Extension -in '.java', '.kt' }
+          $dashboardLeak = $dashboardSources | Select-String -Pattern 'ThingHomeSdk|com\.thingclips\.|org\.eclipse\.paho'
+          if ($dashboardLeak) {
+            $dashboardLeak | ForEach-Object { Write-Error $_.ToString() }
             exit 1
           }
 
@@ -129,9 +142,9 @@ jobs:
             exit 1
           }
 
-          $pahoAdapter = 'app/src/main/java/br/com/t4acontrol/mqtt/PahoMqttTransport.java'
-          $pahoLeak = Get-ChildItem 'app/src/main/java' -Recurse -Filter '*.java' |
-            Where-Object { $_.FullName -ne (Resolve-Path $pahoAdapter).Path } |
+          $pahoAdapter = (Resolve-Path 'app/src/main/java/br/com/t4acontrol/mqtt/PahoMqttTransport.java').Path
+          $pahoLeak = Get-ChildItem 'app/src/main/java' -Recurse -File |
+            Where-Object { $_.Extension -in '.java', '.kt' -and $_.FullName -ne $pahoAdapter } |
             Select-String -Pattern 'org\.eclipse\.paho'
           if ($pahoLeak) {
             $pahoLeak | ForEach-Object { Write-Error $_.ToString() }
@@ -144,4 +157,4 @@ jobs:
             exit 1
           }
 
-          Write-Output 'Provisioning/transport/session/MQTT contracts are committed and architecture boundaries are clean.'
+          Write-Output 'Provisioning/transport/session/MQTT/UI contracts are committed and architecture boundaries are clean.'
