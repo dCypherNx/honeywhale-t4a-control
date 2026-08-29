@@ -29,10 +29,18 @@ public final class T4ABackend {
   private static final long RSSI_REFRESH_MS = 2000L;
   private static final long RSSI_RESPONSE_TIMEOUT_MS = 6000L;
   private static final long LOCK_CONFIRM_TIMEOUT_MS = 5000L;
+  private static final long BATTERY_RECHARGE_MIN_GAP_MS = 6L * 60L * 60L * 1000L;
+  private static final int BATTERY_RECHARGE_MIN_RISE = 5;
+  private static final int BATTERY_RECHARGE_MAX_DISTANCE = 1;
   private static final String PREF_LOCK_KNOWN = "lock_known";
   private static final String PREF_LOCK_VALUE = "lock_value";
   private static final String PREF_AUTO_LOCK = "auto_lock_distance";
   private static final String PREF_AUTO_LOCK_DISTANCE = "auto_lock_distance_level";
+  private static final String PREF_BATTERY_OBSERVED_MIN = "battery_observed_min";
+  private static final String PREF_BATTERY_OBSERVED_MAX = "battery_observed_max";
+  private static final String PREF_BATTERY_CYCLE_STARTED_AT = "battery_cycle_started_at";
+  private static final String PREF_BATTERY_LAST_LIVE_PERCENT = "battery_last_live_percent";
+  private static final String PREF_BATTERY_LAST_LIVE_AT = "battery_last_live_at";
   private static final String DISTANCE_SHORT = "short",
       DISTANCE_MEDIUM = "medium",
       DISTANCE_LONG = "long";
@@ -62,8 +70,9 @@ public final class T4ABackend {
   private int rssiFailures;
   private Object pendingLockValue;
   private long pendingLockUntil;
-  private Integer lastLiveSpeedRaw;
-  private Integer lastLiveBatteryPercent;
+  private Integer batteryObservedMin;
+  private Integer batteryObservedMax;
+  private Long batteryCycleStartedAt;
 
   private final Runnable maintenance =
       new Runnable() {
@@ -93,6 +102,7 @@ public final class T4ABackend {
     this.transport = transport;
     this.preferences =
         context.getApplicationContext().getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
+    restoreBatteryObservation();
   }
 
   public void start() {
@@ -312,8 +322,6 @@ public final class T4ABackend {
     device = value;
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
-    lastLiveSpeedRaw = null;
-    lastLiveBatteryPercent = null;
     schema.clear();
     if (value.schema != null) {
       for (Map.Entry<String, T4AContracts.DpSchema> entry : value.schema.entrySet()) {
@@ -391,8 +399,6 @@ public final class T4ABackend {
     rssi = 0;
     clearPendingLock();
     dps.clear();
-    lastLiveSpeedRaw = null;
-    lastLiveBatteryPercent = null;
     schema.clear();
     pendingDps.clear();
     pairing = T4AState.Pairing.UNPAIRED;
@@ -429,18 +435,21 @@ public final class T4ABackend {
             pendingDps.keySet(),
             preferences.getBoolean(PREF_AUTO_LOCK, false),
             preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM),
+            batteryObservedMin,
+            batteryObservedMax,
+            batteryCycleStartedAt,
             message));
   }
 
   private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
     if (update == null) return;
     Map<String, Object> accepted = canonicalDps(update);
-    // Velocidade e bateria são instantâneas. INITIAL/cache não podem estabelecer nenhuma delas.
+    // INITIAL/cache é diagnóstico. Não estabelece bateria, velocidade nem trava.
     if (!confirmsCommand) {
       accepted.remove(DP_SPEED);
-      filterCachedBattery(accepted);
+      accepted.remove(DP_BATTERY);
+      accepted.remove(DP_LOCK);
     } else {
-      updateLiveSpeed(accepted);
       filterLiveBattery(accepted);
     }
     if (confirmsCommand)
@@ -463,26 +472,16 @@ public final class T4ABackend {
         event("Trava não confirmou o estado solicitado");
       }
     }
-    if (accepted.containsKey(DP_LOCK) && preferences.getBoolean(PREF_LOCK_KNOWN, false)) {
-      accepted.put(DP_LOCK, preferences.getBoolean(PREF_LOCK_VALUE, true));
+    if (confirmsCommand && accepted.containsKey(DP_LOCK)) {
+      boolean reported = booleanValue(accepted.get(DP_LOCK));
+      accepted.put(DP_LOCK, reported);
+      preferences
+          .edit()
+          .putBoolean(PREF_LOCK_KNOWN, true)
+          .putBoolean(PREF_LOCK_VALUE, reported)
+          .apply();
     }
     dps.putAll(accepted);
-  }
-
-  private void filterCachedBattery(Map<String, Object> accepted) {
-    if (!accepted.containsKey(DP_BATTERY)) return;
-    Integer percent = batteryPercent(accepted.get(DP_BATTERY));
-    if (percent == null
-        || percent < 0
-        || percent > 100
-        || lastLiveBatteryPercent == null
-        || !lastLiveBatteryPercent.equals(percent)) accepted.remove(DP_BATTERY);
-  }
-
-  private void updateLiveSpeed(Map<String, Object> accepted) {
-    if (!accepted.containsKey(DP_SPEED)) return;
-    Integer rawSpeed = integerValue(accepted.get(DP_SPEED));
-    if (rawSpeed != null && rawSpeed >= 0) lastLiveSpeedRaw = rawSpeed;
   }
 
   private void filterLiveBattery(Map<String, Object> accepted) {
@@ -492,15 +491,62 @@ public final class T4ABackend {
       accepted.remove(DP_BATTERY);
       return;
     }
-    // DP3 acompanha fortemente a tensão instantânea e sofre voltage sag sob carga. Um único RX
-    // em repouso é suficiente para atualizar o SOC; não dependemos de receber amostras em série.
-    // Sem velocidade live conhecida, ou enquanto a última velocidade live for > 0, o RX bruto é
-    // preservado no raw log, mas não substitui o último SOC aceito.
-    if (lastLiveSpeedRaw == null || lastLiveSpeedRaw > 0) {
-      accepted.remove(DP_BATTERY);
-      return;
+    // DP3 é uma observação live do controlador. Não usamos DP2 para decidir se a amostra existe.
+    // O valor bruto continua sujeito a voltage sag/recovery; min/max preservam o envelope observado.
+    accepted.put(DP_BATTERY, percent);
+    trackLiveBattery(percent);
+  }
+
+  private void restoreBatteryObservation() {
+    int min = preferences.getInt(PREF_BATTERY_OBSERVED_MIN, -1);
+    int max = preferences.getInt(PREF_BATTERY_OBSERVED_MAX, -1);
+    long startedAt = preferences.getLong(PREF_BATTERY_CYCLE_STARTED_AT, 0L);
+    batteryObservedMin = min >= 0 ? min : null;
+    batteryObservedMax = max >= 0 ? max : null;
+    batteryCycleStartedAt = startedAt > 0L ? startedAt : null;
+  }
+
+  private void trackLiveBattery(int percent) {
+    long now = System.currentTimeMillis();
+    int previousLast = preferences.getInt(PREF_BATTERY_LAST_LIVE_PERCENT, -1);
+    long previousLastAt = preferences.getLong(PREF_BATTERY_LAST_LIVE_AT, 0L);
+    boolean hasCycle = batteryObservedMin != null && batteryObservedMax != null;
+    boolean rechargeEvidence =
+        hasCycle
+            && previousLast >= 0
+            && previousLastAt > 0L
+            && now - previousLastAt >= BATTERY_RECHARGE_MIN_GAP_MS
+            && percent >= previousLast + BATTERY_RECHARGE_MIN_RISE
+            && percent >= batteryObservedMax - BATTERY_RECHARGE_MAX_DISTANCE;
+
+    if (!hasCycle || rechargeEvidence) {
+      batteryObservedMin = percent;
+      batteryObservedMax = percent;
+      batteryCycleStartedAt = now;
+      if (rechargeEvidence) {
+        raw(
+            "BATTERY CYCLE {\"previousMin\":"
+                + preferences.getInt(PREF_BATTERY_OBSERVED_MIN, percent)
+                + ",\"previousMax\":"
+                + preferences.getInt(PREF_BATTERY_OBSERVED_MAX, percent)
+                + ",\"firstLive\":"
+                + percent
+                + "}");
+      }
+    } else {
+      if (percent < batteryObservedMin) batteryObservedMin = percent;
+      if (percent > batteryObservedMax) batteryObservedMax = percent;
+      if (batteryCycleStartedAt == null) batteryCycleStartedAt = now;
     }
-    lastLiveBatteryPercent = percent;
+
+    preferences
+        .edit()
+        .putInt(PREF_BATTERY_OBSERVED_MIN, batteryObservedMin)
+        .putInt(PREF_BATTERY_OBSERVED_MAX, batteryObservedMax)
+        .putLong(PREF_BATTERY_CYCLE_STARTED_AT, batteryCycleStartedAt)
+        .putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent)
+        .putLong(PREF_BATTERY_LAST_LIVE_AT, now)
+        .apply();
   }
 
   private Integer batteryPercent(Object value) {
@@ -514,6 +560,13 @@ public final class T4ABackend {
     } catch (NumberFormatException ignored) {
       return null;
     }
+  }
+
+  private boolean booleanValue(Object value) {
+    return value != null
+        && (Boolean.TRUE.equals(value)
+            || "true".equalsIgnoreCase(value.toString())
+            || "1".equals(value.toString()));
   }
 
   private Map<String, Object> canonicalDps(Map<String, Object> update) {
