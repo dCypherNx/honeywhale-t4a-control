@@ -8,15 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Insets
 import android.os.Bundle
 import android.os.IBinder
 import android.provider.MediaStore
-import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -53,11 +55,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import br.com.t4acontrol.backend.T4AState
 import br.com.t4acontrol.mqtt.MqttSettingsActivity
 import br.com.t4acontrol.session.T4ASession
@@ -66,6 +71,7 @@ import br.com.t4acontrol.ui.dashboard.RidingMode
 import br.com.t4acontrol.ui.dashboard.T4ADashboard
 import br.com.t4acontrol.ui.dashboard.T4ADashboardActions
 import br.com.t4acontrol.ui.dashboard.T4ADashboardMapper
+import com.mikepenz.iconics.IconicsDrawable
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -196,6 +202,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 Modifier.fillMaxSize()
                     .background(background)
                     .verticalScroll(rememberScrollState())
+                    .safeDrawingPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -411,7 +418,21 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val source = if (settings) rawHistory else eventHistory
         val entries = if (settings) source else source.takeLast(10)
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text(if (settings) "Log raw" else "Eventos", color = ComposeColor(0xFF075EF0), fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MdiIcon(
+                    name = "cmd-format-list-bulleted",
+                    color = ComposeColor(0xFF075EF0),
+                    iconSize = 20.dp,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    if (settings) "Log raw" else "Eventos",
+                    color = ComposeColor(0xFF075EF0),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                )
+            }
             entries.asReversed().forEach { entry ->
                 Text(
                     entry,
@@ -427,6 +448,32 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 }
             }
         }
+    }
+
+    @Composable
+    private fun MdiIcon(
+        name: String,
+        color: ComposeColor,
+        iconSize: Dp,
+        modifier: Modifier = Modifier,
+    ) {
+        val argb = color.toArgb()
+        AndroidView(
+            modifier = modifier,
+            factory = { context ->
+                ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE }
+            },
+            update = { image ->
+                val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
+                image.setImageDrawable(
+                    IconicsDrawable(image.context, name).apply {
+                        colorList = ColorStateList.valueOf(argb)
+                        sizeXPx = pixels
+                        sizeYPx = pixels
+                    }
+                )
+            },
+        )
     }
 
     override fun onState(value: T4AState) {
