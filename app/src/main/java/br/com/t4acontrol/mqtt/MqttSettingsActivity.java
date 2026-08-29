@@ -64,8 +64,8 @@ public final class MqttSettingsActivity extends Activity {
     LinearLayout header = new LinearLayout(this);
     header.setGravity(Gravity.CENTER_VERTICAL);
     ImageButton back = new ImageButton(this);
-    back.setImageDrawable(icon("cmd-arrow-left", foregroundColor(), 25));
-    back.setBackground(round(surfaceColor(), 99, outlineColor(), 1));
+    back.setImageDrawable(icon("cmd-arrow-left", BLUE, 25));
+    back.setBackground(round(surfaceColor(), 99, BLUE, 1));
     back.setPadding(dp(12), dp(12), dp(12), dp(12));
     back.setContentDescription(getString(R.string.mqtt_back));
     back.setOnClickListener(v -> finish());
@@ -176,16 +176,20 @@ public final class MqttSettingsActivity extends Activity {
     ScrollView scroll = new ScrollView(this);
     scroll.setFillViewport(true);
     scroll.setBackgroundColor(backgroundColor());
-    scroll.setOnApplyWindowInsetsListener(
+    scroll.addView(body);
+
+    LinearLayout viewport = vertical();
+    viewport.setBackgroundColor(backgroundColor());
+    viewport.setOnApplyWindowInsetsListener(
         (view, insets) -> {
           Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
           view.setPadding(
               bars.left + dp(16), bars.top + dp(8), bars.right + dp(16), bars.bottom + dp(8));
           return insets;
         });
-    scroll.addView(body);
-    setContentView(scroll);
-    scroll.requestApplyInsets();
+    viewport.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+    setContentView(viewport);
+    viewport.requestApplyInsets();
   }
 
   private void load() {
