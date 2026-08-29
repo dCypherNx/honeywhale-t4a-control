@@ -2,7 +2,7 @@
 
 Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A. O provisionamento e o transporte BLE continuam atualmente apoiados no Tuya Smart SDK, enquanto sessão persistente, MQTT, Home Assistant e geolocalização já possuem camadas próprias e desacopladas da UI.
 
-## Estado atual (v1.1.1)
+## Estado atual (base v1.1.1)
 
 Funcional e implementado:
 
@@ -26,6 +26,7 @@ Funcional e implementado:
 - geolocalização Android desacoplada do Tuya, publicada em `t4a/location` e incorporada à telemetria;
 - `device_tracker` GPS do Home Assistant definido no mesmo dispositivo T4A;
 - build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente;
+- versionamento dos APKs gerados pela CI/CD, com versão limpa em `master` e sufixo sequencial curto em builds de feature;
 - atualização in-place do APK funcional pelo artefato da CI, preservando sandbox, login Tuya e dispositivo previamente vinculado.
 
 Implementado, mas ainda pendente de validação física após a extensão mais recente:
@@ -104,7 +105,7 @@ Por isso o projeto voltou a usar exclusivamente:
 br.com.t4acontrol
 ```
 
-O build remoto não deve aplicar `applicationIdSuffix` enquanto utilizar as credenciais atuais da Tuya. A versão 1.1.1 / `versionCode 12` formaliza essa correção.
+O build remoto não deve aplicar `applicationIdSuffix` enquanto utilizar as credenciais atuais da Tuya. A versão 1.1.1 / `versionCode 12` formaliza essa correção histórica do baseline.
 
 ### Baseline de assinatura e depuração confirmado
 
@@ -115,7 +116,7 @@ alias: androiddebugkey
 SHA-256: DA:4F:06:64:EC:97:A6:F2:D3:6E:31:1F:FA:E4:89:57:CF:97:24:47:A9:C0:1E:42:C3:98:7D:3D:64:B6:6D:10
 ```
 
-Uma cópia dedicada desse mesmo keystore passou a ser a identidade persistente da CI. O artefato `v1.1.1` / `versionCode 12` gerado pela esteira foi verificado com o mesmo `applicationId` e o mesmo fingerprint e instalado com `adb install -r` sobre a instalação funcional.
+Uma cópia dedicada desse mesmo keystore passou a ser a identidade persistente da CI. O artefato histórico `v1.1.1` / `versionCode 12` gerado pela esteira foi verificado com o mesmo `applicationId` e o mesmo fingerprint e instalado com `adb install -r` sobre a instalação funcional.
 
 Após a atualização:
 
@@ -262,21 +263,42 @@ Critérios de encerramento do Marco 2:
 - targetSdk: 35
 - Tuya Smart SDK: 7.8.0
 - applicationId: `br.com.t4acontrol`
-- versionCode: 12
-- versionName: 1.1.1
+- versão base atual: `1.1.1`
+- `versionName` e `versionCode` dos APKs de CI são injetados pelo workflow `Build APK`.
 
-O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
+O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento continua usando o fallback `versionName 1.1.1` / `versionCode 12` e é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
 
-O workflow `.github/workflows/build-apk.yml` restaura os inputs privados da Tuya, executa `verifyTuyaBoundary`, assina o build com a chave persistente configurada nos Secrets e publica um APK **debuggable** com o mesmo `applicationId` registrado na Tuya.
+### Versionamento CI/CD
+
+O workflow `.github/workflows/build-apk.yml` é a autoridade para versionar APKs produzidos pela CI/CD:
+
+- `master`: `versionName` puro, igual à versão base. Exemplo: `1.1.1`;
+- qualquer branch diferente de `master`: `versionName` com indicador curto sequencial `-f<run_number>`. Exemplo: `1.1.1-f40`;
+- o número após `f` usa `GITHUB_RUN_NUMBER` do workflow `Build APK`, portanto é único e crescente entre novas execuções desse workflow;
+- `versionCode` usa `100000 + GITHUB_RUN_NUMBER`, permanecendo numérico e crescente independentemente de o build vir de `master` ou de uma feature;
+- um rerun da mesma execução mantém a mesma identidade de versão, pois continua sendo o mesmo run lógico;
+- o `applicationId` permanece exatamente `br.com.t4acontrol`; versionamento nunca deve usar `applicationIdSuffix`.
+
+A versão base é declarada em `T4A_BASE_VERSION` dentro do workflow. Alterar a versão de produto significa mudar essa única referência; não se deve editar `versionName`/`versionCode` no Gradle para produzir um novo APK de CI.
+
+O workflow restaura os inputs privados da Tuya, resolve e injeta a versão, executa `verifyTuyaBoundary`, assina o build com a chave persistente configurada nos Secrets e publica um APK **debuggable** com o mesmo `applicationId` registrado na Tuya.
 
 Artefatos esperados:
 
 ```text
-GitHub Actions: t4a-control-debug-<commit SHA>
-APK:            T4A-Control-debug-<short SHA>.apk
-Release tag:    latest-debug
-Release asset:  T4A-Control-debug.apk
+master:
+  versionName:      1.1.1
+  artifact/APK:     T4A-Control-1.1.1-debug-<short SHA>.apk
+
+feature (exemplo run 40):
+  versionName:      1.1.1-f40
+  artifact/APK:     T4A-Control-1.1.1-f40-debug-<short SHA>.apk
+
+Release tag:        latest-debug
+Release asset:      T4A-Control-debug.apk
 ```
+
+O release `latest-debug` mantém o nome estável do asset para não quebrar o fluxo de instalação, mas seu título e suas notas registram `versionName`, `versionCode`, branch e commit exatos.
 
 Essa configuração foi escolhida para permitir que um APK vindo diretamente da esteira seja instalado e posteriormente investigado por ADB a partir do ChatGPT para Windows, mantendo código, commit e binário rastreáveis.
 
