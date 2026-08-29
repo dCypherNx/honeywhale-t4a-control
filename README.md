@@ -2,7 +2,7 @@
 
 Aplicativo privado para parear, conectar, monitorar e controlar o HoneyWhale T4A. O provisionamento e o transporte BLE continuam atualmente apoiados no Tuya Smart SDK, enquanto sessão persistente, MQTT, Home Assistant e geolocalização já possuem camadas próprias e desacopladas da UI.
 
-## Estado atual (base v1.1.1)
+## Estado atual
 
 Funcional e implementado:
 
@@ -26,7 +26,7 @@ Funcional e implementado:
 - geolocalização Android desacoplada do Tuya, publicada em `t4a/location` e incorporada à telemetria;
 - `device_tracker` GPS do Home Assistant definido no mesmo dispositivo T4A;
 - build remoto reproduzível com credenciais Tuya restauradas em CI e assinatura Android persistente;
-- versionamento dos APKs gerados pela CI/CD, com versão limpa em `master` e sufixo sequencial curto em builds de feature;
+- versionamento SemVer automatizado pela CI/CD, com versão limpa em `master`, classificação obrigatória do PR e sufixo sequencial curto em builds de feature;
 - atualização in-place do APK funcional pelo artefato da CI, preservando sandbox, login Tuya e dispositivo previamente vinculado.
 
 Implementado, mas ainda pendente de validação física após a extensão mais recente:
@@ -263,23 +263,43 @@ Critérios de encerramento do Marco 2:
 - targetSdk: 35
 - Tuya Smart SDK: 7.8.0
 - applicationId: `br.com.t4acontrol`
-- versão base atual: `1.1.1`
 - `versionName` e `versionCode` dos APKs de CI são injetados pelo workflow `Build APK`.
 
-O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento continua usando o fallback `versionName 1.1.1` / `versionCode 12` e é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
+O arquivo privado `tuya.properties` deve conter `TUYA_APP_KEY` e `TUYA_APP_SECRET`. O APK local de desenvolvimento continua usando o fallback histórico `versionName 1.1.1` / `versionCode 12` e é gerado em `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Versionamento CI/CD
 
-O workflow `.github/workflows/build-apk.yml` é a autoridade para versionar APKs produzidos pela CI/CD:
+O workflow `.github/workflows/build-apk.yml` é a autoridade para versionar APKs produzidos pela CI/CD. A versão estável canônica é representada por uma tag Git `vMAJOR.MINOR.PATCH`. Enquanto ainda não existir uma tag estável igual ou superior ao baseline atual, `1.1.1` funciona somente como valor de bootstrap; depois disso a maior tag SemVer passa a ser a fonte de verdade.
 
-- `master`: `versionName` puro, igual à versão base. Exemplo: `1.1.1`;
-- qualquer branch diferente de `master`: `versionName` com indicador curto sequencial `-f<run_number>`. Exemplo: `1.1.1-f40`;
-- o número após `f` usa `GITHUB_RUN_NUMBER` do workflow `Build APK`, portanto é único e crescente entre novas execuções desse workflow;
-- `versionCode` usa `100000 + GITHUB_RUN_NUMBER`, permanecendo numérico e crescente independentemente de o build vir de `master` ou de uma feature;
-- um rerun da mesma execução mantém a mesma identidade de versão, pois continua sendo o mesmo run lógico;
+Todo PR destinado a `master` deve possuir **exatamente um** dos marcadores abaixo:
+
+- `version:patch`: correção/fix compatível; incrementa `X.Y.Z` para `X.Y.(Z+1)`;
+- `version:minor`: funcionalidade compatível; incrementa `X.Y.Z` para `X.(Y+1).0`;
+- `version:major`: alteração incompatível; incrementa `X.Y.Z` para `(X+1).0.0`.
+
+O workflow `Architecture boundary` valida essa classificação em eventos de abertura, atualização, reabertura, inclusão e remoção de labels. Um PR sem classificação ou com mais de uma classificação falha no CI.
+
+Regras de geração:
+
+- build manual de feature: usa a versão estável corrente com indicador curto sequencial `-f<run_number>`, por exemplo `1.1.1-f40`;
+- merge em `master`: o `Build APK` identifica o PR associado ao commit, valida novamente que existe exatamente um marcador de versão, aplica o incremento SemVer e gera `versionName` puro, sem sufixo;
+- depois que o APK de `master` compila com sucesso, o CI cria a tag estável `v<versionName>` apontando para exatamente aquele commit;
+- rerun do mesmo commit de `master` é idempotente: se a tag estável já aponta para o commit, a versão é reutilizada e não sofre novo incremento;
+- push direto para `master` sem PR associado e sem tag estável correspondente falha na resolução de versão, evitando avanço não classificado;
+- execução manual em `master` reutiliza a versão estável corrente e não cria um incremento artificial;
+- `versionCode` usa `100000 + GITHUB_RUN_NUMBER`, permanecendo numérico e crescente entre novas execuções do workflow;
+- um rerun da mesma execução mantém o mesmo `versionCode` porque continua sendo o mesmo run lógico;
 - o `applicationId` permanece exatamente `br.com.t4acontrol`; versionamento nunca deve usar `applicationIdSuffix`.
 
-A versão base é declarada em `T4A_BASE_VERSION` dentro do workflow. Alterar a versão de produto significa mudar essa única referência; não se deve editar `versionName`/`versionCode` no Gradle para produzir um novo APK de CI.
+Exemplo da promoção de uma feature classificada como `version:minor`:
+
+```text
+feature:  1.1.1-f81
+merge:    1.2.0
+stable:   v1.2.0
+```
+
+Não se deve editar `versionName`/`versionCode` no Gradle para produzir um novo APK de CI. O Gradle mantém apenas os fallbacks necessários para build local; a identidade dos APKs distribuídos é calculada pelo CI/CD.
 
 O workflow restaura os inputs privados da Tuya, resolve e injeta a versão, executa `verifyTuyaBoundary`, assina o build com a chave persistente configurada nos Secrets e publica um APK **debuggable** com o mesmo `applicationId` registrado na Tuya.
 
@@ -287,18 +307,19 @@ Artefatos esperados:
 
 ```text
 master:
-  versionName:      1.1.1
-  artifact/APK:     T4A-Control-1.1.1-debug-<short SHA>.apk
+  versionName:      <versão SemVer promovida>
+  artifact/APK:     T4A-Control-<versão>-debug-<short SHA>.apk
 
-feature (exemplo run 40):
-  versionName:      1.1.1-f40
-  artifact/APK:     T4A-Control-1.1.1-f40-debug-<short SHA>.apk
+feature:
+  versionName:      <versão estável>-f<run_number>
+  artifact/APK:     T4A-Control-<versão>-f<run_number>-debug-<short SHA>.apk
 
-Release tag:        latest-debug
+Stable tag:         v<MAJOR>.<MINOR>.<PATCH>
+Release tag móvel:  latest-debug
 Release asset:      T4A-Control-debug.apk
 ```
 
-O release `latest-debug` mantém o nome estável do asset para não quebrar o fluxo de instalação, mas seu título e suas notas registram `versionName`, `versionCode`, branch e commit exatos.
+O release `latest-debug` mantém o nome estável do asset para não quebrar o fluxo de instalação, mas seu título e suas notas registram `versionName`, `versionCode`, classificação de incremento, PR de origem, branch e commit exatos.
 
 Essa configuração foi escolhida para permitir que um APK vindo diretamente da esteira seja instalado e posteriormente investigado por ADB a partir do ChatGPT para Windows, mantendo código, commit e binário rastreáveis.
 
