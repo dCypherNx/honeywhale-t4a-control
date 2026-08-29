@@ -24,13 +24,16 @@ public final class DefaultMqttSettings implements MqttSettings {
     if (port == null) return SaveResult.failure(Error.PORT_INVALID);
     Integer keepAlive = integer(draft.keepAliveSeconds);
     if (keepAlive == null) return SaveResult.failure(Error.KEEP_ALIVE_INVALID);
+    MqttConfiguration.Transport transport = transport(draft.transport);
+    if (transport == null) return SaveResult.failure(Error.TRANSPORT_INVALID);
 
     MqttConfiguration configuration =
         new MqttConfiguration(
             draft.enabled,
             draft.host,
             port,
-            draft.tls,
+            transport,
+            draft.websocketPath,
             draft.username,
             draft.password,
             draft.clientId,
@@ -53,7 +56,8 @@ public final class DefaultMqttSettings implements MqttSettings {
         value.enabled,
         value.host,
         String.valueOf(value.port),
-        value.tls,
+        value.transport.name(),
+        value.websocketPath,
         value.username,
         value.password,
         value.clientId,
@@ -65,11 +69,21 @@ public final class DefaultMqttSettings implements MqttSettings {
     return switch (error) {
       case HOST_REQUIRED -> Error.HOST_REQUIRED;
       case PORT_INVALID -> Error.PORT_INVALID;
+      case TRANSPORT_INVALID -> Error.TRANSPORT_INVALID;
+      case WEBSOCKET_PATH_INVALID -> Error.WEBSOCKET_PATH_INVALID;
       case CLIENT_ID_REQUIRED -> Error.CLIENT_ID_REQUIRED;
       case BASE_TOPIC_REQUIRED -> Error.BASE_TOPIC_REQUIRED;
       case KEEP_ALIVE_INVALID -> Error.KEEP_ALIVE_INVALID;
       default -> Error.NONE;
     };
+  }
+
+  private MqttConfiguration.Transport transport(String value) {
+    try {
+      return MqttConfiguration.Transport.valueOf(value == null ? "" : value.trim().toUpperCase());
+    } catch (IllegalArgumentException ignored) {
+      return null;
+    }
   }
 
   private Integer integer(String value) {
