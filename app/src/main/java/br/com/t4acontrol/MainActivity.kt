@@ -21,9 +21,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,16 +33,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -55,6 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
@@ -314,16 +321,13 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Slider(
+            T4ABatterySlider(
                 value = sliderIndex,
                 onValueChange = { sliderIndex = it },
                 onValueChangeFinished = {
                     val index = sliderIndex.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
                     session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index])
                 },
-                valueRange = 0f..3f,
-                steps = 2,
-                modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.fillMaxWidth()) {
                 BATTERY_RECHARGE_GAP_HOURS.forEach { hours ->
@@ -383,6 +387,64 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         SettingsSection(getString(R.string.pairing_section), foreground, "pairing") {
             Button(onClick = { confirmUnpair() }) { Text(getString(R.string.remove_pairing)) }
+        }
+    }
+
+    @Composable
+    private fun T4ABatterySlider(
+        value: Float,
+        onValueChange: (Float) -> Unit,
+        onValueChangeFinished: () -> Unit,
+    ) {
+        val active = ComposeColor(0xFF075EF0)
+        val inactive = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
+        Box(
+            modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+                val trackHeight = 6.dp.toPx()
+                val radius = trackHeight / 2f
+                val centerY = size.height / 2f
+                val fraction = (value / 3f).coerceIn(0f, 1f)
+                drawRoundRect(
+                    color = inactive,
+                    topLeft = Offset(0f, centerY - trackHeight / 2f),
+                    size = Size(size.width, trackHeight),
+                    cornerRadius = CornerRadius(radius, radius),
+                )
+                if (fraction > 0f) {
+                    drawRoundRect(
+                        color = active,
+                        topLeft = Offset(0f, centerY - trackHeight / 2f),
+                        size = Size((size.width * fraction).coerceAtLeast(trackHeight), trackHeight),
+                        cornerRadius = CornerRadius(radius, radius),
+                    )
+                }
+                for (index in 0..3) {
+                    val x = size.width * (index / 3f)
+                    drawCircle(
+                        color = if (index / 3f <= fraction) active else inactive,
+                        radius = 3.dp.toPx(),
+                        center = Offset(x, centerY),
+                    )
+                }
+            }
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = 0f..3f,
+                steps = 2,
+                colors = SliderDefaults.colors(
+                    thumbColor = active,
+                    activeTrackColor = ComposeColor.Transparent,
+                    inactiveTrackColor = ComposeColor.Transparent,
+                    activeTickColor = ComposeColor.Transparent,
+                    inactiveTickColor = ComposeColor.Transparent,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 
@@ -465,13 +527,37 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 Spacer(Modifier.size(8.dp))
                 Text(getString(if (settings) R.string.raw_log else R.string.events), color = ComposeColor(0xFF075EF0), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
-            entries.asReversed().forEach { entry ->
-                Text(entry, color = foreground, fontFamily = if (settings) FontFamily.Monospace else FontFamily.Default, fontSize = if (settings) 10.sp else 12.sp)
-            }
             if (settings) {
+                val vertical = rememberScrollState()
+                val horizontal = rememberScrollState()
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                        .height(220.dp)
+                        .border(1.dp, outline, RoundedCornerShape(10.dp))
+                        .background(if (isDarkMode()) ComposeColor(0xFF10151D) else ComposeColor(0xFFF8FAFD), RoundedCornerShape(10.dp))
+                        .padding(8.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.horizontalScroll(horizontal).verticalScroll(vertical),
+                    ) {
+                        entries.asReversed().forEach { entry ->
+                            Text(
+                                entry,
+                                color = foreground,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
                     OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") }
+                }
+            } else {
+                entries.asReversed().forEach { entry ->
+                    Text(entry, color = foreground, fontSize = 12.sp)
                 }
             }
         }
