@@ -6,6 +6,8 @@ public interface MqttSettings {
     NONE,
     HOST_REQUIRED,
     PORT_INVALID,
+    TRANSPORT_INVALID,
+    WEBSOCKET_PATH_INVALID,
     CLIENT_ID_REQUIRED,
     BASE_TOPIC_REQUIRED,
     KEEP_ALIVE_INVALID,
@@ -16,7 +18,8 @@ public interface MqttSettings {
     public final boolean enabled;
     public final String host;
     public final String port;
-    public final boolean tls;
+    public final String transport;
+    public final String websocketPath;
     public final String username;
     public final String password;
     public final String clientId;
@@ -27,7 +30,8 @@ public interface MqttSettings {
         boolean enabled,
         String host,
         String port,
-        boolean tls,
+        String transport,
+        String websocketPath,
         String username,
         String password,
         String clientId,
@@ -36,7 +40,8 @@ public interface MqttSettings {
       this.enabled = enabled;
       this.host = host;
       this.port = port;
-      this.tls = tls;
+      this.transport = transport;
+      this.websocketPath = websocketPath;
       this.username = username;
       this.password = password;
       this.clientId = clientId;
@@ -49,7 +54,8 @@ public interface MqttSettings {
     public final boolean enabled;
     public final String host;
     public final String port;
-    public final boolean tls;
+    public final String transport;
+    public final String websocketPath;
     public final String username;
     public final String password;
     public final String clientId;
@@ -60,7 +66,8 @@ public interface MqttSettings {
         boolean enabled,
         String host,
         String port,
-        boolean tls,
+        String transport,
+        String websocketPath,
         String username,
         String password,
         String clientId,
@@ -69,7 +76,8 @@ public interface MqttSettings {
       this.enabled = enabled;
       this.host = host;
       this.port = port;
-      this.tls = tls;
+      this.transport = transport;
+      this.websocketPath = websocketPath;
       this.username = username;
       this.password = password;
       this.clientId = clientId;
