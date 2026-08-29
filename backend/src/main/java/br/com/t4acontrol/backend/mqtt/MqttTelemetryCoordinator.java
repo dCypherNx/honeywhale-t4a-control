@@ -3,12 +3,13 @@ package br.com.t4acontrol.backend.mqtt;
 import android.os.Handler;
 import android.os.Looper;
 import br.com.t4acontrol.backend.T4AState;
+import br.com.t4acontrol.backend.location.LocationSnapshot;
 import com.alibaba.fastjson.JSON;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Owns MQTT connection policy and maps T4A state into outbound telemetry. */
+/** Owns MQTT connection policy and maps T4A state/location into outbound telemetry. */
 public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   public interface Listener {
     void onMqttEvent(String event);
@@ -29,8 +30,10 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   private long configurationRevision = Long.MIN_VALUE;
   private MqttConfiguration configuration = MqttConfiguration.defaults();
   private T4AState lastState;
+  private LocationSnapshot lastLocation;
   private String lastTelemetrySignature = "";
   private long lastTelemetryPublishAt;
+  private String lastLocationSignature = "";
   private String lastDiscoveryTopic = "";
   private String lastDiscoveryPayload = "";
 
@@ -42,6 +45,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
           refreshConfiguration(false);
           ensureConnection();
           publishDiscovery(false);
+          publishLocation(false);
           publishTelemetry(false);
           handler.postDelayed(this, MAINTENANCE_MS);
         }
@@ -85,6 +89,16 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     publishTelemetry(false);
   }
 
+  public void onLocation(LocationSnapshot snapshot) {
+    if (snapshot == null) return;
+    lastLocation = snapshot;
+    if (!running) return;
+    refreshConfiguration(false);
+    ensureConnection();
+    publishLocation(false);
+    publishTelemetry(false);
+  }
+
   @Override
   public void onConnected() {
     if (!running || !configuration.enabled) return;
@@ -93,8 +107,10 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     raw("STATUS online");
     transport.publish(statusTopic(configuration), "online", 1, true);
     lastTelemetrySignature = "";
+    lastLocationSignature = "";
     lastDiscoveryPayload = "";
     publishDiscovery(false);
+    publishLocation(true);
     publishTelemetry(true);
   }
 
@@ -145,6 +161,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     configuration = next;
     configurationRevision = revision;
     lastTelemetrySignature = "";
+    lastLocationSignature = "";
     lastDiscoveryPayload = "";
 
     if (!configuration.enabled) {
@@ -200,6 +217,22 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     event("Home Assistant discovery removido");
   }
 
+  private void publishLocation(boolean force) {
+    if (!running
+        || !mqttReady
+        || !configuration.enabled
+        || !transport.isConnected()
+        || lastLocation == null) return;
+
+    Map<String, Object> location = location(lastLocation);
+    String payload = JSON.toJSONString(location);
+    if (!force && payload.equals(lastLocationSignature)) return;
+
+    raw("TX " + locationTopic(configuration) + " " + payload);
+    transport.publish(locationTopic(configuration), payload, 1, true);
+    lastLocationSignature = payload;
+  }
+
   private void publishTelemetry(boolean force) {
     if (!running
         || !mqttReady
@@ -207,7 +240,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         || !transport.isConnected()
         || lastState == null) return;
 
-    Map<String, Object> telemetry = telemetry(lastState);
+    Map<String, Object> telemetry = telemetry(lastState, lastLocation);
     String signature = JSON.toJSONString(telemetry);
     long now = System.currentTimeMillis();
     if (!force
@@ -222,7 +255,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     lastTelemetryPublishAt = now;
   }
 
-  private Map<String, Object> telemetry(T4AState state) {
+  private Map<String, Object> telemetry(T4AState state, LocationSnapshot location) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("connected", state.connected);
     if (state.deviceName != null && !state.deviceName.isBlank()) out.put("device_name", state.deviceName);
@@ -241,7 +274,25 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     putStringIfPresent(out, "mode", state.dps, "14");
     putStringIfPresent(out, "start_mode", state.dps, "16");
     putStringIfPresent(out, "unit_setting", state.dps, "11");
+
+    if (location != null) appendLocation(out, location);
     return out;
+  }
+
+  private Map<String, Object> location(LocationSnapshot snapshot) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    appendLocation(out, snapshot);
+    return out;
+  }
+
+  private static void appendLocation(Map<String, Object> out, LocationSnapshot snapshot) {
+    out.put("latitude", snapshot.latitude);
+    out.put("longitude", snapshot.longitude);
+    out.put("gps_accuracy", snapshot.accuracyMeters);
+    out.put("location_timestamp_ms", snapshot.timestampMs);
+    if (snapshot.gpsSpeedKmh != null) out.put("gps_speed_kmh", snapshot.gpsSpeedKmh);
+    if (snapshot.bearingDegrees != null) out.put("bearing_deg", snapshot.bearingDegrees);
+    if (snapshot.altitudeMeters != null) out.put("altitude_m", snapshot.altitudeMeters);
   }
 
   private void publishOfflineIfPossible(MqttConfiguration value) {
@@ -260,6 +311,10 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
   private static String telemetryTopic(MqttConfiguration value) {
     return value.baseTopic + "/telemetry";
+  }
+
+  private static String locationTopic(MqttConfiguration value) {
+    return value.baseTopic + "/location";
   }
 
   private void event(String value) {
