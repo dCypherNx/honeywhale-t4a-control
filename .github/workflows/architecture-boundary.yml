@@ -8,8 +8,6 @@ on:
       - opened
       - synchronize
       - reopened
-      - labeled
-      - unlabeled
   push:
     branches:
       - master
@@ -20,29 +18,33 @@ permissions:
 jobs:
   verify-version-classification:
     if: github.event_name == 'pull_request'
-    name: Verify version classification
+    name: Verify version branch
     runs-on: ubuntu-latest
     steps:
-      - name: Require exactly one SemVer bump label
+      - name: Validate SemVer branch class
         shell: bash
         run: |
           set -euo pipefail
 
-          mapfile -t version_labels < <(
-            jq -r '.pull_request.labels[].name | select(. == "version:patch" or . == "version:minor" or . == "version:major")' \
-              "${GITHUB_EVENT_PATH}"
-          )
+          branch="${GITHUB_HEAD_REF}"
+          case "${branch}" in
+            feature/*)
+              classification='minor'
+              ;;
+            fix/*|bugfix/*|hotfix/*)
+              classification='patch'
+              ;;
+            major/*|breaking/*)
+              classification='major'
+              ;;
+            *)
+              echo "Branch '${branch}' does not encode a SemVer class." >&2
+              echo 'Use feature/*, fix|bugfix|hotfix/*, or major|breaking/*.' >&2
+              exit 1
+              ;;
+          esac
 
-          if [[ "${#version_labels[@]}" -ne 1 ]]; then
-            echo 'Every pull request into master must have exactly one version label:' >&2
-            echo '  version:patch  (fix)' >&2
-            echo '  version:minor  (compatible feature)' >&2
-            echo '  version:major  (breaking/incompatible change)' >&2
-            printf 'Found: %s\n' "${version_labels[*]:-<none>}" >&2
-            exit 1
-          fi
-
-          echo "Version classification: ${version_labels[0]}"
+          echo "Version classification: ${classification} (${branch})"
 
   verify-boundary:
     name: Verify Tuya boundary
