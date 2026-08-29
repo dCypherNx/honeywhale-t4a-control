@@ -320,6 +320,16 @@ public final class T4ASessionService extends Service
     }
 
     @Override
+    public void setBatteryRechargeMinGapHours(int hours) {
+      if (backend != null) backend.setBatteryRechargeMinGapHours(hours);
+    }
+
+    @Override
+    public void resolveBatteryRecharge(boolean startNewCycle) {
+      if (backend != null) backend.resolveBatteryRecharge(startNewCycle);
+    }
+
+    @Override
     public void unpair() {
       if (backend != null) backend.unpair();
     }
