@@ -2,7 +2,7 @@
 
 ## Scope
 
-This branch implements outbound MQTT telemetry. It connects to the configured broker, publishes retained availability and T4A telemetry, and reconnects after transport loss. It does not subscribe to any topic and does not accept remote control commands.
+This branch implements outbound MQTT telemetry, optional Home Assistant MQTT Device Discovery, retained availability and reconnect after transport loss. It does not subscribe to any topic and does not accept remote control commands.
 
 ## Ownership
 
@@ -27,7 +27,8 @@ T4ASessionService                                     |
         |                     |                       |
         |                     v                       |
         +------------> MqttTelemetryCoordinator ------+
-                              |
+                              |              |
+                              |              +--> HomeAssistantDiscovery
                               v
                         MqttTransport
                               |
@@ -46,7 +47,9 @@ T4ASessionService                                     |
 
 `AndroidMqttConfigurationStore` stores non-secret configuration in app-private preferences and encrypts the MQTT password with AES-GCM using an Android Keystore key. No secret is logged. The legacy boolean TLS setting remains readable and is migrated to the explicit transport model on the next save.
 
-`MqttTelemetryCoordinator` owns broker connection policy, configuration reload, reconnect cadence, availability state, heartbeat and T4A-state-to-telemetry mapping. It knows only the provider-neutral `MqttTransport` interface.
+`MqttTelemetryCoordinator` owns broker connection policy, configuration reload, reconnect cadence, availability state, heartbeat, telemetry publication and discovery publication/removal. It knows only the provider-neutral `MqttTransport` interface.
+
+`HomeAssistantDiscovery` builds the Home Assistant Device Discovery topic and JSON payload. It is provider-neutral and has no Android or Paho dependency.
 
 `PahoMqttTransport` is the only class allowed to import Eclipse Paho. It is created by `T4AApplication`, the composition root.
 
@@ -68,8 +71,6 @@ T4ASessionService                                     |
 
 Default ports are `1883` for TCP, `8883` for TLS, `80` for WS and `443` for WSS. The default WebSocket path is `/mqtt`. Client ID defaults to `t4a-control`, base topic to `t4a`, keep-alive to `60` seconds, and Home Assistant discovery to disabled.
 
-The discovery switch is persisted and exposed through the provider-neutral configuration model. This branch does not yet publish Home Assistant discovery payloads; enabling the option only prepares the saved configuration for that implementation.
-
 The transport maps to provider-neutral server URIs:
 
 - TCP: `tcp://host:port`
@@ -85,8 +86,29 @@ Given base topic `t4a`:
 
 - `t4a/status`: retained QoS 1 string, `online` or `offline`.
 - `t4a/telemetry`: retained QoS 1 JSON document.
+- `homeassistant/device/t4a_<normalized-mac>/config`: retained QoS 1 Home Assistant Device Discovery configuration when discovery is enabled.
 
 The broker LWT is `offline` on `<base>/status`. A clean shutdown also publishes `offline` best-effort before disconnecting.
+
+When discovery is enabled, the discovery payload shares `<base>/telemetry` as `state_topic` and `<base>/status` as `availability_topic`. The device identifier is derived from the normalized T4A MAC so formatting changes such as `DC23529724A0` versus `DC:23:52:97:24:A0` do not create duplicate devices.
+
+When the discovery switch changes from enabled to disabled while connected, the retained discovery topic is cleared with an empty retained payload so Home Assistant removes the discovered device/components.
+
+Discovery currently exposes:
+
+- battery percentage;
+- speed;
+- total odometer;
+- trip odometer;
+- ride time;
+- RSSI;
+- Bluetooth connection;
+- lock state;
+- headlight;
+- cruise control;
+- riding mode;
+- start mode;
+- unit setting.
 
 Telemetry currently contains:
 
@@ -107,11 +129,10 @@ Telemetry currently contains:
 - `unit_setting`
 - `timestamp_ms`
 
-A publish occurs when the semantic telemetry changes or after 30 seconds as a heartbeat.
+A telemetry publish occurs when the semantic telemetry changes or after 30 seconds as a heartbeat.
 
 ## Explicit non-goals
 
 - no MQTT subscriptions;
 - no remote T4A control through MQTT;
-- no Home Assistant discovery payload publication yet;
 - no geolocation yet; location will be introduced as its own producer before being appended to telemetry.
