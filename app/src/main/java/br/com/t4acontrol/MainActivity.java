@@ -36,6 +36,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
   private static final String PREF_KEEP_SCREEN_ON = "keep_screen_on";
   private static final String PREF_TOTAL_ODOMETER = "show_total_odometer";
   private static final String PREF_THEME = "theme_mode";
+  private static final int[] BATTERY_RECHARGE_GAP_HOURS = {1, 2, 4, 8};
   private static final int NAVY = 0xFF00133D,
       BLUE = 0xFF075EF0,
       GREEN = 0xFF00A529,
@@ -107,6 +109,9 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
   private ImageButton lightSwitch, startSwitch, cruiseSwitch;
   private ImageButton autoLockButton;
   private TextView autoLockLabel;
+  private SeekBar batteryRechargeGapSlider;
+  private TextView batteryRechargeGapValue;
+  private AlertDialog batteryRechargeDialog;
   private SpeedBar speedProgress;
   private boolean showTotalOdometer;
   private int renderedEventCount = -1, renderedRawCount = -1;
@@ -151,11 +156,16 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     uiForeground = true;
     if (hasBluetoothPermissions()) connectSession();
     session.setUiForeground(true);
+    showBatteryRechargePromptIfNeeded(state);
   }
 
   @Override
   protected void onPause() {
     uiForeground = false;
+    if (batteryRechargeDialog != null) {
+      batteryRechargeDialog.dismiss();
+      batteryRechargeDialog = null;
+    }
     session.setUiForeground(false);
     super.onPause();
   }
@@ -300,6 +310,7 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
             appendEvent(value.message);
           }
           render();
+          showBatteryRechargePromptIfNeeded(value);
         });
   }
 
@@ -595,6 +606,52 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     displayCard.addView(themeTitle);
     themeButtons = addThemeSelector(displayCard);
 
+    LinearLayout batteryCard = collapsibleSection(getString(R.string.battery_section), "battery");
+    TextView batteryRechargeTitle = text(getString(R.string.battery_recharge_detection), 13);
+    batteryRechargeTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+    batteryRechargeTitle.setPadding(dp(3), dp(5), dp(3), 0);
+    batteryCard.addView(batteryRechargeTitle);
+    batteryRechargeGapValue = text("", 15);
+    batteryRechargeGapValue.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+    batteryRechargeGapValue.setTextColor(BLUE);
+    batteryRechargeGapValue.setGravity(Gravity.CENTER);
+    batteryRechargeGapValue.setPadding(0, dp(4), 0, 0);
+    batteryCard.addView(batteryRechargeGapValue);
+    batteryRechargeGapSlider = new SeekBar(this);
+    batteryRechargeGapSlider.setMax(BATTERY_RECHARGE_GAP_HOURS.length - 1);
+    batteryRechargeGapSlider.setProgress(batteryRechargeGapIndex(state.batteryRechargeMinGapHours));
+    batteryRechargeGapSlider.setPadding(dp(8), dp(2), dp(8), 0);
+    batteryRechargeGapSlider.setOnSeekBarChangeListener(
+        new SeekBar.OnSeekBarChangeListener() {
+          @Override
+          public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+            int hours = BATTERY_RECHARGE_GAP_HOURS[Math.max(0, Math.min(progress, BATTERY_RECHARGE_GAP_HOURS.length - 1))];
+            batteryRechargeGapValue.setText(getString(R.string.battery_recharge_gap_value, hours));
+          }
+
+          @Override
+          public void onStartTrackingTouch(SeekBar seekBar) {}
+
+          @Override
+          public void onStopTrackingTouch(SeekBar seekBar) {
+            int hours = BATTERY_RECHARGE_GAP_HOURS[seekBar.getProgress()];
+            session.setBatteryRechargeMinGapHours(hours);
+          }
+        });
+    batteryCard.addView(batteryRechargeGapSlider, new LinearLayout.LayoutParams(-1, dp(48)));
+    LinearLayout gapLabels = new LinearLayout(this);
+    for (int hours : BATTERY_RECHARGE_GAP_HOURS) {
+      TextView label = text(getString(R.string.battery_recharge_gap_value, hours), 11);
+      label.setGravity(Gravity.CENTER);
+      label.setTextColor(mutedColor());
+      gapLabels.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+    }
+    batteryCard.addView(gapLabels);
+    TextView batteryRechargeNote = text(getString(R.string.battery_recharge_detection_note), 11);
+    batteryRechargeNote.setTextColor(mutedColor());
+    batteryRechargeNote.setPadding(dp(3), dp(7), dp(3), dp(5));
+    batteryCard.addView(batteryRechargeNote);
+
     LinearLayout integrations =
         collapsibleSection(getString(R.string.integrations_section), "integrations");
     Button mqtt =
@@ -682,6 +739,14 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
       battery.setTextColor(value > 20 ? GREEN : RED);
       if (batteryIcon != null) batteryIcon.setImageDrawable(batteryDrawable(value));
       updateBatteryBar(value);
+    }
+    if (batteryRechargeGapSlider != null) {
+      int index = batteryRechargeGapIndex(state.batteryRechargeMinGapHours);
+      if (!batteryRechargeGapSlider.isPressed() && batteryRechargeGapSlider.getProgress() != index)
+        batteryRechargeGapSlider.setProgress(index);
+      set(
+          batteryRechargeGapValue,
+          getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[index]));
     }
     set(
         rssi,
@@ -789,6 +854,37 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
       }
       set(allDps, values.toString());
     }
+  }
+
+  private void showBatteryRechargePromptIfNeeded(T4AState value) {
+    if (!uiForeground
+        || value == null
+        || value.pendingBatteryRechargePercent == null
+        || value.pendingBatteryRechargeDetectedAt == null
+        || (batteryRechargeDialog != null && batteryRechargeDialog.isShowing())) return;
+    batteryRechargeDialog =
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.battery_recharge_possible_title)
+            .setMessage(
+                getString(
+                    R.string.battery_recharge_possible_message,
+                    value.pendingBatteryRechargePercent))
+            .setNegativeButton(
+                R.string.battery_recharge_reject,
+                (dialog, which) -> session.resolveBatteryRecharge(false))
+            .setPositiveButton(
+                R.string.battery_recharge_confirm,
+                (dialog, which) -> session.resolveBatteryRecharge(true))
+            .create();
+    batteryRechargeDialog.setCancelable(false);
+    batteryRechargeDialog.setOnDismissListener(dialog -> batteryRechargeDialog = null);
+    batteryRechargeDialog.show();
+  }
+
+  private int batteryRechargeGapIndex(int hours) {
+    for (int i = 0; i < BATTERY_RECHARGE_GAP_HOURS.length; i++)
+      if (BATTERY_RECHARGE_GAP_HOURS[i] == hours) return i;
+    return 0;
   }
 
   private void buildPairingActions() {
@@ -1089,6 +1185,8 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     batteryIcon = null;
     odometerIcon = null;
     speedProgress = null;
+    batteryRechargeGapSlider = null;
+    batteryRechargeGapValue = null;
     modeButtons =
         autoLockDistanceButtons =
             unitPreferenceButtons =
