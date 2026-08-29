@@ -57,6 +57,11 @@ public final class MqttSettingsActivity extends Activity {
     load();
   }
 
+  @Override
+  public void onBackPressed() {
+    finish();
+  }
+
   private void buildUi() {
     LinearLayout body = vertical();
     body.setBackgroundColor(backgroundColor());
