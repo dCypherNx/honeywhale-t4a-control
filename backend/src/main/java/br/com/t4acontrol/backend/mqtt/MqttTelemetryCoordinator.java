@@ -30,6 +30,8 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   private T4AState lastState;
   private String lastTelemetrySignature = "";
   private long lastTelemetryPublishAt;
+  private String lastDiscoveryTopic = "";
+  private String lastDiscoveryPayload = "";
 
   private final Runnable maintenance =
       new Runnable() {
@@ -38,6 +40,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
           if (!running) return;
           refreshConfiguration(false);
           ensureConnection();
+          publishDiscovery(false);
           publishTelemetry(false);
           handler.postDelayed(this, MAINTENANCE_MS);
         }
@@ -75,6 +78,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     if (!running) return;
     refreshConfiguration(false);
     ensureConnection();
+    publishDiscovery(false);
     publishTelemetry(false);
   }
 
@@ -85,6 +89,8 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     raw("STATUS online");
     transport.publish(statusTopic(configuration), "online", 1, true);
     lastTelemetrySignature = "";
+    lastDiscoveryPayload = "";
+    publishDiscovery(true);
     publishTelemetry(true);
   }
 
@@ -114,6 +120,16 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
     boolean reconnect = connectionSettingsChanged(previous, next);
     boolean wasEnabled = previous.enabled;
+    boolean discoveryDisabled = previous.discoveryEnabled && !next.discoveryEnabled;
+    boolean discoveryBrokerChanged =
+        previous.discoveryEnabled && brokerEndpointChanged(previous, next);
+
+    if (transport.isConnected()
+        && previous.enabled
+        && (discoveryDisabled || discoveryBrokerChanged)) {
+      clearDiscoveryIfPossible();
+    }
+
     if (transport.isConnected() && previous.enabled && (reconnect || !next.enabled)) {
       publishOfflineIfPossible(previous);
       transport.disconnect();
@@ -122,6 +138,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     configuration = next;
     configurationRevision = revision;
     lastTelemetrySignature = "";
+    lastDiscoveryPayload = "";
 
     if (!configuration.enabled) {
       if (wasEnabled) event("MQTT desativado");
@@ -129,6 +146,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     }
 
     if (!wasEnabled) event("MQTT ativado");
+    if (transport.isConnected()) publishDiscovery(true);
   }
 
   private void ensureConnection() {
@@ -138,6 +156,39 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         || transport.isConnecting()) return;
     raw("CONNECT " + endpoint(configuration));
     transport.connect(configuration, statusTopic(configuration), "offline");
+  }
+
+  private void publishDiscovery(boolean force) {
+    if (!running
+        || !configuration.enabled
+        || !configuration.discoveryEnabled
+        || !transport.isConnected()
+        || lastState == null) return;
+
+    String topic = HomeAssistantDiscovery.topic(lastState);
+    String payload = HomeAssistantDiscovery.payload(configuration, lastState);
+    if (topic.isEmpty() || payload.isEmpty()) return;
+    if (!force && topic.equals(lastDiscoveryTopic) && payload.equals(lastDiscoveryPayload)) return;
+
+    if (!lastDiscoveryTopic.isEmpty() && !lastDiscoveryTopic.equals(topic)) {
+      raw("DISCOVERY CLEAR " + lastDiscoveryTopic);
+      transport.publish(lastDiscoveryTopic, "", 1, true);
+    }
+
+    raw("DISCOVERY TX " + topic + " " + payload);
+    transport.publish(topic, payload, 1, true);
+    lastDiscoveryTopic = topic;
+    lastDiscoveryPayload = payload;
+    event("Home Assistant discovery publicado");
+  }
+
+  private void clearDiscoveryIfPossible() {
+    if (!transport.isConnected() || lastDiscoveryTopic.isEmpty()) return;
+    raw("DISCOVERY CLEAR " + lastDiscoveryTopic);
+    transport.publish(lastDiscoveryTopic, "", 1, true);
+    lastDiscoveryTopic = "";
+    lastDiscoveryPayload = "";
+    event("Home Assistant discovery removido");
   }
 
   private void publishTelemetry(boolean force) {
@@ -219,6 +270,14 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         || !before.password.equals(after.password)
         || !before.clientId.equals(after.clientId)
         || !before.baseTopic.equals(after.baseTopic);
+  }
+
+  private static boolean brokerEndpointChanged(
+      MqttConfiguration before, MqttConfiguration after) {
+    return before.port != after.port
+        || before.transport != after.transport
+        || !before.websocketPath.equals(after.websocketPath)
+        || !before.host.equals(after.host);
   }
 
   private static String endpoint(MqttConfiguration value) {
