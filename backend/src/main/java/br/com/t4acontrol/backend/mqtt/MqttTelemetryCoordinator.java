@@ -211,8 +211,9 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
       MqttConfiguration before, MqttConfiguration after) {
     return before.enabled != after.enabled
         || before.port != after.port
-        || before.tls != after.tls
+        || before.transport != after.transport
         || before.keepAliveSeconds != after.keepAliveSeconds
+        || !before.websocketPath.equals(after.websocketPath)
         || !before.host.equals(after.host)
         || !before.username.equals(after.username)
         || !before.password.equals(after.password)
@@ -221,7 +222,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   }
 
   private static String endpoint(MqttConfiguration value) {
-    return (value.tls ? "ssl://" : "tcp://") + value.host + ":" + value.port;
+    return value.serverUri();
   }
 
   private static String suffix(String value) {
