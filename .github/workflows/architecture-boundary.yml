@@ -2,6 +2,14 @@ name: Architecture boundary
 
 on:
   pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   push:
     branches:
       - master
@@ -10,6 +18,32 @@ permissions:
   contents: read
 
 jobs:
+  verify-version-classification:
+    if: github.event_name == 'pull_request'
+    name: Verify version classification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exactly one SemVer bump label
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t version_labels < <(
+            jq -r '.pull_request.labels[].name | select(. == "version:patch" or . == "version:minor" or . == "version:major")' \
+              "${GITHUB_EVENT_PATH}"
+          )
+
+          if [[ "${#version_labels[@]}" -ne 1 ]]; then
+            echo 'Every pull request into master must have exactly one version label:' >&2
+            echo '  version:patch  (fix)' >&2
+            echo '  version:minor  (compatible feature)' >&2
+            echo '  version:major  (breaking/incompatible change)' >&2
+            printf 'Found: %s\n' "${version_labels[*]:-<none>}" >&2
+            exit 1
+          fi
+
+          echo "Version classification: ${version_labels[0]}"
+
   verify-boundary:
     name: Verify Tuya boundary
     runs-on: ubuntu-latest
