@@ -64,8 +64,11 @@ T4ASessionService                                     |
 - client ID
 - base topic
 - keep-alive seconds
+- Home Assistant MQTT Discovery enabled/disabled
 
-Default ports are `1883` for TCP, `8883` for TLS, `80` for WS and `443` for WSS. The default WebSocket path is `/mqtt`. Client ID defaults to `t4a-control`, base topic to `t4a`, and keep-alive to `60` seconds.
+Default ports are `1883` for TCP, `8883` for TLS, `80` for WS and `443` for WSS. The default WebSocket path is `/mqtt`. Client ID defaults to `t4a-control`, base topic to `t4a`, keep-alive to `60` seconds, and Home Assistant discovery to disabled.
+
+The discovery switch is persisted and exposed through the provider-neutral configuration model. This branch does not yet publish Home Assistant discovery payloads; enabling the option only prepares the saved configuration for that implementation.
 
 The transport maps to provider-neutral server URIs:
 
@@ -110,5 +113,5 @@ A publish occurs when the semantic telemetry changes or after 30 seconds as a he
 
 - no MQTT subscriptions;
 - no remote T4A control through MQTT;
-- no Home Assistant discovery in this step;
+- no Home Assistant discovery payload publication yet;
 - no geolocation yet; location will be introduced as its own producer before being appended to telemetry.
