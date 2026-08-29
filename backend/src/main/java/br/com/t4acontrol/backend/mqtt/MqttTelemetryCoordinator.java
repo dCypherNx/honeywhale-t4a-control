@@ -25,6 +25,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   private final Handler handler = new Handler(Looper.getMainLooper());
 
   private boolean running;
+  private boolean mqttReady;
   private long configurationRevision = Long.MIN_VALUE;
   private MqttConfiguration configuration = MqttConfiguration.defaults();
   private T4AState lastState;
@@ -59,6 +60,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   public void start() {
     if (running) return;
     running = true;
+    mqttReady = false;
     refreshConfiguration(true);
     ensureConnection();
     handler.post(maintenance);
@@ -69,6 +71,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     running = false;
     handler.removeCallbacks(maintenance);
     publishOfflineIfPossible(configuration);
+    mqttReady = false;
     transport.disconnect();
     transport.close();
   }
@@ -85,17 +88,19 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   @Override
   public void onConnected() {
     if (!running || !configuration.enabled) return;
+    mqttReady = true;
     event("MQTT conectado a " + endpoint(configuration));
     raw("STATUS online");
     transport.publish(statusTopic(configuration), "online", 1, true);
     lastTelemetrySignature = "";
     lastDiscoveryPayload = "";
-    publishDiscovery(true);
+    publishDiscovery(false);
     publishTelemetry(true);
   }
 
   @Override
   public void onDisconnected(String reason) {
+    mqttReady = false;
     if (!running || !configuration.enabled) return;
     event("MQTT desconectado" + suffix(reason));
   }
@@ -124,7 +129,8 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     boolean discoveryBrokerChanged =
         previous.discoveryEnabled && brokerEndpointChanged(previous, next);
 
-    if (transport.isConnected()
+    if (mqttReady
+        && transport.isConnected()
         && previous.enabled
         && (discoveryDisabled || discoveryBrokerChanged)) {
       clearDiscoveryIfPossible();
@@ -132,6 +138,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
     if (transport.isConnected() && previous.enabled && (reconnect || !next.enabled)) {
       publishOfflineIfPossible(previous);
+      mqttReady = false;
       transport.disconnect();
     }
 
@@ -146,7 +153,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     }
 
     if (!wasEnabled) event("MQTT ativado");
-    if (transport.isConnected()) publishDiscovery(true);
+    if (mqttReady && transport.isConnected()) publishDiscovery(false);
   }
 
   private void ensureConnection() {
@@ -154,12 +161,14 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         || !configuration.enabled
         || transport.isConnected()
         || transport.isConnecting()) return;
+    mqttReady = false;
     raw("CONNECT " + endpoint(configuration));
     transport.connect(configuration, statusTopic(configuration), "offline");
   }
 
   private void publishDiscovery(boolean force) {
     if (!running
+        || !mqttReady
         || !configuration.enabled
         || !configuration.discoveryEnabled
         || !transport.isConnected()
@@ -183,7 +192,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   }
 
   private void clearDiscoveryIfPossible() {
-    if (!transport.isConnected() || lastDiscoveryTopic.isEmpty()) return;
+    if (!mqttReady || !transport.isConnected() || lastDiscoveryTopic.isEmpty()) return;
     raw("DISCOVERY CLEAR " + lastDiscoveryTopic);
     transport.publish(lastDiscoveryTopic, "", 1, true);
     lastDiscoveryTopic = "";
@@ -193,6 +202,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
   private void publishTelemetry(boolean force) {
     if (!running
+        || !mqttReady
         || !configuration.enabled
         || !transport.isConnected()
         || lastState == null) return;
@@ -215,20 +225,22 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   private Map<String, Object> telemetry(T4AState state) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("connected", state.connected);
-    out.put("device_name", state.deviceName);
-    out.put("mac", state.mac);
-    out.put("rssi_dbm", state.rssi);
-    out.put("battery_percent", integer(state.dps.get("3")));
-    out.put("speed_kmh", scaled(state.dps.get("2"), 10.0));
-    out.put("odometer_km", scaled(state.dps.get("12"), 10.0));
-    out.put("trip_km", scaled(state.dps.get("5"), 10.0));
-    out.put("ride_time_s", integer(state.dps.get("6")));
-    out.put("locked", !truth(state.dps.get("1")));
-    out.put("headlight", truth(state.dps.get("8")));
-    out.put("cruise", truth(state.dps.get("13")));
-    out.put("mode", string(state.dps.get("14")));
-    out.put("start_mode", string(state.dps.get("16")));
-    out.put("unit_setting", string(state.dps.get("11")));
+    if (state.deviceName != null && !state.deviceName.isBlank()) out.put("device_name", state.deviceName);
+    if (state.mac != null && !state.mac.isBlank()) out.put("mac", state.mac);
+    if (state.rssi != 0) out.put("rssi_dbm", state.rssi);
+
+    putIntegerIfPresent(out, "battery_percent", state.dps, "3");
+    putScaledIfPresent(out, "speed_kmh", state.dps, "2", 10.0);
+    putScaledIfPresent(out, "odometer_km", state.dps, "12", 10.0);
+    putScaledIfPresent(out, "trip_km", state.dps, "5", 10.0);
+    putIntegerIfPresent(out, "ride_time_s", state.dps, "6");
+
+    if (state.dps.containsKey("1")) out.put("locked", !truth(state.dps.get("1")));
+    if (state.dps.containsKey("8")) out.put("headlight", truth(state.dps.get("8")));
+    if (state.dps.containsKey("13")) out.put("cruise", truth(state.dps.get("13")));
+    putStringIfPresent(out, "mode", state.dps, "14");
+    putStringIfPresent(out, "start_mode", state.dps, "16");
+    putStringIfPresent(out, "unit_setting", state.dps, "11");
     return out;
   }
 
@@ -288,19 +300,46 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     return value == null || value.isBlank() ? "" : ": " + value;
   }
 
-  private static int integer(Object value) {
+  private static void putIntegerIfPresent(
+      Map<String, Object> out, String outputKey, Map<String, Object> dps, String dpId) {
+    if (!dps.containsKey(dpId)) return;
+    Integer value = integer(dps.get(dpId));
+    if (value != null) out.put(outputKey, value);
+  }
+
+  private static void putScaledIfPresent(
+      Map<String, Object> out,
+      String outputKey,
+      Map<String, Object> dps,
+      String dpId,
+      double divisor) {
+    if (!dps.containsKey(dpId)) return;
+    Double value = scaled(dps.get(dpId), divisor);
+    if (value != null) out.put(outputKey, value);
+  }
+
+  private static void putStringIfPresent(
+      Map<String, Object> out, String outputKey, Map<String, Object> dps, String dpId) {
+    if (!dps.containsKey(dpId)) return;
+    Object value = dps.get(dpId);
+    if (value == null) return;
+    String text = value.toString();
+    if (!text.isBlank()) out.put(outputKey, text);
+  }
+
+  private static Integer integer(Object value) {
     try {
-      return value == null ? 0 : Integer.parseInt(value.toString());
+      return value == null ? null : Integer.parseInt(value.toString());
     } catch (NumberFormatException ignored) {
-      return 0;
+      return null;
     }
   }
 
-  private static double scaled(Object value, double divisor) {
+  private static Double scaled(Object value, double divisor) {
     try {
-      return value == null ? 0.0 : Double.parseDouble(value.toString()) / divisor;
+      return value == null ? null : Double.parseDouble(value.toString()) / divisor;
     } catch (NumberFormatException ignored) {
-      return 0.0;
+      return null;
     }
   }
 
@@ -309,9 +348,5 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
         && (Boolean.TRUE.equals(value)
             || "true".equalsIgnoreCase(value.toString())
             || "1".equals(value.toString()));
-  }
-
-  private static String string(Object value) {
-    return value == null ? "" : value.toString();
   }
 }
