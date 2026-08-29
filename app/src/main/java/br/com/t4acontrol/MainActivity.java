@@ -78,7 +78,7 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
   private LinearLayout authPanel, devicePanel, contentPanel;
   private ScrollView rootScroll;
   private TextView cloudStatus, status, eventTitle, events;
-  private Button copyRawButton;
+  private Button copyRawButton, saveRawButton;
   private ImageButton navigationButton;
   private EditText email, password;
   private boolean settings;
@@ -259,6 +259,13 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     copyRawButton.setPadding(dp(10), dp(4), dp(10), dp(4));
     copyRawButton.setVisibility(View.GONE);
     eventHeader.addView(copyRawButton, new LinearLayout.LayoutParams(-2, dp(36)));
+    saveRawButton = actionCard("Salvar", BLUE, this::saveRawLog);
+    saveRawButton.setTextSize(11);
+    saveRawButton.setPadding(dp(10), dp(4), dp(10), dp(4));
+    saveRawButton.setVisibility(View.GONE);
+    LinearLayout.LayoutParams saveRawParams = new LinearLayout.LayoutParams(-2, dp(36));
+    saveRawParams.setMargins(dp(6), 0, 0, 0);
+    eventHeader.addView(saveRawButton, saveRawParams);
     eventCard.addView(eventHeader);
     events = text("", 12);
     events.setTextIsSelectable(true);
@@ -328,6 +335,7 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     List<String> source = settings ? rawHistory : eventHistory;
     if (eventTitle != null) eventTitle.setText(settings ? R.string.raw_log : R.string.events);
     if (copyRawButton != null) copyRawButton.setVisibility(settings ? View.VISIBLE : View.GONE);
+    if (saveRawButton != null) saveRawButton.setVisibility(settings ? View.VISIBLE : View.GONE);
     events.setTypeface(settings ? Typeface.MONOSPACE : Typeface.DEFAULT);
     events.setTextSize(settings ? 10 : 12);
     events.setIncludeFontPadding(!settings);
@@ -339,12 +347,56 @@ public final class MainActivity extends Activity implements T4ASession.Listener 
     events.setText(out);
   }
 
-  private void copyRawLog() {
+  private String rawLogText() {
     StringBuilder out = new StringBuilder();
     for (String entry : rawHistory) out.append(entry).append('\n');
+    return out.toString();
+  }
+
+  private void copyRawLog() {
     ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.raw_log), out.toString()));
+    clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.raw_log), rawLogText()));
     Toast.makeText(this, R.string.raw_log_copied, Toast.LENGTH_SHORT).show();
+  }
+
+  private void saveRawLog() {
+    String fileName =
+        "t4a-raw-"
+            + new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date())
+            + ".log";
+    android.net.Uri uri = null;
+    try {
+      android.content.ContentValues values = new android.content.ContentValues();
+      values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+      values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+      values.put(
+          android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+          android.os.Environment.DIRECTORY_DOWNLOADS + "/T4A");
+      values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+      uri =
+          getContentResolver()
+              .insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+      if (uri == null) throw new java.io.IOException("MediaStore insert returned null");
+      try (java.io.OutputStream output = getContentResolver().openOutputStream(uri, "w")) {
+        if (output == null) throw new java.io.IOException("MediaStore output stream unavailable");
+        output.write(rawLogText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      }
+      values.clear();
+      values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+      getContentResolver().update(uri, values, null, null);
+      Toast.makeText(
+              this, "Log salvo em Downloads/T4A: " + fileName, Toast.LENGTH_LONG)
+          .show();
+    } catch (Exception error) {
+      if (uri != null) {
+        try {
+          getContentResolver().delete(uri, null, null);
+        } catch (RuntimeException ignored) {
+          // Best effort cleanup for a partially-created export.
+        }
+      }
+      Toast.makeText(this, "Não foi possível salvar o log raw.", Toast.LENGTH_LONG).show();
+    }
   }
 
   private void render() {
