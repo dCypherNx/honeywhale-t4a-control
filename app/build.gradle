@@ -20,10 +20,10 @@ def injectedVersionName = System.getenv('T4A_VERSION_NAME')
 def injectedVersionCode = System.getenv('T4A_VERSION_CODE')
 def appVersionName = injectedVersionName != null && !injectedVersionName.trim().isEmpty()
         ? injectedVersionName.trim()
-        : '1.1.1'
+        : '1.1.2'
 def appVersionCode = injectedVersionCode != null && !injectedVersionCode.trim().isEmpty()
         ? Integer.parseInt(injectedVersionCode.trim())
-        : 12
+        : 13
 
 android {
     namespace 'br.com.t4acontrol'
