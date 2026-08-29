@@ -40,6 +40,12 @@ public final class T4AState {
   public final Set<String> pendingDps;
   public final boolean autoLockEnabled;
   public final String autoLockDistance;
+  public final Integer batteryObservedMin;
+  public final Integer batteryObservedMax;
+  public final Long batteryCycleStartedAt;
+  public final int batteryRechargeMinGapHours;
+  public final Integer pendingBatteryRechargePercent;
+  public final Long pendingBatteryRechargeDetectedAt;
   public final String message;
 
   public T4AState(
@@ -55,6 +61,12 @@ public final class T4AState {
       Set<String> pendingDps,
       boolean autoLockEnabled,
       String autoLockDistance,
+      Integer batteryObservedMin,
+      Integer batteryObservedMax,
+      Long batteryCycleStartedAt,
+      int batteryRechargeMinGapHours,
+      Integer pendingBatteryRechargePercent,
+      Long pendingBatteryRechargeDetectedAt,
       String message) {
     this.authenticated = authenticated;
     this.account = account;
@@ -68,6 +80,12 @@ public final class T4AState {
     this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
     this.autoLockEnabled = autoLockEnabled;
     this.autoLockDistance = autoLockDistance;
+    this.batteryObservedMin = batteryObservedMin;
+    this.batteryObservedMax = batteryObservedMax;
+    this.batteryCycleStartedAt = batteryCycleStartedAt;
+    this.batteryRechargeMinGapHours = batteryRechargeMinGapHours;
+    this.pendingBatteryRechargePercent = pendingBatteryRechargePercent;
+    this.pendingBatteryRechargeDetectedAt = pendingBatteryRechargeDetectedAt;
     this.message = message;
   }
 }

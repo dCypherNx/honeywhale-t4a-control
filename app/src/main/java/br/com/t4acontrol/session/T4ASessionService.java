@@ -9,6 +9,9 @@ import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.SystemClock;
@@ -25,12 +28,7 @@ import br.com.t4acontrol.mqtt.MqttSettingsActivity;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-/**
- * Process-level owner of the live T4A session.
- *
- * <p>The service owns exactly one {@link T4ABackend}, one MQTT telemetry coordinator and one
- * Android location adapter. Activities can come and go without tearing down the runtime.
- */
+/** Process-level owner of the live T4A session. */
 public final class T4ASessionService extends Service
     implements T4ABackend.Listener, MqttTelemetryCoordinator.Listener {
   public static final String ACTION_STOP = "br.com.t4acontrol.session.STOP";
@@ -46,7 +44,11 @@ public final class T4ASessionService extends Service
   private T4ABackend backend;
   private MqttTelemetryCoordinator mqttTelemetry;
   private AndroidLocationProvider locationProvider;
+  private ConnectivityManager connectivityManager;
+  private ConnectivityManager.NetworkCallback networkCallback;
   private T4AState lastState;
+  private String activeNetworkTag = "NET";
+  private String lastNetworkSignature = "";
 
   @Override
   public void onCreate() {
@@ -57,6 +59,8 @@ public final class T4ASessionService extends Service
         NOTIFICATION_ID,
         notification("Sessão T4A iniciando…"),
         foregroundServiceTypes());
+    startNetworkDiagnostics();
+
     T4AApplication application = (T4AApplication) getApplication();
     mqttTelemetry = application.createMqttTelemetryCoordinator(this);
     mqttTelemetry.start();
@@ -66,8 +70,9 @@ public final class T4ASessionService extends Service
             new AndroidLocationProvider.Listener() {
               @Override
               public void onLocation(LocationSnapshot snapshot) {
-                debug(
-                    "LOCATION lat="
+                rawTagged(
+                    "GPS",
+                    "FIX lat="
                         + snapshot.latitude
                         + " lon="
                         + snapshot.longitude
@@ -78,7 +83,7 @@ public final class T4ASessionService extends Service
 
               @Override
               public void onUnavailable(String reason) {
-                debug("LOCATION unavailable: " + reason);
+                rawTagged("GPS", "UNAVAILABLE " + reason);
               }
             });
     backend = application.createSessionBackend(this);
@@ -88,7 +93,7 @@ public final class T4ASessionService extends Service
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
     String action = intent == null ? "<restart>" : String.valueOf(intent.getAction());
-    debug("START instance=" + instanceId + " action=" + action);
+    rawTagged("ANDROID", "START instance=" + instanceId + " action=" + action);
     if (intent != null && ACTION_STOP.equals(intent.getAction())) {
       stopForeground(STOP_FOREGROUND_REMOVE);
       stopSelf();
@@ -105,19 +110,20 @@ public final class T4ASessionService extends Service
 
   @Override
   public boolean onUnbind(Intent intent) {
-    debug("UNBIND instance=" + instanceId);
+    rawTagged("ANDROID", "UNBIND instance=" + instanceId);
     return true;
   }
 
   @Override
   public void onRebind(Intent intent) {
     super.onRebind(intent);
-    debug("REBIND instance=" + instanceId);
+    rawTagged("ANDROID", "REBIND instance=" + instanceId);
   }
 
   @Override
   public void onDestroy() {
-    debug("DESTROY instance=" + instanceId);
+    rawTagged("ANDROID", "DESTROY instance=" + instanceId);
+    stopNetworkDiagnostics();
     if (locationProvider != null) {
       locationProvider.close();
       locationProvider = null;
@@ -136,7 +142,11 @@ public final class T4ASessionService extends Service
 
   @Override
   public void onState(T4AState state) {
+    T4AState previous = lastState;
     lastState = state;
+    if (previous == null || previous.connected != state.connected) {
+      rawTagged("BT", state.connected ? "CONNECTED" : "DISCONNECTED");
+    }
     if (mqttTelemetry != null) mqttTelemetry.onState(state);
     if (locationProvider != null) {
       locationProvider.setMoving(scooterMoving(state));
@@ -148,37 +158,145 @@ public final class T4ASessionService extends Service
 
   @Override
   public void onEvent(String event) {
-    debug("EVENT " + event);
+    String source = sdkEvent(event) ? "SDK" : "T4A";
+    rawTagged(source, "EVENT " + event);
+    if (!operationalEvent(event)) return;
     for (T4ASession.Listener listener : listeners) listener.onEvent(event);
   }
 
   @Override
   public void onRawLog(String entry) {
-    debug("RAW " + entry);
-    for (T4ASession.Listener listener : listeners) listener.onRawLog(entry);
+    rawTagged("T4A", entry);
   }
 
   @Override
   public void onMqttEvent(String event) {
-    debug("MQTT EVENT " + event);
-    for (T4ASession.Listener listener : listeners) listener.onEvent(event);
+    rawTagged("MQTT", "EVENT " + event);
   }
 
   @Override
   public void onMqttRawLog(String entry) {
-    String value = "MQTT " + entry;
-    debug(value);
+    rawTagged("MQTT", entry);
+  }
+
+  private void rawTagged(String source, String message) {
+    String value = "[" + source + "] " + message;
+    debug("RAW " + value);
     for (T4ASession.Listener listener : listeners) listener.onRawLog(value);
+  }
+
+  private boolean operationalEvent(String event) {
+    if (event == null || event.isBlank()) return false;
+    return event.startsWith("T4A ")
+        || event.startsWith("Trava ")
+        || event.startsWith("Bloqueio automático")
+        || event.startsWith("Novo ciclo de bateria")
+        || event.startsWith("Recarga de bateria");
+  }
+
+  private boolean sdkEvent(String event) {
+    if (event == null) return false;
+    String value = event.toLowerCase(java.util.Locale.ROOT);
+    return value.contains("login")
+        || value.contains("conta")
+        || value.contains("casa")
+        || value.contains("pareamento falhou")
+        || value.contains("falha ao")
+        || value.contains("comando recusado")
+        || value.contains("autentic");
   }
 
   private void addListener(T4ASession.Listener listener) {
     if (listener == null) return;
     listeners.add(listener);
+    listener.onRawLog(
+        "VERSION {\"versionName\":\""
+            + BuildConfig.VERSION_NAME
+            + "\",\"versionCode\":"
+            + BuildConfig.VERSION_CODE
+            + "}");
+    listener.onRawLog("[ANDROID] UI_ATTACHED instance=" + instanceId);
+    emitCurrentNetwork(listener);
     if (lastState != null) listener.onState(lastState);
   }
 
   private void removeListener(T4ASession.Listener listener) {
     if (listener != null) listeners.remove(listener);
+  }
+
+  private void startNetworkDiagnostics() {
+    connectivityManager = getSystemService(ConnectivityManager.class);
+    if (connectivityManager == null) return;
+    networkCallback =
+        new ConnectivityManager.NetworkCallback() {
+          @Override
+          public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+            String tag = networkTag(capabilities);
+            boolean validated =
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+            boolean internet =
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            String signature = tag + ":" + validated + ":" + internet;
+            activeNetworkTag = tag;
+            if (signature.equals(lastNetworkSignature)) return;
+            lastNetworkSignature = signature;
+            rawTagged(tag, "AVAILABLE internet=" + internet + " validated=" + validated);
+          }
+
+          @Override
+          public void onLost(Network network) {
+            rawTagged(activeNetworkTag, "LOST");
+            lastNetworkSignature = "";
+            activeNetworkTag = "NET";
+          }
+        };
+    try {
+      connectivityManager.registerDefaultNetworkCallback(networkCallback);
+    } catch (RuntimeException error) {
+      rawTagged("ANDROID", "NETWORK_CALLBACK unavailable=" + error.getClass().getSimpleName());
+    }
+  }
+
+  private void stopNetworkDiagnostics() {
+    if (connectivityManager == null || networkCallback == null) return;
+    try {
+      connectivityManager.unregisterNetworkCallback(networkCallback);
+    } catch (RuntimeException ignored) {
+      // Callback may already have been removed by the framework.
+    }
+    networkCallback = null;
+    connectivityManager = null;
+  }
+
+  private String networkTag(NetworkCapabilities capabilities) {
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return "NET/WIFI";
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return "NET/CELL";
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return "NET/ETH";
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return "NET/VPN";
+    return "NET";
+  }
+
+  private void emitCurrentNetwork(T4ASession.Listener listener) {
+    if (connectivityManager == null) return;
+    try {
+      Network network = connectivityManager.getActiveNetwork();
+      NetworkCapabilities caps =
+          network == null ? null : connectivityManager.getNetworkCapabilities(network);
+      if (caps == null) {
+        listener.onRawLog("[NET] UNAVAILABLE");
+        return;
+      }
+      String tag = networkTag(caps);
+      listener.onRawLog(
+          "["
+              + tag
+              + "] CURRENT internet="
+              + caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+              + " validated="
+              + caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED));
+    } catch (RuntimeException error) {
+      listener.onRawLog("[ANDROID] NETWORK_STATE error=" + error.getClass().getSimpleName());
+    }
   }
 
   private void debug(String message) {
@@ -255,7 +373,7 @@ public final class T4ASessionService extends Service
     try {
       startForeground(NOTIFICATION_ID, notification("Sessão T4A ativa"), foregroundServiceTypes());
     } catch (RuntimeException error) {
-      debug("LOCATION foreground type unavailable: " + error.getClass().getSimpleName());
+      rawTagged("ANDROID", "LOCATION_FOREGROUND unavailable=" + error.getClass().getSimpleName());
     }
   }
 
@@ -316,6 +434,16 @@ public final class T4ASessionService extends Service
     @Override
     public void setAutoLockDistance(String distance) {
       if (backend != null) backend.setAutoLockDistance(distance);
+    }
+
+    @Override
+    public void setBatteryRechargeMinGapHours(int hours) {
+      if (backend != null) backend.setBatteryRechargeMinGapHours(hours);
+    }
+
+    @Override
+    public void resolveBatteryRecharge(boolean startNewCycle) {
+      if (backend != null) backend.resolveBatteryRecharge(startNewCycle);
     }
 
     @Override
