@@ -29,7 +29,7 @@ public final class T4ABackend {
   private static final long RSSI_REFRESH_MS = 2000L;
   private static final long RSSI_RESPONSE_TIMEOUT_MS = 6000L;
   private static final long LOCK_CONFIRM_TIMEOUT_MS = 5000L;
-  private static final long BATTERY_RECHARGE_MIN_GAP_MS = 1L * 60L * 60L * 1000L;
+  private static final int DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS = 1;
   private static final int BATTERY_RECHARGE_MIN_RISE = 5;
   private static final int BATTERY_RECHARGE_MAX_DISTANCE = 1;
   private static final String PREF_LOCK_KNOWN = "lock_known";
@@ -41,6 +41,7 @@ public final class T4ABackend {
   private static final String PREF_BATTERY_CYCLE_STARTED_AT = "battery_cycle_started_at";
   private static final String PREF_BATTERY_LAST_LIVE_PERCENT = "battery_last_live_percent";
   private static final String PREF_BATTERY_LAST_LIVE_AT = "battery_last_live_at";
+  private static final String PREF_BATTERY_RECHARGE_MIN_GAP_HOURS = "battery_recharge_min_gap_hours";
   private static final String DISTANCE_SHORT = "short",
       DISTANCE_MEDIUM = "medium",
       DISTANCE_LONG = "long";
@@ -73,6 +74,10 @@ public final class T4ABackend {
   private Integer batteryObservedMin;
   private Integer batteryObservedMax;
   private Long batteryCycleStartedAt;
+  private Integer pendingBatteryRechargePercent;
+  private Integer pendingBatteryRechargeMin;
+  private Integer pendingBatteryRechargeMax;
+  private Long pendingBatteryRechargeDetectedAt;
 
   private final Runnable maintenance =
       new Runnable() {
@@ -272,6 +277,42 @@ public final class T4ABackend {
     evaluateAutoLock();
   }
 
+  public void setBatteryRechargeMinGapHours(int hours) {
+    if (!validBatteryRechargeGapHours(hours)) return;
+    preferences.edit().putInt(PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, hours).apply();
+    event("Detecção de recarga configurada para " + hours + " h");
+    emitState();
+  }
+
+  public void resolveBatteryRecharge(boolean startNewCycle) {
+    if (pendingBatteryRechargePercent == null || pendingBatteryRechargeDetectedAt == null) return;
+    if (startNewCycle) {
+      batteryObservedMin = pendingBatteryRechargeMin;
+      batteryObservedMax = pendingBatteryRechargeMax;
+      batteryCycleStartedAt = pendingBatteryRechargeDetectedAt;
+      persistBatteryObservation();
+      raw(
+          "BATTERY CYCLE CONFIRMED {\"min\":"
+              + batteryObservedMin
+              + ",\"max\":"
+              + batteryObservedMax
+              + ",\"startedAt\":"
+              + batteryCycleStartedAt
+              + "}");
+      event("Novo ciclo de bateria iniciado");
+    } else {
+      mergePendingBatteryObservation();
+      persistBatteryObservation();
+      raw(
+          "BATTERY CYCLE REJECTED {\"candidate\":"
+              + pendingBatteryRechargePercent
+              + "}");
+      event("Ciclo de bateria atual preservado");
+    }
+    clearPendingBatteryRecharge();
+    emitState();
+  }
+
   public void unpair() {
     if (device == null) return;
     pairing = T4AState.Pairing.REMOVING;
@@ -398,6 +439,7 @@ public final class T4ABackend {
     connected = false;
     rssi = 0;
     clearPendingLock();
+    clearPendingBatteryRecharge();
     dps.clear();
     schema.clear();
     pendingDps.clear();
@@ -438,6 +480,9 @@ public final class T4ABackend {
             batteryObservedMin,
             batteryObservedMax,
             batteryCycleStartedAt,
+            batteryRechargeMinGapHours(),
+            pendingBatteryRechargePercent,
+            pendingBatteryRechargeDetectedAt,
             message));
   }
 
@@ -491,8 +536,6 @@ public final class T4ABackend {
       accepted.remove(DP_BATTERY);
       return;
     }
-    // DP3 é uma observação live do controlador. Não usamos DP2 para decidir se a amostra existe.
-    // O valor bruto continua sujeito a voltage sag/recovery; min/max preservam o envelope observado.
     accepted.put(DP_BATTERY, percent);
     trackLiveBattery(percent);
   }
@@ -511,42 +554,102 @@ public final class T4ABackend {
     int previousLast = preferences.getInt(PREF_BATTERY_LAST_LIVE_PERCENT, -1);
     long previousLastAt = preferences.getLong(PREF_BATTERY_LAST_LIVE_AT, 0L);
     boolean hasCycle = batteryObservedMin != null && batteryObservedMax != null;
+    long rechargeMinGapMs = batteryRechargeMinGapHours() * 60L * 60L * 1000L;
     boolean rechargeEvidence =
         hasCycle
+            && pendingBatteryRechargePercent == null
             && previousLast >= 0
             && previousLastAt > 0L
-            && now - previousLastAt >= BATTERY_RECHARGE_MIN_GAP_MS
+            && now - previousLastAt >= rechargeMinGapMs
             && percent >= previousLast + BATTERY_RECHARGE_MIN_RISE
             && percent >= batteryObservedMax - BATTERY_RECHARGE_MAX_DISTANCE;
 
-    if (!hasCycle || rechargeEvidence) {
+    if (!hasCycle) {
       batteryObservedMin = percent;
       batteryObservedMax = percent;
       batteryCycleStartedAt = now;
-      if (rechargeEvidence) {
-        raw(
-            "BATTERY CYCLE {\"previousMin\":"
-                + preferences.getInt(PREF_BATTERY_OBSERVED_MIN, percent)
-                + ",\"previousMax\":"
-                + preferences.getInt(PREF_BATTERY_OBSERVED_MAX, percent)
-                + ",\"firstLive\":"
-                + percent
-                + "}");
-      }
+      persistBatteryObservation();
+    } else if (rechargeEvidence) {
+      pendingBatteryRechargePercent = percent;
+      pendingBatteryRechargeMin = percent;
+      pendingBatteryRechargeMax = percent;
+      pendingBatteryRechargeDetectedAt = now;
+      raw(
+          "BATTERY RECHARGE CANDIDATE {\"previousMin\":"
+              + batteryObservedMin
+              + ",\"previousMax\":"
+              + batteryObservedMax
+              + ",\"firstLive\":"
+              + percent
+              + ",\"gapHours\":"
+              + batteryRechargeMinGapHours()
+              + "}");
+      event("Possível recarga de bateria detectada");
+    } else if (pendingBatteryRechargePercent != null) {
+      if (pendingBatteryRechargeMin == null || percent < pendingBatteryRechargeMin)
+        pendingBatteryRechargeMin = percent;
+      if (pendingBatteryRechargeMax == null || percent > pendingBatteryRechargeMax)
+        pendingBatteryRechargeMax = percent;
     } else {
-      if (percent < batteryObservedMin) batteryObservedMin = percent;
-      if (percent > batteryObservedMax) batteryObservedMax = percent;
-      if (batteryCycleStartedAt == null) batteryCycleStartedAt = now;
+      boolean changed = false;
+      if (percent < batteryObservedMin) {
+        batteryObservedMin = percent;
+        changed = true;
+      }
+      if (percent > batteryObservedMax) {
+        batteryObservedMax = percent;
+        changed = true;
+      }
+      if (batteryCycleStartedAt == null) {
+        batteryCycleStartedAt = now;
+        changed = true;
+      }
+      if (changed) persistBatteryObservation();
     }
 
+    preferences
+        .edit()
+        .putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent)
+        .putLong(PREF_BATTERY_LAST_LIVE_AT, now)
+        .apply();
+  }
+
+  private void mergePendingBatteryObservation() {
+    if (pendingBatteryRechargeMin != null
+        && (batteryObservedMin == null || pendingBatteryRechargeMin < batteryObservedMin))
+      batteryObservedMin = pendingBatteryRechargeMin;
+    if (pendingBatteryRechargeMax != null
+        && (batteryObservedMax == null || pendingBatteryRechargeMax > batteryObservedMax))
+      batteryObservedMax = pendingBatteryRechargeMax;
+  }
+
+  private void persistBatteryObservation() {
+    if (batteryObservedMin == null || batteryObservedMax == null || batteryCycleStartedAt == null)
+      return;
     preferences
         .edit()
         .putInt(PREF_BATTERY_OBSERVED_MIN, batteryObservedMin)
         .putInt(PREF_BATTERY_OBSERVED_MAX, batteryObservedMax)
         .putLong(PREF_BATTERY_CYCLE_STARTED_AT, batteryCycleStartedAt)
-        .putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent)
-        .putLong(PREF_BATTERY_LAST_LIVE_AT, now)
         .apply();
+  }
+
+  private void clearPendingBatteryRecharge() {
+    pendingBatteryRechargePercent = null;
+    pendingBatteryRechargeMin = null;
+    pendingBatteryRechargeMax = null;
+    pendingBatteryRechargeDetectedAt = null;
+  }
+
+  private int batteryRechargeMinGapHours() {
+    int value =
+        preferences.getInt(
+            PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS);
+    return validBatteryRechargeGapHours(value) ? value : DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS;
+  }
+
+  private boolean validBatteryRechargeGapHours(int hours) {
+    return hours == 1 || hours == 2 || hours == 4 || hours == 8;
   }
 
   private Integer batteryPercent(Object value) {
