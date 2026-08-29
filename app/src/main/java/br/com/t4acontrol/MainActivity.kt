@@ -312,33 +312,15 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         SettingsSection(getString(R.string.battery_section), foreground, "battery") {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
-            var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
             Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
-            Text(
-                getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]),
-                color = ComposeColor(0xFF075EF0),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth(),
-            )
             T4ABatterySlider(
-                value = sliderIndex,
-                onValueChange = { sliderIndex = it },
-                onValueChangeFinished = {
-                    val index = sliderIndex.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
-                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index])
+                value = currentIndex.toFloat(),
+                onValueChange = { index ->
+                    val selected = index.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
+                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[selected])
                 },
+                onValueChangeFinished = {},
             )
-            Row(Modifier.fillMaxWidth()) {
-                BATTERY_RECHARGE_GAP_HOURS.forEach { hours ->
-                    Text(
-                        getString(R.string.battery_recharge_gap_value, hours),
-                        color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
-                        fontSize = 11.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
             Text(
                 getString(R.string.battery_recharge_detection_note),
                 color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
@@ -396,55 +378,38 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         onValueChange: (Float) -> Unit,
         onValueChangeFinished: () -> Unit,
     ) {
-        val active = ComposeColor(0xFF075EF0)
-        val inactive = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
-        Box(
-            modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
-            contentAlignment = Alignment.Center,
+        val selectedIndex = value.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
+        androidx.compose.material3.SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Canvas(Modifier.fillMaxWidth().height(12.dp)) {
-                val trackHeight = 6.dp.toPx()
-                val radius = trackHeight / 2f
-                val centerY = size.height / 2f
-                val fraction = (value / 3f).coerceIn(0f, 1f)
-                drawRoundRect(
-                    color = inactive,
-                    topLeft = Offset(0f, centerY - trackHeight / 2f),
-                    size = Size(size.width, trackHeight),
-                    cornerRadius = CornerRadius(radius, radius),
+            BATTERY_RECHARGE_GAP_HOURS.forEachIndexed { index, hours ->
+                androidx.compose.material3.SegmentedButton(
+                    selected = selectedIndex == index,
+                    onClick = {
+                        onValueChange(index.toFloat())
+                        onValueChangeFinished()
+                    },
+                    shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = BATTERY_RECHARGE_GAP_HOURS.size,
+                    ),
+                    colors = androidx.compose.material3.SegmentedButtonDefaults.colors(
+                        activeContainerColor = ComposeColor(0xFF075EF0),
+                        activeContentColor = ComposeColor.White,
+                        activeBorderColor = ComposeColor(0xFF075EF0),
+                        inactiveContainerColor = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White,
+                        inactiveContentColor = if (isDarkMode()) ComposeColor(0xFFF1F5F9) else ComposeColor(0xFF101820),
+                        inactiveBorderColor = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0),
+                    ),
+                    icon = {},
+                    label = {
+                        Text(
+                            getString(R.string.battery_recharge_gap_value, hours),
+                            fontWeight = if (selectedIndex == index) FontWeight.Bold else FontWeight.Medium,
+                        )
+                    },
                 )
-                if (fraction > 0f) {
-                    drawRoundRect(
-                        color = active,
-                        topLeft = Offset(0f, centerY - trackHeight / 2f),
-                        size = Size((size.width * fraction).coerceAtLeast(trackHeight), trackHeight),
-                        cornerRadius = CornerRadius(radius, radius),
-                    )
-                }
-                for (index in 0..3) {
-                    val x = size.width * (index / 3f)
-                    drawCircle(
-                        color = if (index / 3f <= fraction) active else inactive,
-                        radius = 3.dp.toPx(),
-                        center = Offset(x, centerY),
-                    )
-                }
             }
-            Slider(
-                value = value,
-                onValueChange = onValueChange,
-                onValueChangeFinished = onValueChangeFinished,
-                valueRange = 0f..3f,
-                steps = 2,
-                colors = SliderDefaults.colors(
-                    thumbColor = active,
-                    activeTrackColor = ComposeColor.Transparent,
-                    inactiveTrackColor = ComposeColor.Transparent,
-                    activeTickColor = ComposeColor.Transparent,
-                    inactiveTickColor = ComposeColor.Transparent,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 
