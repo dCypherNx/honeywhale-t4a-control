@@ -45,12 +45,13 @@ public final class HomeAssistantDiscovery {
     root.put("payload_available", "online");
     root.put("payload_not_available", "offline");
     root.put("qos", 1);
-    root.put("components", components(deviceId));
+    root.put("components", components(configuration, deviceId));
 
     return JSON.toJSONString(root);
   }
 
-  private static Map<String, Object> components(String deviceId) {
+  private static Map<String, Object> components(
+      MqttConfiguration configuration, String deviceId) {
     Map<String, Object> out = new LinkedHashMap<>();
 
     out.put(
@@ -166,6 +167,17 @@ public final class HomeAssistantDiscovery {
             null);
     unit.put("entity_category", "diagnostic");
     out.put("unit", unit);
+
+    Map<String, Object> location = new LinkedHashMap<>();
+    location.put("platform", "device_tracker");
+    location.put("name", "Localização");
+    location.put("unique_id", deviceId + "_location");
+    location.put("source_type", "gps");
+    location.put("state_topic", configuration.baseTopic + "/location");
+    location.put("json_attributes_topic", configuration.baseTopic + "/location");
+    location.put("value_template", "{{ 'None' }}");
+    location.put("payload_reset", "None");
+    out.put("location", location);
 
     return out;
   }
