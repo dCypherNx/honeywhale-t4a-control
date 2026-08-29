@@ -38,7 +38,8 @@ public final class DefaultMqttSettings implements MqttSettings {
             draft.password,
             draft.clientId,
             draft.baseTopic,
-            keepAlive);
+            keepAlive,
+            draft.discoveryEnabled);
 
     Error error = map(configuration.validate());
     if (error != Error.NONE) return SaveResult.failure(error);
@@ -62,7 +63,8 @@ public final class DefaultMqttSettings implements MqttSettings {
         value.password,
         value.clientId,
         value.baseTopic,
-        String.valueOf(value.keepAliveSeconds));
+        String.valueOf(value.keepAliveSeconds),
+        value.discoveryEnabled);
   }
 
   private Error map(MqttConfiguration.ValidationError error) {
