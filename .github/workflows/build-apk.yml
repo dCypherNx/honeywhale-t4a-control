@@ -37,12 +37,9 @@ jobs:
           if [[ "${GITHUB_REF_NAME}" == "master" ]]; then
             version_name="${T4A_BASE_VERSION}"
             build_kind="master"
-          elif [[ "${GITHUB_REF_NAME}" == feature/* ]]; then
+          else
             version_name="${T4A_BASE_VERSION}-f${sequence}"
             build_kind="feature"
-          else
-            version_name="${T4A_BASE_VERSION}-b${sequence}"
-            build_kind="branch"
           fi
 
           echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
