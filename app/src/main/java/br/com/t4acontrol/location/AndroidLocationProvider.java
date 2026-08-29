@@ -22,10 +22,10 @@ public final class AndroidLocationProvider implements AutoCloseable {
 
   private static final long IDLE_INTERVAL_MS = 20_000L;
   private static final long IDLE_MIN_INTERVAL_MS = 20_000L;
-  private static final float IDLE_MIN_DISTANCE_M = 0f;
+  private static final float IDLE_MIN_DISTANCE_M = 10f;
   private static final long MOVING_INTERVAL_MS = 3_000L;
   private static final long MOVING_MIN_INTERVAL_MS = 3_000L;
-  private static final float MOVING_MIN_DISTANCE_M = 0f;
+  private static final float MOVING_MIN_DISTANCE_M = 2f;
   private static final long MAX_CACHED_AGE_MS = 30_000L;
 
   private final Context context;
