@@ -20,6 +20,7 @@ public final class T4ABackend {
   }
 
   private static final String DP_LOCK = "1";
+  private static final String DP_SPEED = "2";
   private static final String DP_BATTERY = "3";
   private static final Set<String> QUIET_DPS = Set.of("2", "3", "5", "6", "12");
   private static final long STATE_REFRESH_MS = 2000L;
@@ -61,7 +62,7 @@ public final class T4ABackend {
   private int rssiFailures;
   private Object pendingLockValue;
   private long pendingLockUntil;
-  private boolean batteryHasLiveSubFull;
+  private Integer lastLiveSpeedRaw;
   private Integer lastLiveBatteryPercent;
 
   private final Runnable maintenance =
@@ -311,6 +312,8 @@ public final class T4ABackend {
     device = value;
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
+    lastLiveSpeedRaw = null;
+    lastLiveBatteryPercent = null;
     schema.clear();
     if (value.schema != null) {
       for (Map.Entry<String, T4AContracts.DpSchema> entry : value.schema.entrySet()) {
@@ -388,7 +391,7 @@ public final class T4ABackend {
     rssi = 0;
     clearPendingLock();
     dps.clear();
-    batteryHasLiveSubFull = false;
+    lastLiveSpeedRaw = null;
     lastLiveBatteryPercent = null;
     schema.clear();
     pendingDps.clear();
@@ -432,11 +435,12 @@ public final class T4ABackend {
   private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
     if (update == null) return;
     Map<String, Object> accepted = canonicalDps(update);
-    // Velocidade é instantânea. Bateria de cache/INITIAL só pode confirmar um RX já conhecido.
+    // Velocidade e bateria são instantâneas. INITIAL/cache não podem estabelecer nenhuma delas.
     if (!confirmsCommand) {
-      accepted.remove("2");
+      accepted.remove(DP_SPEED);
       filterCachedBattery(accepted);
     } else {
+      updateLiveSpeed(accepted);
       filterLiveBattery(accepted);
     }
     if (confirmsCommand)
@@ -475,6 +479,12 @@ public final class T4ABackend {
         || !lastLiveBatteryPercent.equals(percent)) accepted.remove(DP_BATTERY);
   }
 
+  private void updateLiveSpeed(Map<String, Object> accepted) {
+    if (!accepted.containsKey(DP_SPEED)) return;
+    Integer rawSpeed = integerValue(accepted.get(DP_SPEED));
+    if (rawSpeed != null && rawSpeed >= 0) lastLiveSpeedRaw = rawSpeed;
+  }
+
   private void filterLiveBattery(Map<String, Object> accepted) {
     if (!accepted.containsKey(DP_BATTERY)) return;
     Integer percent = batteryPercent(accepted.get(DP_BATTERY));
@@ -482,15 +492,11 @@ public final class T4ABackend {
       accepted.remove(DP_BATTERY);
       return;
     }
-    if (percent < 100) {
-      batteryHasLiveSubFull = true;
-      lastLiveBatteryPercent = percent;
-      return;
-    }
-    // Os logs reais mostram RX=100 espúrios intercalados entre leituras físicas <100.
-    // Depois que a sessão observou uma leitura sub-100, esses pacotes não podem restaurar
-    // artificialmente o SOC exibido. O RX bruto continua integralmente no raw log.
-    if (batteryHasLiveSubFull) {
+    // DP3 acompanha fortemente a tensão instantânea e sofre voltage sag sob carga. Um único RX
+    // em repouso é suficiente para atualizar o SOC; não dependemos de receber amostras em série.
+    // Sem velocidade live conhecida, ou enquanto a última velocidade live for > 0, o RX bruto é
+    // preservado no raw log, mas não substitui o último SOC aceito.
+    if (lastLiveSpeedRaw == null || lastLiveSpeedRaw > 0) {
       accepted.remove(DP_BATTERY);
       return;
     }
@@ -498,6 +504,10 @@ public final class T4ABackend {
   }
 
   private Integer batteryPercent(Object value) {
+    return integerValue(value);
+  }
+
+  private Integer integerValue(Object value) {
     if (value instanceof Number) return ((Number) value).intValue();
     try {
       return Integer.parseInt(String.valueOf(value));
