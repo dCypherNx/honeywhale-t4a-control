@@ -35,6 +35,26 @@ jobs:
         run: |
           set -euo pipefail
 
+          classify_branch() {
+            local branch="$1"
+            case "${branch}" in
+              feature/*)
+                printf '%s\n' 'minor'
+                ;;
+              fix/*|bugfix/*|hotfix/*)
+                printf '%s\n' 'patch'
+                ;;
+              major/*|breaking/*)
+                printf '%s\n' 'major'
+                ;;
+              *)
+                echo "Branch '${branch}' does not encode a SemVer class." >&2
+                echo 'Use feature/*, fix|bugfix|hotfix/*, or major|breaking/*.' >&2
+                return 1
+                ;;
+            esac
+          }
+
           bump_semver() {
             local base="$1"
             local kind="$2"
@@ -63,26 +83,6 @@ jobs:
             printf '%s.%s.%s\n' "${major}" "${minor}" "${patch}"
           }
 
-          read_version_classification() {
-            local pr_number="$1"
-            local pr_payload
-            local -a labels
-
-            pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")"
-            mapfile -t labels < <(
-              jq -r '.labels[].name | select(. == "version:patch" or . == "version:minor" or . == "version:major")' \
-                <<< "${pr_payload}"
-            )
-
-            if [[ "${#labels[@]}" -ne 1 ]]; then
-              echo "PR #${pr_number} must have exactly one version label: version:patch, version:minor or version:major." >&2
-              printf 'Found: %s\n' "${labels[*]:-<none>}" >&2
-              return 1
-            fi
-
-            printf '%s\n' "${labels[0]#version:}"
-          }
-
           sequence="${GITHUB_RUN_NUMBER}"
           version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
 
@@ -101,10 +101,12 @@ jobs:
           build_kind="feature"
           bump_kind="none"
           source_pr=""
+          source_branch="${GITHUB_REF_NAME}"
           create_stable_tag="false"
 
           if [[ "${GITHUB_REF_NAME}" == "master" ]]; then
             build_kind="master"
+            source_branch="master"
 
             current_stable_tag="$(
               git tag --points-at "${GITHUB_SHA}" \
@@ -129,35 +131,20 @@ jobs:
               )"
 
               if [[ -z "${source_pr}" ]]; then
-                echo 'A push to master must originate from a merged pull request or point at an existing stable SemVer tag.' >&2
+                echo 'A push to master must originate from a merged branch identifiable by GitHub or point at an existing stable SemVer tag.' >&2
                 exit 1
               fi
 
-              bump_kind="$(read_version_classification "${source_pr}")"
+              pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${source_pr}")"
+              source_branch="$(jq -r '.head.ref' <<< "${pr_payload}")"
+              bump_kind="$(classify_branch "${source_branch}")"
               version_name="$(bump_semver "${stable_base}" "${bump_kind}")"
               create_stable_tag="true"
             else
               version_name="${stable_base}"
             fi
           else
-            feature_prs="$(
-              gh api \
-                --method GET \
-                "repos/${GITHUB_REPOSITORY}/pulls" \
-                -f state='open' \
-                -f base='master' \
-                -f head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}"
-            )"
-
-            feature_pr_count="$(jq 'length' <<< "${feature_prs}")"
-            if [[ "${feature_pr_count}" -ne 1 ]]; then
-              echo "A manual feature build requires exactly one open PR from ${GITHUB_REF_NAME} into master." >&2
-              echo "Matching PRs: ${feature_pr_count}" >&2
-              exit 1
-            fi
-
-            source_pr="$(jq -r '.[0].number' <<< "${feature_prs}")"
-            bump_kind="$(read_version_classification "${source_pr}")"
+            bump_kind="$(classify_branch "${GITHUB_REF_NAME}")"
             projected_version="$(bump_semver "${stable_base}" "${bump_kind}")"
             version_name="${projected_version}-f${sequence}"
           fi
@@ -167,20 +154,23 @@ jobs:
           echo "T4A_BUILD_KIND=${build_kind}" >> "${GITHUB_ENV}"
           echo "T4A_VERSION_BUMP=${bump_kind}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_PR=${source_pr}" >> "${GITHUB_ENV}"
+          echo "T4A_SOURCE_BRANCH=${source_branch}" >> "${GITHUB_ENV}"
 
           echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
           echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
           echo "build_kind=${build_kind}" >> "${GITHUB_OUTPUT}"
           echo "bump_kind=${bump_kind}" >> "${GITHUB_OUTPUT}"
           echo "source_pr=${source_pr}" >> "${GITHUB_OUTPUT}"
+          echo "source_branch=${source_branch}" >> "${GITHUB_OUTPUT}"
           echo "create_stable_tag=${create_stable_tag}" >> "${GITHUB_OUTPUT}"
 
-          echo "Stable base:  ${stable_base}"
-          echo "Version name: ${version_name}"
-          echo "Version code: ${version_code}"
-          echo "Build kind:   ${build_kind}"
-          echo "Version bump: ${bump_kind}"
-          echo "Source PR:    ${source_pr:-n/a}"
+          echo "Stable base:   ${stable_base}"
+          echo "Version name:  ${version_name}"
+          echo "Version code:  ${version_code}"
+          echo "Build kind:    ${build_kind}"
+          echo "Version bump:  ${bump_kind}"
+          echo "Source branch: ${source_branch}"
+          echo "Source PR:     ${source_pr:-n/a}"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -314,4 +304,4 @@ jobs:
           gh release create latest-debug release/T4A-Control-debug.apk \
             --target "${GITHUB_SHA}" \
             --title "T4A Control ${T4A_VERSION_NAME} (debug)" \
-            --notes "Automated ${T4A_BUILD_KIND} build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), bump ${T4A_VERSION_BUMP}, source PR ${T4A_SOURCE_PR:-n/a}, Tuya-registered package br.com.t4acontrol, source ${GITHUB_REF_NAME}, commit ${GITHUB_SHA}."
+            --notes "Automated ${T4A_BUILD_KIND} build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), bump ${T4A_VERSION_BUMP}, source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, Tuya-registered package br.com.t4acontrol, commit ${GITHUB_SHA}."
