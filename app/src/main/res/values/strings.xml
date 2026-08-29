@@ -131,6 +131,8 @@
     <string name="mqtt_base_topic">Tópico-base</string>
     <string name="mqtt_base_topic_hint">t4a</string>
     <string name="mqtt_topic_note">A publicação de telemetria usará este prefixo; os sub-tópicos serão definidos pela camada MQTT.</string>
+    <string name="mqtt_discovery_enabled">Home Assistant Discovery</string>
+    <string name="mqtt_discovery_note">Quando habilitado, o aplicativo poderá anunciar automaticamente o T4A ao Home Assistant via MQTT Discovery.</string>
     <string name="mqtt_save">Salvar configuração</string>
     <string name="mqtt_saved">Configuração MQTT salva</string>
     <string name="mqtt_error_host">Informe o host do broker.</string>
