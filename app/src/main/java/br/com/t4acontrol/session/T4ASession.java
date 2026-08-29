@@ -39,6 +39,12 @@ public interface T4ASession {
         public void setAutoLockDistance(String distance) {}
 
         @Override
+        public void setBatteryRechargeMinGapHours(int hours) {}
+
+        @Override
+        public void resolveBatteryRecharge(boolean startNewCycle) {}
+
+        @Override
         public void unpair() {}
       };
 
@@ -68,6 +74,10 @@ public interface T4ASession {
   void setAutoLockEnabled(boolean enabled);
 
   void setAutoLockDistance(String distance);
+
+  void setBatteryRechargeMinGapHours(int hours);
+
+  void resolveBatteryRecharge(boolean startNewCycle);
 
   void unpair();
 }
