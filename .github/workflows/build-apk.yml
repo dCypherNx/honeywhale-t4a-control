@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  T4A_BASE_VERSION: '1.1.1'
+  T4A_VERSION_CODE_OFFSET: '100000'
+
 jobs:
   build-debug-apk:
     name: Build debug APK
@@ -20,6 +24,30 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Resolve CI version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sequence="${GITHUB_RUN_NUMBER}"
+          version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
+
+          if [[ "${GITHUB_REF_NAME}" == "master" ]]; then
+            version_name="${T4A_BASE_VERSION}"
+            build_kind="master"
+          else
+            version_name="${T4A_BASE_VERSION}-f${sequence}"
+            build_kind="feature"
+          fi
+
+          echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
+          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
+          echo "T4A_BUILD_KIND=${build_kind}" >> "${GITHUB_ENV}"
+
+          echo "Version name: ${version_name}"
+          echo "Version code: ${version_code}"
+          echo "Build kind:   ${build_kind}"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -95,6 +123,8 @@ jobs:
           test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
           test -n "${ANDROID_SIGNING_KEY_ALIAS}"
           test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
+          test -n "${T4A_VERSION_NAME}"
+          test -n "${T4A_VERSION_CODE}"
           ./gradlew --no-daemon :app:assembleDebug
 
       - name: Stage debug APK
@@ -104,13 +134,13 @@ jobs:
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -s "${APK}"
           mkdir -p dist release
-          cp "${APK}" "dist/T4A-Control-debug-${GITHUB_SHA::7}.apk"
+          cp "${APK}" "dist/T4A-Control-${T4A_VERSION_NAME}-debug-${GITHUB_SHA::7}.apk"
           cp "${APK}" "release/T4A-Control-debug.apk"
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: t4a-control-debug-${{ github.sha }}
+          name: t4a-control-${{ env.T4A_VERSION_NAME }}-${{ github.sha }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
@@ -124,5 +154,5 @@ jobs:
           gh release delete latest-debug --cleanup-tag --yes || true
           gh release create latest-debug release/T4A-Control-debug.apk \
             --target "${GITHUB_SHA}" \
-            --title "Latest debug APK" \
-            --notes "Automated debuggable build using Tuya-registered package br.com.t4acontrol from ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
+            --title "T4A Control ${T4A_VERSION_NAME} (debug)" \
+            --notes "Automated ${T4A_BUILD_KIND} build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), Tuya-registered package br.com.t4acontrol, source ${GITHUB_REF_NAME}, commit ${GITHUB_SHA}."
