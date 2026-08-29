@@ -17,6 +17,7 @@ import android.provider.MediaStore
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.ImageView
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -42,7 +43,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -134,17 +134,14 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             session.publish(T4ADashboardMapper.DP_LEVEL, value)
         }
 
-        override fun setLight(enabled: Boolean) =
-            session.publish(T4ADashboardMapper.DP_LIGHT, enabled)
+        override fun setLight(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_LIGHT, enabled)
 
         override fun setInitialPush(enabled: Boolean) =
             session.publish(T4ADashboardMapper.DP_START, if (enabled) "not_zero_start" else "zero_start")
 
-        override fun setCruise(enabled: Boolean) =
-            session.publish(T4ADashboardMapper.DP_CRUISE, enabled)
+        override fun setCruise(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_CRUISE, enabled)
 
-        override fun setLocked(locked: Boolean) =
-            session.publish(T4ADashboardMapper.DP_LOCK, !locked)
+        override fun setLocked(locked: Boolean) = session.publish(T4ADashboardMapper.DP_LOCK, !locked)
 
         override fun setAutoLock(enabled: Boolean) = session.setAutoLockEnabled(enabled)
 
@@ -300,13 +297,15 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun SettingsPanel(current: T4AState, foreground: ComposeColor) {
         Text(getString(R.string.settings), color = foreground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        SettingsSection(getString(R.string.connection_device_section), foreground) {
+
+        SettingsSection(getString(R.string.connection_device_section), foreground, "connection") {
             InfoLine("Conexão", getString(if (current.connected) R.string.connected else R.string.disconnected), foreground)
             InfoLine("Dispositivo", current.deviceName.ifBlank { "--" }, foreground)
             InfoLine("MAC", current.mac.ifBlank { "--" }, foreground)
             InfoLine("RSSI", if (current.rssi == 0) "--" else getString(R.string.dbm, current.rssi), foreground)
         }
-        SettingsSection(getString(R.string.display_section), foreground) {
+
+        SettingsSection(getString(R.string.display_section), foreground, "display") {
             val keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
             var keepOn by remember { mutableStateOf(keepScreenOn) }
             SettingSwitch(getString(R.string.keep_screen_on), keepOn, foreground) {
@@ -321,23 +320,55 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 }
             }
         }
-        SettingsSection(getString(R.string.battery_section), foreground) {
+
+        SettingsSection(getString(R.string.battery_section), foreground, "battery") {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
-            var sliderIndex by remember(current.batteryRechargeMinGapHours) { mutableStateOf(currentIndex.toFloat()) }
-            Text("${getString(R.string.battery_recharge_detection)}: ${getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)])}", color = foreground)
-            Slider(value = sliderIndex, onValueChange = { sliderIndex = it }, onValueChangeFinished = { session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[sliderIndex.toInt().coerceIn(0, 3)]) }, valueRange = 0f..3f, steps = 2)
-            InfoLine("Mínimo observado", current.batteryObservedMin?.let { "$it%" } ?: "--", foreground)
-            InfoLine("Máximo observado", current.batteryObservedMax?.let { "$it%" } ?: "--", foreground)
+            var seekIndex by remember(current.batteryRechargeMinGapHours) { mutableIntStateOf(currentIndex) }
+            Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
+            Text(
+                getString(R.string.battery_recharge_gap_value, BATTERY_RECHARGE_GAP_HOURS[seekIndex.coerceIn(0, 3)]),
+                color = ComposeColor(0xFF075EF0),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            NativeBatteryRechargeSeekBar(
+                index = seekIndex,
+                onIndexChanged = { seekIndex = it },
+                onCommit = { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) },
+            )
+            Row(Modifier.fillMaxWidth()) {
+                BATTERY_RECHARGE_GAP_HOURS.forEach { hours ->
+                    Text(
+                        getString(R.string.battery_recharge_gap_value, hours),
+                        color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Text(
+                getString(R.string.battery_recharge_detection_note),
+                color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
+                fontSize = 11.sp,
+            )
         }
-        SettingsSection(getString(R.string.automatic_lock), foreground) {
+
+        SettingsSection(getString(R.string.integrations_section), foreground, "integrations") {
+            Button(onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) }) { Text(getString(R.string.configure_mqtt)) }
+        }
+
+        SettingsSection(getString(R.string.automatic_lock), foreground, "auto_lock") {
             SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
+            Text(getString(R.string.auto_lock_distance), color = foreground)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("short" to getString(R.string.distance_short), "medium" to getString(R.string.distance_medium), "long" to getString(R.string.distance_long)).forEach { (value, label) ->
                     OutlinedButton(onClick = { session.setAutoLockDistance(value) }) { Text(label) }
                 }
             }
         }
-        SettingsSection(getString(R.string.riding_preferences_section), foreground) {
+
+        SettingsSection(getString(R.string.riding_preferences_section), foreground, "riding") {
             Text(getString(R.string.unit_status, "").substringBefore(":"), color = foreground, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "mile") }) { Text(getString(R.string.miles)) }
@@ -354,38 +385,119 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "not_zero_start") }) { Text(getString(R.string.initial_push)) }
             }
         }
-        SettingsSection(getString(R.string.integrations_section), foreground) {
-            Button(onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) }) { Text(getString(R.string.configure_mqtt)) }
-        }
-        SettingsSection(getString(R.string.diagnostics_section), foreground) {
+
+        SettingsSection(getString(R.string.diagnostics_section), foreground, "diagnostics") {
             current.dps.toSortedMap().forEach { (id, value) ->
                 val name = current.schema[id]?.code ?: getString(R.string.dp_fallback, id)
                 Text("$name ($id): $value", color = foreground, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             }
         }
-        SettingsSection(getString(R.string.pairing_section), foreground) {
+
+        SettingsSection(getString(R.string.pairing_section), foreground, "pairing") {
             Button(onClick = { confirmUnpair() }) { Text(getString(R.string.remove_pairing)) }
         }
     }
 
     @Composable
-    private fun SettingsSection(title: String, foreground: ComposeColor, content: @Composable () -> Unit) {
+    private fun SettingsSection(
+        title: String,
+        foreground: ComposeColor,
+        key: String,
+        content: @Composable () -> Unit,
+    ) {
         val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
+        val header = if (isDarkMode()) ComposeColor(0xFF202836) else ComposeColor(0xFFF8FAFD)
         val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
-        Column(Modifier.fillMaxWidth().shadow(2.dp, RoundedCornerShape(16.dp)).background(surface, RoundedCornerShape(16.dp)).border(1.dp, outline, RoundedCornerShape(16.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, color = ComposeColor(0xFF075EF0), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            content()
+        var expanded by remember(key) { mutableStateOf(preferences().getBoolean("section_$key", true)) }
+
+        Column(
+            Modifier.fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(16.dp))
+                .background(surface, RoundedCornerShape(16.dp))
+                .border(1.dp, outline, RoundedCornerShape(16.dp))
+                .padding(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .background(header, RoundedCornerShape(10.dp))
+                    .clickable {
+                        expanded = !expanded
+                        preferences().edit().putBoolean("section_$key", expanded).apply()
+                    }
+                    .padding(start = 7.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    title,
+                    color = ComposeColor(0xFF075EF0),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(vertical = 9.dp),
+                )
+                MdiIcon(
+                    name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
+                    color = ComposeColor(0xFF075EF0),
+                    iconSize = 18.dp,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
+            if (expanded) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    content()
+                }
+            }
         }
     }
 
     @Composable
+    private fun NativeBatteryRechargeSeekBar(
+        index: Int,
+        onIndexChanged: (Int) -> Unit,
+        onCommit: (Int) -> Unit,
+    ) {
+        AndroidView(
+            factory = { context -> SeekBar(context) },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            update = { seekBar ->
+                seekBar.max = BATTERY_RECHARGE_GAP_HOURS.size - 1
+                seekBar.setPadding(8, 2, 8, 0)
+                if (!seekBar.isPressed && seekBar.progress != index) seekBar.progress = index
+                seekBar.setOnSeekBarChangeListener(
+                    object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(view: SeekBar, progress: Int, fromUser: Boolean) {
+                            if (fromUser) onIndexChanged(progress.coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex))
+                        }
+
+                        override fun onStartTrackingTouch(view: SeekBar) = Unit
+
+                        override fun onStopTrackingTouch(view: SeekBar) {
+                            val committed = view.progress.coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
+                            onIndexChanged(committed)
+                            onCommit(committed)
+                        }
+                    }
+                )
+            },
+        )
+    }
+
+    @Composable
     private fun SettingSwitch(label: String, checked: Boolean, foreground: ComposeColor, onChange: (Boolean) -> Unit) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(label, color = foreground, modifier = Modifier.weight(1f)); Switch(checked = checked, onCheckedChange = onChange) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = foreground, modifier = Modifier.weight(1f))
+            Switch(checked = checked, onCheckedChange = onChange)
+        }
     }
 
     @Composable
     private fun InfoLine(label: String, value: String, foreground: ComposeColor) {
-        Row(Modifier.fillMaxWidth()) { Text("$label:", color = foreground, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.45f)); Text(value, color = foreground, modifier = Modifier.weight(0.55f)) }
+        Row(Modifier.fillMaxWidth()) {
+            Text("$label:", color = foreground, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.45f))
+            Text(value, color = foreground, modifier = Modifier.weight(0.55f))
+        }
     }
 
     @Composable
@@ -394,62 +506,197 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val entries = if (settings) source else source.takeLast(10)
         val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
         val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
-        Column(Modifier.fillMaxWidth().shadow(2.dp, RoundedCornerShape(16.dp)).background(surface, RoundedCornerShape(16.dp)).border(1.dp, outline, RoundedCornerShape(16.dp)).padding(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .shadow(2.dp, RoundedCornerShape(16.dp))
+                .background(surface, RoundedCornerShape(16.dp))
+                .border(1.dp, outline, RoundedCornerShape(16.dp))
+                .padding(10.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MdiIcon(name = "cmd-format-list-bulleted", color = ComposeColor(0xFF075EF0), iconSize = 20.dp, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(getString(if (settings) R.string.raw_log else R.string.events), color = ComposeColor(0xFF075EF0), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
-            entries.asReversed().forEach { entry -> Text(entry, color = foreground, fontFamily = if (settings) FontFamily.Monospace else FontFamily.Default, fontSize = if (settings) 10.sp else 12.sp) }
-            if (settings) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }; OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") } }
+            entries.asReversed().forEach { entry ->
+                Text(entry, color = foreground, fontFamily = if (settings) FontFamily.Monospace else FontFamily.Default, fontSize = if (settings) 10.sp else 12.sp)
+            }
+            if (settings) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
+                    OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") }
+                }
+            }
         }
     }
 
     @Composable
     private fun MdiIcon(name: String, color: ComposeColor, iconSize: Dp, modifier: Modifier = Modifier) {
         val argb = color.toArgb()
-        AndroidView(modifier = modifier, factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } }, update = { image ->
-            val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
-            image.setImageDrawable(IconicsDrawable(image.context, name).apply { colorList = ColorStateList.valueOf(argb); sizeXPx = pixels; sizeYPx = pixels })
-        })
+        AndroidView(
+            modifier = modifier,
+            factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } },
+            update = { image ->
+                val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
+                image.setImageDrawable(
+                    IconicsDrawable(image.context, name).apply {
+                        colorList = ColorStateList.valueOf(argb)
+                        sizeXPx = pixels
+                        sizeYPx = pixels
+                    }
+                )
+            },
+        )
     }
 
-    override fun onState(value: T4AState) { runOnUiThread { state = value; if (value.message.isNotEmpty() && value.message != lastStatusEvent) { lastStatusEvent = value.message; appendEvent(value.message) }; showBatteryRechargePromptIfNeeded(value) } }
+    override fun onState(value: T4AState) {
+        runOnUiThread {
+            state = value
+            if (value.message.isNotEmpty() && value.message != lastStatusEvent) {
+                lastStatusEvent = value.message
+                appendEvent(value.message)
+            }
+            showBatteryRechargePromptIfNeeded(value)
+        }
+    }
+
     override fun onEvent(value: String) { runOnUiThread { appendEvent(value) } }
     override fun onRawLog(value: String) { runOnUiThread { appendRaw(value) } }
+
     private fun appendEvent(value: String) { eventHistory.add(DateFormat.getTimeInstance().format(Date()) + "  " + value) }
     private fun appendRaw(value: String) { rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value) }
-    private fun rawLogText(): String = buildString { append("T4A ${BuildConfig.VERSION_NAME} (versionCode ${BuildConfig.VERSION_CODE})\n"); rawHistory.forEach { append(it).append('\n') } }
-    private fun copyRawLog() { val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.raw_log), rawLogText())); Toast.makeText(this, R.string.raw_log_copied, Toast.LENGTH_SHORT).show() }
+
+    private fun rawLogText(): String = buildString {
+        append("T4A ${BuildConfig.VERSION_NAME} (versionCode ${BuildConfig.VERSION_CODE})\n")
+        rawHistory.forEach { append(it).append('\n') }
+    }
+
+    private fun copyRawLog() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.raw_log), rawLogText()))
+        Toast.makeText(this, R.string.raw_log_copied, Toast.LENGTH_SHORT).show()
+    }
+
     private fun saveRawLog() {
         val fileName = "t4a-raw-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())}.log"
         var uri: android.net.Uri? = null
         try {
-            val values = android.content.ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, fileName); put(MediaStore.MediaColumns.MIME_TYPE, "text/plain"); put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/T4A"); put(MediaStore.MediaColumns.IS_PENDING, 1) }
-            uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw java.io.IOException("MediaStore insert returned null")
-            contentResolver.openOutputStream(uri, "w")?.use { output -> output.write(rawLogText().toByteArray(Charsets.UTF_8)) } ?: throw java.io.IOException("MediaStore output stream unavailable")
-            values.clear(); values.put(MediaStore.MediaColumns.IS_PENDING, 0); contentResolver.update(uri, values, null, null); Toast.makeText(this, "Log salvo em Downloads/T4A: $fileName", Toast.LENGTH_LONG).show()
-        } catch (error: Exception) { uri?.let { runCatching { contentResolver.delete(it, null, null) } }; Toast.makeText(this, "Não foi possível salvar o log raw.", Toast.LENGTH_LONG).show() }
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/T4A")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw java.io.IOException("MediaStore insert returned null")
+            contentResolver.openOutputStream(uri, "w")?.use { output -> output.write(rawLogText().toByteArray(Charsets.UTF_8)) }
+                ?: throw java.io.IOException("MediaStore output stream unavailable")
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            Toast.makeText(this, "Log salvo em Downloads/T4A: $fileName", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            uri?.let { runCatching { contentResolver.delete(it, null, null) } }
+            Toast.makeText(this, "Não foi possível salvar o log raw.", Toast.LENGTH_LONG).show()
+        }
     }
+
     private fun showBatteryRechargePromptIfNeeded(current: T4AState?) {
         if (!uiForeground || current?.pendingBatteryRechargePercent == null || batteryRechargeDialog != null) return
         val percent = current.pendingBatteryRechargePercent
-        batteryRechargeDialog = android.app.AlertDialog.Builder(this).setTitle("Recarga detectada").setMessage("A bateria subiu para $percent%. Deseja iniciar um novo ciclo de bateria?").setPositiveButton("Novo ciclo") { _, _ -> session.resolveBatteryRecharge(true); batteryRechargeDialog = null }.setNegativeButton("Manter ciclo") { _, _ -> session.resolveBatteryRecharge(false); batteryRechargeDialog = null }.setOnCancelListener { batteryRechargeDialog = null }.create()
+        batteryRechargeDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Recarga detectada")
+            .setMessage("A bateria subiu para $percent%. Deseja iniciar um novo ciclo de bateria?")
+            .setPositiveButton("Novo ciclo") { _, _ -> session.resolveBatteryRecharge(true); batteryRechargeDialog = null }
+            .setNegativeButton("Manter ciclo") { _, _ -> session.resolveBatteryRecharge(false); batteryRechargeDialog = null }
+            .setOnCancelListener { batteryRechargeDialog = null }
+            .create()
         batteryRechargeDialog?.show()
     }
-    private fun confirmUnpair() { android.app.AlertDialog.Builder(this).setTitle(getString(R.string.remove_pairing_question)).setMessage(getString(R.string.remove_pairing_message)).setPositiveButton(getString(R.string.remove)) { _, _ -> session.unpair() }.setNegativeButton(getString(R.string.cancel), null).show() }
-    private fun batteryRechargeGapIndex(hours: Int): Int = BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
-    private fun applyTheme(value: String) { themeMode = value; preferences().edit().putString(PREF_THEME, value).apply(); configurationTick++ }
-    private fun isDarkMode(): Boolean = when (themeMode) { "dark" -> true; "light" -> false; else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES }
-    private fun configureSystemBars(darkMode: Boolean) {
-        window.statusBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt(); window.navigationBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
-        window.decorView.windowInsetsController?.let { controller -> val appearance = if (darkMode) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS; controller.setSystemBarsAppearance(appearance, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS) }
+
+    private fun confirmUnpair() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.remove_pairing_question))
+            .setMessage(getString(R.string.remove_pairing_message))
+            .setPositiveButton(getString(R.string.remove)) { _, _ -> session.unpair() }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
     }
+
+    private fun batteryRechargeGapIndex(hours: Int): Int = BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
+
+    private fun applyTheme(value: String) {
+        themeMode = value
+        preferences().edit().putString(PREF_THEME, value).apply()
+        configurationTick++
+    }
+
+    private fun isDarkMode(): Boolean = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private fun configureSystemBars(darkMode: Boolean) {
+        window.statusBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
+        window.navigationBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
+        window.decorView.windowInsetsController?.let { controller ->
+            val appearance = if (darkMode) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            controller.setSystemBarsAppearance(
+                appearance,
+                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+            )
+        }
+    }
+
     private fun preferences() = getSharedPreferences("t4a_settings", MODE_PRIVATE)
-    private fun applyKeepScreenOn(enabled: Boolean) { if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
-    private fun ensurePermissions() { if (!hasBluetoothPermissions()) requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION), REQUEST_BLUETOOTH) }
-    private fun hasBluetoothPermissions(): Boolean = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); if (requestCode != REQUEST_BLUETOOTH) return; if (hasBluetoothPermissions()) { if (uiForeground) connectSession() } else Toast.makeText(this, "Permissões Bluetooth são necessárias para manter a sessão T4A.", Toast.LENGTH_LONG).show() }
-    private fun connectSession() { if (sessionBindingRequested || !hasBluetoothPermissions()) return; val intent = Intent(this, T4ASessionService::class.java); try { startForegroundService(intent); sessionBindingRequested = bindService(intent, sessionConnection, BIND_AUTO_CREATE) } catch (error: RuntimeException) { sessionBindingRequested = false; Toast.makeText(this, "Não foi possível iniciar a sessão T4A.", Toast.LENGTH_LONG).show() } }
-    private fun disconnectSession() { session.removeListener(this); session.setUiForeground(false); session = T4ASession.EMPTY; if (!sessionBindingRequested) return; runCatching { unbindService(sessionConnection) }; sessionBindingRequested = false }
+
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun ensurePermissions() {
+        if (!hasBluetoothPermissions()) {
+            requestPermissions(
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION),
+                REQUEST_BLUETOOTH,
+            )
+        }
+    }
+
+    private fun hasBluetoothPermissions(): Boolean =
+        checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_BLUETOOTH) return
+        if (hasBluetoothPermissions()) {
+            if (uiForeground) connectSession()
+        } else {
+            Toast.makeText(this, "Permissões Bluetooth são necessárias para manter a sessão T4A.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun connectSession() {
+        if (sessionBindingRequested || !hasBluetoothPermissions()) return
+        val intent = Intent(this, T4ASessionService::class.java)
+        try {
+            startForegroundService(intent)
+            sessionBindingRequested = bindService(intent, sessionConnection, BIND_AUTO_CREATE)
+        } catch (error: RuntimeException) {
+            sessionBindingRequested = false
+            Toast.makeText(this, "Não foi possível iniciar a sessão T4A.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun disconnectSession() {
+        session.removeListener(this)
+        session.setUiForeground(false)
+        session = T4ASession.EMPTY
+        if (!sessionBindingRequested) return
+        runCatching { unbindService(sessionConnection) }
+        sessionBindingRequested = false
+    }
 }
