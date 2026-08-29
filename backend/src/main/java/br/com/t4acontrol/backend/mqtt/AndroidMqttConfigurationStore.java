@@ -30,6 +30,7 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
   private static final String CLIENT_ID = "client_id";
   private static final String BASE_TOPIC = "base_topic";
   private static final String KEEP_ALIVE = "keep_alive_seconds";
+  private static final String DISCOVERY_ENABLED = "discovery_enabled";
   private static final String REVISION = "revision";
 
   private final SharedPreferences preferences;
@@ -55,7 +56,8 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
         decryptPassword(preferences.getString(PASSWORD, "")),
         preferences.getString(CLIENT_ID, defaults.clientId),
         preferences.getString(BASE_TOPIC, defaults.baseTopic),
-        preferences.getInt(KEEP_ALIVE, defaults.keepAliveSeconds));
+        preferences.getInt(KEEP_ALIVE, defaults.keepAliveSeconds),
+        preferences.getBoolean(DISCOVERY_ENABLED, defaults.discoveryEnabled));
   }
 
   @Override
@@ -79,6 +81,7 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
         .putString(CLIENT_ID, configuration.clientId)
         .putString(BASE_TOPIC, configuration.baseTopic)
         .putInt(KEEP_ALIVE, configuration.keepAliveSeconds)
+        .putBoolean(DISCOVERY_ENABLED, configuration.discoveryEnabled)
         .putLong(REVISION, nextRevision)
         .apply();
   }
