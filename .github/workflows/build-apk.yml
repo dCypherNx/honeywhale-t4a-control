@@ -277,7 +277,7 @@ jobs:
           set -euo pipefail
 
           tag="v${T4A_VERSION_NAME}"
-          existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha' 2>/dev/null || true)"
+          existing_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
 
           if [[ -n "${existing_sha}" ]]; then
             if [[ "${existing_sha}" != "${GITHUB_SHA}" ]]; then
