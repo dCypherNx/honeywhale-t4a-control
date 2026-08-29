@@ -22,7 +22,9 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
   private static final String ENABLED = "enabled";
   private static final String HOST = "host";
   private static final String PORT = "port";
-  private static final String TLS = "tls";
+  private static final String TLS = "tls"; // Legacy key retained for migration.
+  private static final String TRANSPORT = "transport";
+  private static final String WEBSOCKET_PATH = "websocket_path";
   private static final String USERNAME = "username";
   private static final String PASSWORD = "password_ciphertext";
   private static final String CLIENT_ID = "client_id";
@@ -40,11 +42,15 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
   @Override
   public MqttConfiguration load() {
     MqttConfiguration defaults = MqttConfiguration.defaults();
+    boolean legacyTls = preferences.getBoolean(TLS, defaults.tls);
+    MqttConfiguration.Transport transport =
+        MqttConfiguration.Transport.fromStored(preferences.getString(TRANSPORT, ""), legacyTls);
     return new MqttConfiguration(
         preferences.getBoolean(ENABLED, defaults.enabled),
         preferences.getString(HOST, defaults.host),
         preferences.getInt(PORT, defaults.port),
-        preferences.getBoolean(TLS, defaults.tls),
+        transport,
+        preferences.getString(WEBSOCKET_PATH, defaults.websocketPath),
         preferences.getString(USERNAME, defaults.username),
         decryptPassword(preferences.getString(PASSWORD, "")),
         preferences.getString(CLIENT_ID, defaults.clientId),
@@ -66,6 +72,8 @@ public final class AndroidMqttConfigurationStore implements MqttConfigurationSto
         .putString(HOST, configuration.host)
         .putInt(PORT, configuration.port)
         .putBoolean(TLS, configuration.tls)
+        .putString(TRANSPORT, configuration.transport.name())
+        .putString(WEBSOCKET_PATH, configuration.websocketPath)
         .putString(USERNAME, configuration.username)
         .putString(PASSWORD, encryptPassword(configuration.password))
         .putString(CLIENT_ID, configuration.clientId)
