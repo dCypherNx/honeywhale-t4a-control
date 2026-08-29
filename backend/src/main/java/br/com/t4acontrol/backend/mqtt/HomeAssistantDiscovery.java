@@ -32,7 +32,8 @@ public final class HomeAssistantDiscovery {
     device.put("name", deviceName(state));
     device.put("manufacturer", "Honeywhale");
     device.put("model", "T4A");
-    if (state.mac != null && !state.mac.isBlank()) device.put("serial_number", state.mac);
+    String serialNumber = canonicalMac(state == null ? null : state.mac);
+    if (!serialNumber.isEmpty()) device.put("serial_number", serialNumber);
     root.put("device", device);
 
     Map<String, Object> origin = new LinkedHashMap<>();
@@ -217,6 +218,19 @@ public final class HomeAssistantDiscovery {
     if (state == null || state.mac == null) return "";
     String normalized = state.mac.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
     return normalized.isEmpty() ? "" : "t4a_" + normalized;
+  }
+
+  private static String canonicalMac(String value) {
+    if (value == null || value.isBlank()) return "";
+    String compact = value.replaceAll("[^A-Fa-f0-9]", "").toUpperCase(Locale.ROOT);
+    if (compact.length() != 12) return value.trim().toUpperCase(Locale.ROOT);
+
+    StringBuilder out = new StringBuilder(17);
+    for (int i = 0; i < compact.length(); i += 2) {
+      if (out.length() > 0) out.append(':');
+      out.append(compact, i, i + 2);
+    }
+    return out.toString();
   }
 
   private static String deviceName(T4AState state) {
