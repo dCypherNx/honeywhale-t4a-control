@@ -35,6 +35,54 @@ jobs:
         run: |
           set -euo pipefail
 
+          bump_semver() {
+            local base="$1"
+            local kind="$2"
+            local major minor patch
+            IFS='.' read -r major minor patch <<< "${base}"
+
+            case "${kind}" in
+              patch)
+                patch=$((patch + 1))
+                ;;
+              minor)
+                minor=$((minor + 1))
+                patch=0
+                ;;
+              major)
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+              *)
+                echo "Unsupported version bump: ${kind}" >&2
+                return 1
+                ;;
+            esac
+
+            printf '%s.%s.%s\n' "${major}" "${minor}" "${patch}"
+          }
+
+          read_version_classification() {
+            local pr_number="$1"
+            local pr_payload
+            local -a labels
+
+            pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")"
+            mapfile -t labels < <(
+              jq -r '.labels[].name | select(. == "version:patch" or . == "version:minor" or . == "version:major")' \
+                <<< "${pr_payload}"
+            )
+
+            if [[ "${#labels[@]}" -ne 1 ]]; then
+              echo "PR #${pr_number} must have exactly one version label: version:patch, version:minor or version:major." >&2
+              printf 'Found: %s\n' "${labels[*]:-<none>}" >&2
+              return 1
+            fi
+
+            printf '%s\n' "${labels[0]#version:}"
+          }
+
           sequence="${GITHUB_RUN_NUMBER}"
           version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
 
@@ -85,47 +133,33 @@ jobs:
                 exit 1
               fi
 
-              pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${source_pr}")"
-              mapfile -t version_labels < <(
-                jq -r '.labels[].name | select(. == "version:patch" or . == "version:minor" or . == "version:major")' \
-                  <<< "${pr_payload}"
-              )
-
-              if [[ "${#version_labels[@]}" -ne 1 ]]; then
-                echo "PR #${source_pr} must have exactly one version label: version:patch, version:minor or version:major." >&2
-                printf 'Found: %s\n' "${version_labels[*]:-<none>}" >&2
-                exit 1
-              fi
-
-              bump_kind="${version_labels[0]#version:}"
-              IFS='.' read -r major minor patch <<< "${stable_base}"
-
-              case "${bump_kind}" in
-                patch)
-                  patch=$((patch + 1))
-                  ;;
-                minor)
-                  minor=$((minor + 1))
-                  patch=0
-                  ;;
-                major)
-                  major=$((major + 1))
-                  minor=0
-                  patch=0
-                  ;;
-                *)
-                  echo "Unsupported version bump: ${bump_kind}" >&2
-                  exit 1
-                  ;;
-              esac
-
-              version_name="${major}.${minor}.${patch}"
+              bump_kind="$(read_version_classification "${source_pr}")"
+              version_name="$(bump_semver "${stable_base}" "${bump_kind}")"
               create_stable_tag="true"
             else
               version_name="${stable_base}"
             fi
           else
-            version_name="${stable_base}-f${sequence}"
+            feature_prs="$(
+              gh api \
+                --method GET \
+                "repos/${GITHUB_REPOSITORY}/pulls" \
+                -f state='open' \
+                -f base='master' \
+                -f head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}"
+            )"
+
+            feature_pr_count="$(jq 'length' <<< "${feature_prs}")"
+            if [[ "${feature_pr_count}" -ne 1 ]]; then
+              echo "A manual feature build requires exactly one open PR from ${GITHUB_REF_NAME} into master." >&2
+              echo "Matching PRs: ${feature_pr_count}" >&2
+              exit 1
+            fi
+
+            source_pr="$(jq -r '.[0].number' <<< "${feature_prs}")"
+            bump_kind="$(read_version_classification "${source_pr}")"
+            projected_version="$(bump_semver "${stable_base}" "${bump_kind}")"
+            version_name="${projected_version}-f${sequence}"
           fi
 
           echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
