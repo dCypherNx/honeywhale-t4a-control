@@ -35,6 +35,7 @@ public final class MqttSettingsActivity extends Activity {
 
   private MqttSettings settings;
   private Switch enabled;
+  private Switch discoveryEnabled;
   private EditText host;
   private EditText port;
   private EditText websocketPath;
@@ -153,6 +154,12 @@ public final class MqttSettingsActivity extends Activity {
     topicNote.setTextColor(mutedColor());
     topicNote.setPadding(dp(3), 0, dp(3), dp(6));
     identity.addView(topicNote);
+    discoveryEnabled = switchView(R.string.mqtt_discovery_enabled);
+    identity.addView(discoveryEnabled);
+    TextView discoveryNote = text(getString(R.string.mqtt_discovery_note), 11);
+    discoveryNote.setTextColor(mutedColor());
+    discoveryNote.setPadding(dp(3), 0, dp(3), dp(6));
+    identity.addView(discoveryNote);
 
     Button save = new Button(this);
     save.setText(R.string.mqtt_save);
@@ -198,7 +205,8 @@ public final class MqttSettingsActivity extends Activity {
             value(password),
             value(clientId),
             value(baseTopic),
-            value(keepAlive));
+            value(keepAlive),
+            discoveryEnabled.isChecked());
     MqttSettings.SaveResult result = settings.save(draft);
     if (!result.saved) {
       showError(result.error);
@@ -220,6 +228,7 @@ public final class MqttSettingsActivity extends Activity {
     clientId.setText(value.clientId);
     baseTopic.setText(value.baseTopic);
     keepAlive.setText(value.keepAliveSeconds);
+    discoveryEnabled.setChecked(value.discoveryEnabled);
   }
 
   private void showError(MqttSettings.Error error) {
