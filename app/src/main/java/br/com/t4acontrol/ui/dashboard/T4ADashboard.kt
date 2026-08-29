@@ -1,5 +1,6 @@
 package br.com.t4acontrol.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -7,12 +8,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -36,7 +39,6 @@ import androidx.compose.ui.unit.sp
  * Alterações de tamanho, espaçamento, raio ou tipografia devem começar aqui.
  */
 object T4ADashboardTokens {
-    val ScreenHorizontalPadding: Dp = 0.dp
     val CardSpacing: Dp = 10.dp
     val CardPadding: Dp = 12.dp
     val CardRadius: Dp = 16.dp
@@ -52,7 +54,6 @@ object T4ADashboardTokens {
     val MetricFontSize = 12.sp
     val ControlFontSize = 11.sp
 
-    val Navy = Color(0xFF00133D)
     val Blue = Color(0xFF075EF0)
     val Green = Color(0xFF00A529)
     val Red = Color(0xFFE91925)
@@ -90,18 +91,13 @@ fun T4ADashboard(
             ConnectionCard(state, surface, outline, foreground)
             SpeedCard(state, surface, outline, foreground, darkMode)
             MetricsCard(state, surface, outline, foreground, actions)
-            RidingControls(state, surface, outline, foreground, actions)
+            RidingControls(state, surface, outline, actions)
         }
     }
 }
 
 @Composable
-private fun ConnectionCard(
-    state: T4ADashboardState,
-    surface: Color,
-    outline: Color,
-    foreground: Color,
-) {
+private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color) {
     DashboardCard(surface, outline) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -141,7 +137,6 @@ private fun BatteryIndicator(percent: Int, foreground: Color) {
         ) {
             repeat(20) { index ->
                 val threshold = (index + 1) * 5
-                val active = threshold <= percent
                 val activeColor = when {
                     index < 4 -> T4ADashboardTokens.Red
                     index < 10 -> T4ADashboardTokens.Amber
@@ -149,7 +144,10 @@ private fun BatteryIndicator(percent: Int, foreground: Color) {
                 }
                 Box(
                     Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight)
-                        .background(if (active) activeColor else Color(0xFFE8EBF0), RoundedCornerShape(3.dp))
+                        .background(
+                            if (threshold <= percent) activeColor else Color(0xFFE8EBF0),
+                            RoundedCornerShape(3.dp),
+                        )
                 )
             }
         }
@@ -184,6 +182,14 @@ private fun SpeedCard(
                 Spacer(Modifier.width(10.dp))
                 Text(state.speedUnit.label, color = foreground, fontSize = T4ADashboardTokens.SpeedUnitFontSize, fontWeight = FontWeight.Bold)
             }
+            Row(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                (5..50 step 5).forEach { value ->
+                    Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp)
+                }
+            }
         }
     }
 }
@@ -217,12 +223,9 @@ private fun SpeedSegments(speed: Int, darkMode: Boolean, modifier: Modifier = Mo
             color = if (darkMode) Color(0xFF526075) else Color(0xFFB8C2D3),
             topLeft = Offset(left, top),
             size = Size(width, bottom - top),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
+            cornerRadius = CornerRadius(6.dp.toPx()),
             style = Stroke(1.dp.toPx()),
         )
-    }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        (5..50 step 5).forEach { Text(it.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp) }
     }
 }
 
@@ -257,13 +260,23 @@ private fun RidingControls(
     state: T4ADashboardState,
     surface: Color,
     outline: Color,
-    foreground: Color,
     actions: T4ADashboardActions,
 ) {
     DashboardCard(surface, outline) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("⌘  Pilotagem", color = T4ADashboardTokens.Blue, fontSize = T4ADashboardTokens.SectionTitleFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(if (state.locked) "BLOQUEADO" else "DESBLOQUEADO", color = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "⌘  Pilotagem",
+                color = T4ADashboardTokens.Blue,
+                fontSize = T4ADashboardTokens.SectionTitleFontSize,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (state.locked) "BLOQUEADO" else "DESBLOQUEADO",
+                color = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -287,21 +300,13 @@ private fun RidingControls(
 }
 
 @Composable
-private fun RowScopeModeTilePlaceholder() = Unit
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.ModeTile(
-    mode: RidingMode,
-    active: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
+private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val color = modeColor(mode)
     Surface(
         modifier = Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(T4ADashboardTokens.ControlRadius),
         color = if (active) color.copy(alpha = 0.13f) else Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(if (active) 2.dp else 1.dp, color),
+        border = BorderStroke(if (active) 2.dp else 1.dp, color),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(mode.label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -323,7 +328,7 @@ private fun ToggleTile(
         modifier = modifier.height(T4ADashboardTokens.ControlHeight).clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(T4ADashboardTokens.ControlRadius),
         color = if (active) color.copy(alpha = 0.13f) else Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(if (active) 2.dp else 1.dp, color),
+        border = BorderStroke(if (active) 2.dp else 1.dp, color),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Text(if (active) "●" else "○", color = color, fontSize = 21.sp)
@@ -344,7 +349,7 @@ private fun ActionTile(
         modifier = modifier.height(T4ADashboardTokens.ControlHeight).clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(T4ADashboardTokens.ControlRadius),
         color = Color.Transparent,
-        border = androidx.compose.foundation.BorderStroke(1.dp, color),
+        border = BorderStroke(1.dp, color),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(label, color = color, fontSize = T4ADashboardTokens.ControlFontSize, fontWeight = FontWeight.Bold)
@@ -353,7 +358,7 @@ private fun ActionTile(
 }
 
 @Composable
-private fun DashboardCard(surface: Color, outline: Color, content: @Composable Column.() -> Unit) {
+private fun DashboardCard(surface: Color, outline: Color, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth()
             .background(surface, RoundedCornerShape(T4ADashboardTokens.CardRadius))
