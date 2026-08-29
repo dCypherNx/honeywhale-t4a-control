@@ -50,7 +50,7 @@ T4ASessionService                                     |
 
 `AndroidMqttConfigurationStore` stores non-secret configuration in app-private preferences and encrypts the MQTT password with AES-GCM using an Android Keystore key. No secret is logged. The legacy boolean TLS setting remains readable and is migrated to the explicit transport model on the next save.
 
-`AndroidLocationProvider` is the only Android location adapter. It converts framework `Location` objects into provider-neutral `LocationSnapshot` values. It is inactive while BLE is disconnected. While connected and stationary it uses a lower-frequency balanced-power request; when DP 2 reports more than 1 km/h it switches to a high-accuracy, higher-frequency request when fine location is available.
+`AndroidLocationProvider` is the only Android location adapter. It converts framework `Location` objects into provider-neutral `LocationSnapshot` values. It is inactive while BLE is disconnected. While connected and stationary it uses a 20-second balanced-power cadence; when DP 2 reports more than 1 km/h it switches to high accuracy and a 3-second cadence when fine location is available.
 
 `MqttTelemetryCoordinator` owns broker connection policy, configuration reload, reconnect cadence, availability state, heartbeat, telemetry publication, location publication and discovery publication/removal. It knows only provider-neutral `T4AState`, `LocationSnapshot` and `MqttTransport` values.
 
@@ -149,8 +149,8 @@ A telemetry publish occurs when the semantic telemetry changes or after 30 secon
 ## Location policy
 
 - BLE disconnected: Android location updates are stopped.
-- BLE connected and DP 2 <= 1 km/h: balanced-power updates, target 10 s / 10 m.
-- BLE connected and DP 2 > 1 km/h: high-accuracy updates when fine location is available, target 2 s / 2 m.
+- BLE connected and DP 2 <= 1 km/h: balanced-power updates every 20 seconds, with no minimum-distance gate.
+- BLE connected and DP 2 > 1 km/h: high-accuracy updates every 3 seconds when fine location is available, with no minimum-distance gate.
 - Approximate/coarse permission remains usable, but high-accuracy mode is not requested.
 - A cached Android fix is accepted only when it is at most 30 seconds old.
 - The provider is intentionally reusable by the future navigation layer instead of embedding location logic inside MQTT or the Tuya backend.
