@@ -90,6 +90,8 @@ Given base topic `t4a`:
 
 The broker LWT is `offline` on `<base>/status`. A clean shutdown also publishes `offline` best-effort before disconnecting.
 
+Discovery and telemetry are only published after the MQTT transport has delivered its connected callback and the coordinator has published `online`. This prevents the same retained discovery document from being emitted once from an early state callback and again from the MQTT connected callback.
+
 When discovery is enabled, the discovery payload shares `<base>/telemetry` as `state_topic` and `<base>/status` as `availability_topic`. The device identifier is derived from the normalized T4A MAC so formatting changes such as `DC23529724A0` versus `DC:23:52:97:24:A0` do not create duplicate devices.
 
 When the discovery switch changes from enabled to disabled while connected, the retained discovery topic is cleared with an empty retained payload so Home Assistant removes the discovered device/components.
@@ -110,7 +112,7 @@ Discovery currently exposes:
 - start mode;
 - unit setting.
 
-Telemetry currently contains:
+Telemetry can contain:
 
 - `connected`
 - `device_name`
@@ -128,6 +130,8 @@ Telemetry currently contains:
 - `start_mode`
 - `unit_setting`
 - `timestamp_ms`
+
+The payload never invents a numeric zero, false boolean, or empty string merely because the corresponding BLE value is not known yet. DPS-derived fields are included only when that DPS exists in the provider-neutral state and can be parsed. RSSI is omitted while the backend still reports its unknown sentinel value `0`. This lets Home Assistant represent not-yet-known measurements as unknown instead of recording false measurements such as 0% battery or 0 dBm RSSI.
 
 A telemetry publish occurs when the semantic telemetry changes or after 30 seconds as a heartbeat.
 
