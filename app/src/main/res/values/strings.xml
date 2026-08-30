@@ -9,6 +9,12 @@
     <string name="login">Entrar</string>
     <string name="events">Eventos</string>
     <string name="raw_log">Log raw</string>
+    <string name="raw_filter_all">Todos</string>
+    <string name="raw_filter_rx" translatable="false">RX</string>
+    <string name="raw_filter_tx" translatable="false">TX</string>
+    <string name="raw_filter_initial" translatable="false">INITIAL</string>
+    <string name="raw_filter_battery" translatable="false">BATTERY</string>
+    <string name="raw_filter_other">Outros</string>
     <string name="copy">Copiar</string>
     <string name="save">Salvar</string>
     <string name="raw_log_copied">Log copiado para a área de transferência</string>
