@@ -303,10 +303,18 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
 
         SettingsSection(getString(R.string.automatic_lock), "auto_lock") {
-            SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
+            SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) {
+                appendRaw("AUTO_LOCK enabled=$it")
+                session.setAutoLockEnabled(it)
+            }
             Text(getString(R.string.auto_lock_distance), color = foreground)
             val distanceValues = listOf("short", "medium", "long")
-            SegmentedChoice(labels = listOf(getString(R.string.distance_short), getString(R.string.distance_medium), getString(R.string.distance_long)), selectedIndex = distanceValues.indexOf(current.autoLockDistance).coerceAtLeast(1)) { index -> session.setAutoLockDistance(distanceValues[index]) }
+            val selectedDistanceIndex = distanceValues.indexOf(current.autoLockDistance).takeIf { it >= 0 } ?: 1
+            SegmentedChoice(labels = listOf(getString(R.string.distance_short), getString(R.string.distance_medium), getString(R.string.distance_long)), selectedIndex = selectedDistanceIndex) { index ->
+                val distance = distanceValues[index]
+                appendRaw("AUTO_LOCK distance=$distance")
+                session.setAutoLockDistance(distance)
+            }
         }
 
         SettingsSection(getString(R.string.riding_preferences_section), "riding") {
@@ -485,7 +493,14 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
     }
 
-    override fun onEvent(value: String) { runOnUiThread { appendEvent(value) } }
+    override fun onEvent(value: String) {
+        runOnUiThread {
+            appendEvent(value)
+            if (value.startsWith("Sinal distante") || value.startsWith("Sinal próximo") || value.startsWith("Bloqueio automático por distância")) {
+                appendRaw("AUTO_LOCK $value")
+            }
+        }
+    }
     override fun onRawLog(value: String) { runOnUiThread { appendRaw(value) } }
     private fun appendEvent(value: String) { eventHistory.add(DateFormat.getTimeInstance().format(Date()) + "  " + value) }
     private fun appendRaw(value: String) { rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value) }
