@@ -75,7 +75,7 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
               @Override
               public void onSuccess(List<HomeBean> homes) {
                 if (homes == null || homes.isEmpty()) {
-                  callback.onSuccess(new Home(0L, Collections.emptyList()));
+                  callback.onSuccess(new Home(0L, "", Collections.emptyList()));
                   return;
                 }
                 long homeId = homes.get(0).getHomeId();
@@ -90,7 +90,11 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
                                 devices.add(toDevice(device));
                               }
                             }
-                            callback.onSuccess(new Home(homeId, devices));
+                            callback.onSuccess(
+                                new Home(
+                                    homeId,
+                                    home == null ? "" : T4AContracts.value(home.getName()),
+                                    devices));
                           }
 
                           @Override
