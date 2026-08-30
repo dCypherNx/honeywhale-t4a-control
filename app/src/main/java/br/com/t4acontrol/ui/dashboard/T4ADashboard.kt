@@ -140,7 +140,7 @@ private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Co
 private fun LockStatusIndicator(state: T4ADashboardState) {
     val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
     if (state.autoLockOn) {
-        AutoLockIcon(state.locked, lockColor, T4ADashboardTokens.Blue, 27.dp, Modifier.size(33.dp), 10.5.dp)
+        AutoLockIcon(state.locked, lockColor, T4ADashboardTokens.Blue, 27.dp, Modifier.size(33.dp), 7.dp)
     } else {
         StableLockIcon(state.locked, lockColor, Modifier.size(33.dp), 27.dp)
     }
@@ -150,28 +150,26 @@ private fun LockStatusIndicator(state: T4ADashboardState) {
 private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = Modifier, lockSize: Dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(lockSize)) {
-            val bodyLeft = size.width * 0.18f
-            val bodyTop = size.height * 0.47f
-            val bodyWidth = size.width * 0.64f
-            val bodyHeight = size.height * 0.39f
+            val bodyLeft = size.width * 0.14f
+            val bodyTop = size.height * 0.39f
+            val bodyWidth = size.width * 0.72f
+            val bodyHeight = size.height * 0.47f
             val strokeWidth = size.width * 0.105f
 
-            // The body never moves. The right shackle leg is the physical pivot.
-            val pivotX = size.width * 0.63f
-            val shackleWidth = size.width * 0.32f
-            val shackleTop = size.height * 0.08f
-            val arcHeight = size.height * 0.40f
+            val pivotX = size.width * 0.62f
+            val shackleWidth = size.width * 0.31f
+            val shackleTop = size.height * 0.06f
+            val arcHeight = size.height * 0.38f
             val arcEndY = shackleTop + arcHeight / 2f
 
             drawRoundRect(
                 color = color,
                 topLeft = Offset(bodyLeft, bodyTop),
                 size = Size(bodyWidth, bodyHeight),
-                cornerRadius = CornerRadius(size.width * 0.08f, size.width * 0.08f),
+                cornerRadius = CornerRadius(size.width * 0.09f, size.width * 0.09f),
             )
 
             if (locked) {
-                // Closed: both legs terminate in the lock body.
                 val leftX = pivotX - shackleWidth
                 drawArc(
                     color = color,
@@ -185,10 +183,8 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
                 drawLine(color, Offset(leftX, arcEndY), Offset(leftX, bodyTop), strokeWidth, StrokeCap.Round)
                 drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
             } else {
-                // Open: the same shackle is rotated 180° around the connected vertical axis.
-                // In front projection this is a horizontal mirror around the pivot leg:
-                // the pivot remains fixed in the body, while the opposite leg moves outside it.
                 val freeX = pivotX + shackleWidth
+                val freeEndY = arcEndY + size.height * 0.08f
                 drawArc(
                     color = color,
                     startAngle = 180f,
@@ -199,22 +195,22 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
                     style = Stroke(strokeWidth, cap = StrokeCap.Round),
                 )
                 drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
-                drawLine(color, Offset(freeX, arcEndY), Offset(freeX, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(freeX, arcEndY), Offset(freeX, freeEndY), strokeWidth, StrokeCap.Round)
             }
         }
     }
 }
 
 @Composable
-private fun AutoLockIcon(locked: Boolean, lockColor: Color, bluetoothColor: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 13.dp) {
+private fun AutoLockIcon(locked: Boolean, lockColor: Color, bluetoothColor: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 8.dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         StableLockIcon(locked, lockColor, Modifier.matchParentSize(), lockSize)
         Box(
-            Modifier.align(Alignment.Center).offset(x = lockSize * 0.16f, y = lockSize * 0.18f).size(bluetoothSize + 6.dp)
+            Modifier.align(Alignment.Center).offset(x = lockSize * 0.15f, y = lockSize * 0.16f).size(bluetoothSize + 4.dp)
                 .background(Color.White, CircleShape).border(1.dp, bluetoothColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            MdiIcon("cmd-bluetooth", bluetoothColor, bluetoothSize, Modifier.size(bluetoothSize + 2.dp))
+            MdiIcon("cmd-bluetooth", bluetoothColor, bluetoothSize, Modifier.size(bluetoothSize + 1.dp))
         }
     }
 }
@@ -345,7 +341,7 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             verticalArrangement = Arrangement.Center,
         ) {
             if (state.autoLockOn) {
-                AutoLockIcon(state.locked, if (enabled) lockColor else muted, if (enabled) T4ADashboardTokens.Blue else muted, T4ADashboardTokens.SecondRowIconSize, Modifier.size(40.dp), 14.dp)
+                AutoLockIcon(state.locked, if (enabled) lockColor else muted, if (enabled) T4ADashboardTokens.Blue else muted, T4ADashboardTokens.SecondRowIconSize, Modifier.size(40.dp), 8.dp)
             } else {
                 StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), T4ADashboardTokens.SecondRowIconSize)
             }
