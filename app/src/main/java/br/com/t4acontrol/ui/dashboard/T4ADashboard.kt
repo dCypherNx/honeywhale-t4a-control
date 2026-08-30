@@ -242,7 +242,7 @@ private fun RidingControls(state: T4ADashboardState, surface: Color, outline: Co
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ToggleTile(stringResource(R.string.light), stringResource(if (state.lightOn) R.string.state_on else R.string.state_off), "cmd-car-light-dimmed", state.lightOn, T4ADashboardTokens.Orange, state.lightEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setLight(!state.lightOn) }
             ToggleTile(stringResource(R.string.start_mode), stringResource(if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
-            ToggleTile(stringResource(R.string.cruise), stringResource(if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setCruise(!state.cruiseOn) }
+            ToggleTile(stringResource(R.string.cruise), stringResource(if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f), iconOffsetX = (-3).dp) { actions.setCruise(!state.cruiseOn) }
             ConsolidatedLockControl(state, surface, muted, darkMode, actions, Modifier.weight(1f))
         }
     }
@@ -296,26 +296,44 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
 
 @Composable
 private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, onClick: () -> Unit) {
-    val color = modeColor(mode); val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
-    Column(Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(29.dp))
-        Text(
-            stringResource(modeLabelRes(mode)),
-            color = if (active) color else color.copy(alpha = 0.68f),
-            fontSize = T4ADashboardTokens.ModeFontSize,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
-            color = if (active) color else muted,
-            fontSize = T4ADashboardTokens.ModeSpeedFontSize,
-            lineHeight = 11.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+    val color = modeColor(mode)
+    val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
+    val iconSize = when (mode) {
+        RidingMode.WALK -> 30.dp
+        RidingMode.ECO -> 30.dp
+        RidingMode.RACE -> 27.dp
+        RidingMode.SPORT -> 26.dp
+        RidingMode.UNKNOWN -> 28.dp
+    }
+    Column(
+        Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f)
+            .background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
+            .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 3.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                stringResource(modeLabelRes(mode)),
+                color = if (active) color else color.copy(alpha = 0.68f),
+                fontSize = T4ADashboardTokens.ModeFontSize,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
+                color = if (active) color else muted,
+                fontSize = T4ADashboardTokens.ModeSpeedFontSize,
+                lineHeight = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -323,10 +341,10 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
 private fun modeLabelRes(mode: RidingMode): Int = when (mode) { RidingMode.WALK -> R.string.mode_walk; RidingMode.ECO -> R.string.mode_eco; RidingMode.RACE -> R.string.mode_race; RidingMode.SPORT -> R.string.mode_sport; RidingMode.UNKNOWN -> R.string.unknown }
 
 @Composable
-private fun ToggleTile(title: String, stateLabel: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, onClick: () -> Unit) {
+private fun ToggleTile(title: String, stateLabel: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, iconOffsetX: Dp = 0.dp, onClick: () -> Unit) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        MdiIcon(icon, if (active) color else muted, iconSize, Modifier.size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
+        MdiIcon(icon, if (active) color else muted, iconSize, Modifier.offset(x = iconOffsetX).size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
         ControlText(
             title = title,
             state = stateLabel,
