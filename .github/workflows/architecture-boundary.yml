@@ -76,7 +76,7 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/mqtt/AndroidMqttConfigurationStore.java',
             'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettings.java',
             'app/src/main/java/br/com/t4acontrol/mqtt/DefaultMqttSettings.java',
-            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java',
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.kt',
             'app/src/main/java/br/com/t4acontrol/mqtt/PahoMqttTransport.java'
           )
           $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }
@@ -129,7 +129,7 @@ jobs:
           }
 
           $mqttActivity = Get-Content -LiteralPath `
-            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.java' -Raw
+            'app/src/main/java/br/com/t4acontrol/mqtt/MqttSettingsActivity.kt' -Raw
           if ($mqttActivity -match 'br\.com\.t4acontrol\.backend|AndroidMqttConfigurationStore|org\.eclipse\.paho') {
             Write-Error 'MqttSettingsActivity must depend only on the UI-facing MqttSettings contract.'
             exit 1
