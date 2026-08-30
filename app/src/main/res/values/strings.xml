@@ -40,11 +40,14 @@
     <string name="light">Farol</string>
     <string name="start_mode">Partida</string>
     <string name="cruise">Cruzeiro</string>
+    <string name="lock_control">Bloqueio</string>
     <string name="two_line_state">%1$s\n%2$s</string>
     <string name="state_on">Ligado</string>
     <string name="state_off">Desligado</string>
     <string name="state_zero">Eletrônica</string>
     <string name="state_kick">Assistida</string>
+    <string name="state_active_short">Ativo</string>
+    <string name="state_inactive_short">Inativo</string>
     <string name="unlock">Desbloquear</string>
     <string name="lock">Bloquear</string>
     <string name="locked">Bloqueado</string>
