@@ -41,6 +41,8 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,6 +72,7 @@ class MqttSettingsActivity : ComponentActivity() {
         private val TRANSPORT_VALUES = listOf("TCP", "TLS", "WS", "WSS")
         private val BLUE = Color(0xFF075EF0)
         private val GREEN = Color(0xFF00A529)
+        private val RED = Color(0xFFE91925)
     }
 
     private lateinit var mqttSettings: MqttSettings
@@ -81,7 +84,7 @@ class MqttSettingsActivity : ComponentActivity() {
         setContent {
             val darkMode = isDarkMode()
             LaunchedEffect(darkMode) { configureSystemBars(darkMode) }
-            MaterialTheme {
+            MaterialTheme(colorScheme = t4aColorScheme(darkMode)) {
                 BackHandler { finish() }
                 MqttSettingsScreen(snapshot, darkMode)
             }
@@ -345,45 +348,30 @@ class MqttSettingsActivity : ComponentActivity() {
         var expanded by remember(key) {
             mutableStateOf(getSharedPreferences("t4a_settings", MODE_PRIVATE).getBoolean("mqtt_section_$key", true))
         }
-        val surface = surfaceColor(darkMode)
-        val outline = outlineColor(darkMode)
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .background(headerColor(darkMode), RoundedCornerShape(10.dp))
-                        .border(1.dp, outline, RoundedCornerShape(10.dp))
-                        .clickable {
-                            expanded = !expanded
-                            getSharedPreferences("t4a_settings", MODE_PRIVATE).edit().putBoolean("mqtt_section_$key", expanded).apply()
-                        }
-                        .padding(start = 7.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        title,
-                        color = BLUE,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(vertical = 9.dp),
-                    )
-                    MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(30.dp))
-                }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) { content() }
-                }
+        SettingsCard(darkMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .background(headerColor(darkMode), RoundedCornerShape(10.dp))
+                    .border(1.dp, outlineColor(darkMode), RoundedCornerShape(10.dp))
+                    .clickable {
+                        expanded = !expanded
+                        getSharedPreferences("t4a_settings", MODE_PRIVATE).edit().putBoolean("mqtt_section_$key", expanded).apply()
+                    }
+                    .padding(start = 7.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(title, color = BLUE, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
+                MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(30.dp))
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { content() }
             }
         }
     }
@@ -444,6 +432,41 @@ class MqttSettingsActivity : ComponentActivity() {
         "WS" -> 80
         "WSS" -> 443
         else -> 1883
+    }
+
+    @Composable
+    private fun t4aColorScheme(darkMode: Boolean) = if (darkMode) {
+        darkColorScheme(
+            primary = BLUE,
+            onPrimary = Color.White,
+            secondary = BLUE,
+            tertiary = BLUE,
+            background = Color(0xFF0D1117),
+            onBackground = Color(0xFFF1F5F9),
+            surface = Color(0xFF171D26),
+            onSurface = Color(0xFFF1F5F9),
+            surfaceVariant = Color(0xFF202836),
+            onSurfaceVariant = Color(0xFFAAB4C3),
+            outline = Color(0xFF354052),
+            error = RED,
+            onError = Color.White,
+        )
+    } else {
+        lightColorScheme(
+            primary = BLUE,
+            onPrimary = Color.White,
+            secondary = BLUE,
+            tertiary = BLUE,
+            background = Color(0xFFF7F8FB),
+            onBackground = Color(0xFF101820),
+            surface = Color.White,
+            onSurface = Color(0xFF101820),
+            surfaceVariant = Color(0xFFF8FAFD),
+            onSurfaceVariant = Color(0xFF667085),
+            outline = Color(0xFFE4E8F0),
+            error = RED,
+            onError = Color.White,
+        )
     }
 
     private fun isDarkMode(): Boolean = when (getSharedPreferences("t4a_settings", MODE_PRIVATE).getString(PREF_THEME, "system")) {
