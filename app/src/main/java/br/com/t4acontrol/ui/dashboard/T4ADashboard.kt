@@ -91,21 +91,13 @@ object T4ADashboardTokens {
 }
 
 @Composable
-fun T4ADashboard(
-    state: T4ADashboardState,
-    actions: T4ADashboardActions,
-    darkMode: Boolean,
-    modifier: Modifier = Modifier,
-) {
+fun T4ADashboard(state: T4ADashboardState, actions: T4ADashboardActions, darkMode: Boolean, modifier: Modifier = Modifier) {
     val background = if (darkMode) T4ADashboardTokens.DarkBackground else T4ADashboardTokens.LightBackground
     val surface = if (darkMode) T4ADashboardTokens.DarkSurface else T4ADashboardTokens.LightSurface
     val outline = if (darkMode) T4ADashboardTokens.DarkOutline else T4ADashboardTokens.LightOutline
     val foreground = if (darkMode) T4ADashboardTokens.DarkForeground else T4ADashboardTokens.LightForeground
     val muted = if (darkMode) T4ADashboardTokens.DarkMuted else T4ADashboardTokens.LightMuted
-    Column(
-        modifier.fillMaxWidth().background(background),
-        verticalArrangement = Arrangement.spacedBy(T4ADashboardTokens.CardSpacing),
-    ) {
+    Column(modifier.fillMaxWidth().background(background), verticalArrangement = Arrangement.spacedBy(T4ADashboardTokens.CardSpacing)) {
         ConnectionCard(state, surface, outline, foreground, muted)
         SpeedCard(state, surface, outline, foreground, darkMode)
         MetricsCard(state, surface, outline, foreground, muted, actions)
@@ -114,48 +106,21 @@ fun T4ADashboard(
 }
 
 @Composable
-private fun ConnectionCard(
-    state: T4ADashboardState,
-    surface: Color,
-    outline: Color,
-    foreground: Color,
-    muted: Color,
-) {
+private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, muted: Color) {
     DashboardCard(surface, outline) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MdiIcon(
-                "cmd-check-circle",
-                if (state.connected) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
-                46.dp,
-                Modifier.size(54.dp),
-            )
+            MdiIcon("cmd-check-circle", if (state.connected) T4ADashboardTokens.Green else T4ADashboardTokens.Red, 46.dp, Modifier.size(54.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    stringResource(if (state.connected) R.string.connected else R.string.disconnected),
-                    color = if (state.connected) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    stringResource(R.string.device, state.deviceName.ifBlank { "--" }),
-                    color = foreground,
-                    fontSize = 14.sp,
-                )
+                Text(stringResource(if (state.connected) R.string.connected else R.string.disconnected), color = if (state.connected) T4ADashboardTokens.Green else T4ADashboardTokens.Red, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.device, state.deviceName.ifBlank { "--" }), color = foreground, fontSize = 14.sp)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MdiIcon(
-                    signalIcon(state.rssiDbm),
-                    signalColor(state.rssiDbm, muted),
-                    18.dp,
-                    Modifier.size(22.dp),
-                )
+                LockStatusIndicator(state)
+                Spacer(Modifier.width(8.dp))
+                MdiIcon(signalIcon(state.rssiDbm), signalColor(state.rssiDbm, muted), 18.dp, Modifier.size(22.dp))
                 Spacer(Modifier.width(5.dp))
-                Text(
-                    state.rssiDbm?.let { stringResource(R.string.dbm, it) } ?: "--",
-                    color = foreground,
-                    fontSize = 12.sp,
-                )
+                Text(state.rssiDbm?.let { stringResource(R.string.dbm, it) } ?: "--", color = foreground, fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(7.dp))
@@ -164,94 +129,52 @@ private fun ConnectionCard(
 }
 
 @Composable
+private fun LockStatusIndicator(state: T4ADashboardState) {
+    val color = when {
+        state.autoLockOn -> T4ADashboardTokens.Blue
+        state.locked -> T4ADashboardTokens.Red
+        else -> T4ADashboardTokens.Green
+    }
+    val icon = when {
+        state.autoLockOn -> "cmd-lock-clock"
+        state.locked -> "cmd-lock"
+        else -> "cmd-lock-open-variant"
+    }
+    MdiIcon(icon, color, 18.dp, Modifier.size(22.dp))
+}
+
+@Composable
 private fun BatteryIndicator(percent: Int, foreground: Color, muted: Color) {
     val safePercent = percent.coerceIn(0, 100)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        MdiIcon(
-            "cmd-battery-charging",
-            if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
-            32.dp,
-            Modifier.width(38.dp).height(25.dp),
-            90f,
-        )
+        MdiIcon("cmd-battery-charging", if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red, 32.dp, Modifier.width(38.dp).height(25.dp), 90f)
         Spacer(Modifier.width(8.dp))
-        Row(
-            Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
+        Row(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             repeat(20) { index ->
                 val threshold = (index + 1) * 5
-                val activeColor = when {
-                    index < 4 -> T4ADashboardTokens.Red
-                    index < 10 -> T4ADashboardTokens.Amber
-                    else -> T4ADashboardTokens.Green
-                }
-                Box(
-                    Modifier.weight(1f)
-                        .height(T4ADashboardTokens.BatteryHeight)
-                        .background(
-                            if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment,
-                            RoundedCornerShape(3.dp),
-                        )
-                )
+                val activeColor = when { index < 4 -> T4ADashboardTokens.Red; index < 10 -> T4ADashboardTokens.Amber; else -> T4ADashboardTokens.Green }
+                Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight).background(if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment, RoundedCornerShape(3.dp)))
             }
         }
         Spacer(Modifier.width(9.dp))
-        Text(
-            stringResource(R.string.percent, safePercent),
-            color = if (safePercent == 0) muted else foreground,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Text(stringResource(R.string.percent, safePercent), color = if (safePercent == 0) muted else foreground, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun SpeedCard(
-    state: T4ADashboardState,
-    surface: Color,
-    outline: Color,
-    foreground: Color,
-    darkMode: Boolean,
-) {
+private fun SpeedCard(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, darkMode: Boolean) {
     DashboardCard(surface, outline) {
         Box(Modifier.fillMaxWidth().height(T4ADashboardTokens.SpeedGaugeHeight)) {
             SpeedSegments(state.speed, state.ridingMode, darkMode, Modifier.matchParentSize())
-            if (state.ridingMode != RidingMode.UNKNOWN) {
-                MdiIcon(
-                    modeIcon(state.ridingMode),
-                    modeColor(state.ridingMode),
-                    23.dp,
-                    Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 8.dp).size(28.dp),
-                )
-            }
-            Row(
-                Modifier.align(Alignment.TopCenter).height(126.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.speed_value, state.speed),
-                    color = foreground,
-                    fontSize = T4ADashboardTokens.SpeedFontSize,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    stringResource(if (state.speedUnit == SpeedUnit.MPH) R.string.metric_mph else R.string.metric_kmh),
-                    color = foreground,
-                    fontSize = T4ADashboardTokens.SpeedUnitFontSize,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 12.dp, top = 32.dp),
-                )
+            if (state.ridingMode != RidingMode.UNKNOWN) MdiIcon(modeIcon(state.ridingMode), modeColor(state.ridingMode), 23.dp, Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 8.dp).size(28.dp))
+            Row(Modifier.align(Alignment.TopCenter).height(126.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.speed_value, state.speed), color = foreground, fontSize = T4ADashboardTokens.SpeedFontSize, fontWeight = FontWeight.Bold)
+                Text(stringResource(if (state.speedUnit == SpeedUnit.MPH) R.string.metric_mph else R.string.metric_kmh), color = foreground, fontSize = T4ADashboardTokens.SpeedUnitFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, top = 32.dp))
             }
             BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(20.dp)) {
                 (5..45 step 5).forEach { value ->
                     val centerX = maxWidth * (value / 50f)
-                    Box(
-                        Modifier.offset(x = centerX - 12.dp).width(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp)
-                    }
+                    Box(Modifier.offset(x = centerX - 12.dp).width(24.dp), contentAlignment = Alignment.Center) { Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp) }
                 }
             }
         }
@@ -262,507 +185,141 @@ private fun SpeedCard(
 private fun SpeedSegments(speed: Int, mode: RidingMode, darkMode: Boolean, modifier: Modifier = Modifier) {
     val currentModeColor = modeColor(mode)
     Canvas(modifier) {
-        val left = 2.dp.toPx()
-        val top = 8.dp.toPx()
-        val bottom = size.height - 24.dp.toPx()
-        val width = size.width - left * 2f
-        val subdivision = width / 50f
-        val safeSpeed = speed.coerceIn(0, 50)
-        val inactive = if (darkMode) Color(0xFF293241) else Color(0xFFF0F2F6)
+        val left = 2.dp.toPx(); val top = 8.dp.toPx(); val bottom = size.height - 24.dp.toPx(); val width = size.width - left * 2f
+        val subdivision = width / 50f; val safeSpeed = speed.coerceIn(0, 50); val inactive = if (darkMode) Color(0xFF293241) else Color(0xFFF0F2F6)
         repeat(50) { index ->
-            val value = index + 1
-            val majorGap = if (value % 5 == 0) 2.dp.toPx() else 0.6.dp.toPx()
-            val activeColor = when {
-                value <= 6 -> T4ADashboardTokens.Cyan
-                value <= 25 -> T4ADashboardTokens.Green
-                value <= 35 -> T4ADashboardTokens.Orange
-                else -> T4ADashboardTokens.Red
-            }
-            drawRect(
-                if (safeSpeed >= value) activeColor.copy(alpha = if (darkMode) 0.72f else 0.48f) else inactive,
-                Offset(left + index * subdivision, top),
-                Size((subdivision - majorGap).coerceAtLeast(1f), bottom - top),
-            )
+            val value = index + 1; val majorGap = if (value % 5 == 0) 2.dp.toPx() else 0.6.dp.toPx()
+            val activeColor = when { value <= 6 -> T4ADashboardTokens.Cyan; value <= 25 -> T4ADashboardTokens.Green; value <= 35 -> T4ADashboardTokens.Orange; else -> T4ADashboardTokens.Red }
+            drawRect(if (safeSpeed >= value) activeColor.copy(alpha = if (darkMode) 0.72f else 0.48f) else inactive, Offset(left + index * subdivision, top), Size((subdivision - majorGap).coerceAtLeast(1f), bottom - top))
         }
-        for (value in 5..45 step 5) {
-            val x = left + width * (value / 50f)
-            drawRect(
-                Color.White,
-                Offset(x - 0.5.dp.toPx(), top),
-                Size(1.dp.toPx(), bottom - top),
-            )
-        }
-        if (mode != RidingMode.UNKNOWN && mode.limitKmh in 1..49) {
-            val x = left + width * (mode.limitKmh / 50f)
-            drawRect(
-                currentModeColor,
-                Offset(x - 1.dp.toPx(), top),
-                Size(2.dp.toPx(), bottom - top),
-            )
-        }
+        for (value in 5..45 step 5) { val x = left + width * (value / 50f); drawRect(Color.White, Offset(x - 0.5.dp.toPx(), top), Size(1.dp.toPx(), bottom - top)) }
+        if (mode != RidingMode.UNKNOWN && mode.limitKmh in 1..49) { val x = left + width * (mode.limitKmh / 50f); drawRect(currentModeColor, Offset(x - 1.dp.toPx(), top), Size(2.dp.toPx(), bottom - top)) }
     }
 }
 
 @Composable
-private fun MetricsCard(
-    state: T4ADashboardState,
-    surface: Color,
-    outline: Color,
-    foreground: Color,
-    muted: Color,
-    actions: T4ADashboardActions,
-) {
-    val partial = state.odometerLabel.equals("Percurso", ignoreCase = true) ||
-        state.odometerLabel.contains("parcial", ignoreCase = true)
+private fun MetricsCard(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, muted: Color, actions: T4ADashboardActions) {
+    val partial = state.odometerLabel.equals("Percurso", ignoreCase = true) || state.odometerLabel.contains("parcial", ignoreCase = true)
     DashboardCard(surface, outline) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            MetricWithIcon(
-                if (partial) "cmd-map-marker-distance" else "cmd-speedometer",
-                localizedMetricLabel(if (partial) R.string.trip_odometer else R.string.total_odometer),
-                state.odometerValue,
-                foreground,
-                muted,
-                Modifier.weight(1f).clickable(onClick = actions::toggleOdometer),
-            )
+            MetricWithIcon(if (partial) "cmd-map-marker-distance" else "cmd-speedometer", localizedMetricLabel(if (partial) R.string.trip_odometer else R.string.total_odometer), state.odometerValue, foreground, muted, Modifier.weight(1f).clickable(onClick = actions::toggleOdometer))
             Box(Modifier.width(1.dp).height(44.dp).background(outline))
-            MetricWithIcon(
-                "cmd-clock-outline",
-                localizedMetricLabel(R.string.usage_time),
-                state.usageTime,
-                foreground,
-                muted,
-                Modifier.weight(1f),
-            )
+            MetricWithIcon("cmd-clock-outline", localizedMetricLabel(R.string.usage_time), state.usageTime, foreground, muted, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun localizedMetricLabel(@StringRes id: Int): String =
-    stringResource(id, "").substringBefore('\n').trim()
+private fun localizedMetricLabel(@StringRes id: Int): String = stringResource(id, "").substringBefore('\n').trim()
 
 @Composable
-private fun MetricWithIcon(
-    icon: String,
-    label: String,
-    value: String,
-    foreground: Color,
-    muted: Color,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
+private fun MetricWithIcon(icon: String, label: String, value: String, foreground: Color, muted: Color, modifier: Modifier = Modifier) {
+    Row(modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
         MdiIcon(icon, T4ADashboardTokens.Blue, 23.dp, Modifier.size(28.dp))
         Column(Modifier.padding(start = 7.dp)) {
             Text(label, color = muted, fontSize = 10.sp)
-            Text(
-                value,
-                color = if (value.isBlank()) muted else foreground,
-                fontSize = T4ADashboardTokens.MetricFontSize,
-            )
+            Text(value, color = if (value.isBlank()) muted else foreground, fontSize = T4ADashboardTokens.MetricFontSize)
         }
     }
 }
 
 @Composable
-private fun RidingControls(
-    state: T4ADashboardState,
-    surface: Color,
-    outline: Color,
-    foreground: Color,
-    muted: Color,
-    darkMode: Boolean,
-    actions: T4ADashboardActions,
-) {
+private fun RidingControls(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, muted: Color, darkMode: Boolean, actions: T4ADashboardActions) {
     DashboardCard(surface, outline) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                MdiIcon("cmd-car-shift-pattern", T4ADashboardTokens.Blue, 21.dp, Modifier.size(25.dp))
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    stringResource(R.string.riding),
-                    color = T4ADashboardTokens.Blue,
-                    fontSize = T4ADashboardTokens.SectionTitleFontSize,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Text(
-                stringResource(
-                    R.string.lock_state,
-                    stringResource(if (state.locked) R.string.state_locked else R.string.state_unlocked),
-                ).uppercase(),
-                color = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(RidingMode.WALK, RidingMode.ECO, RidingMode.RACE, RidingMode.SPORT).forEach { mode ->
-                ModeTile(
-                    mode,
-                    state.ridingMode == mode,
-                    state.modeEnabled,
-                    surface,
-                    muted,
-                    darkMode,
-                ) { actions.setRidingMode(mode) }
-            }
+            listOf(RidingMode.WALK, RidingMode.ECO, RidingMode.RACE, RidingMode.SPORT).forEach { mode -> ModeTile(mode, state.ridingMode == mode, state.modeEnabled, surface, muted, darkMode) { actions.setRidingMode(mode) } }
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ToggleTile(
-                twoLine(R.string.light, if (state.lightOn) R.string.state_on else R.string.state_off),
-                "cmd-car-light-dimmed",
-                state.lightOn,
-                T4ADashboardTokens.Orange,
-                state.lightEnabled,
-                surface,
-                muted,
-                darkMode,
-                Modifier.weight(1f),
-            ) { actions.setLight(!state.lightOn) }
-            ToggleTile(
-                twoLine(R.string.start_mode, if (state.initialPushOn) R.string.state_kick else R.string.state_zero),
-                "cmd-run",
-                state.initialPushOn,
-                T4ADashboardTokens.Green,
-                state.initialPushEnabled,
-                surface,
-                muted,
-                darkMode,
-                Modifier.weight(1f),
-            ) { actions.setInitialPush(!state.initialPushOn) }
-            ToggleTile(
-                twoLine(R.string.cruise, if (state.cruiseOn) R.string.state_on else R.string.state_off),
-                "cmd-car-cruise-control",
-                state.cruiseOn,
-                T4ADashboardTokens.Blue,
-                state.cruiseEnabled,
-                surface,
-                muted,
-                darkMode,
-                Modifier.weight(1f),
-            ) { actions.setCruise(!state.cruiseOn) }
+            ToggleTile(twoLine(R.string.light, if (state.lightOn) R.string.state_on else R.string.state_off), "cmd-car-light-dimmed", state.lightOn, T4ADashboardTokens.Orange, state.lightEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setLight(!state.lightOn) }
+            ToggleTile(twoLine(R.string.start_mode, if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
+            ToggleTile(twoLine(R.string.cruise, if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setCruise(!state.cruiseOn) }
+            ConsolidatedLockControl(state, surface, muted, darkMode, actions, Modifier.weight(1f))
         }
-        Spacer(Modifier.height(10.dp))
-        ConsolidatedLockControl(state, surface, muted, darkMode, actions)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConsolidatedLockControl(
-    state: T4ADashboardState,
-    surface: Color,
-    muted: Color,
-    darkMode: Boolean,
-    actions: T4ADashboardActions,
-) {
+private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, muted: Color, darkMode: Boolean, actions: T4ADashboardActions, modifier: Modifier = Modifier) {
     var menuExpanded by remember { mutableStateOf(false) }
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
-    val color = when {
-        state.autoLockOn -> T4ADashboardTokens.Blue
-        state.locked -> T4ADashboardTokens.Green
-        else -> T4ADashboardTokens.Red
-    }
-    val icon = when {
-        state.autoLockOn -> "cmd-bluetooth"
-        state.locked -> "cmd-lock-open"
-        else -> "cmd-lock"
-    }
-    val label = when {
-        state.autoLockOn -> twoLine(R.string.automatic_lock, R.string.state_active)
-        state.locked -> stringResource(R.string.unlock)
-        else -> stringResource(R.string.lock)
-    }
-    val fill = if (state.autoLockOn) {
-        color.copy(alpha = if (darkMode) 0.19f else 0.07f)
-    } else {
-        surface
-    }
+    val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
+    val icon = when { state.autoLockOn -> "cmd-lock-clock"; state.locked -> "cmd-lock"; else -> "cmd-lock-open-variant" }
+    val label = when { state.autoLockOn -> stringResource(R.string.automatic); state.locked -> stringResource(R.string.locked); else -> stringResource(R.string.unlocked) }
+    val fill = color.copy(alpha = if (darkMode) 0.19f else 0.07f)
 
-    Box(Modifier.fillMaxWidth()) {
+    Box(modifier.height(T4ADashboardTokens.ToggleHeight)) {
         Column(
-            Modifier.fillMaxWidth()
-                .height(T4ADashboardTokens.ActionHeight)
-                .alpha(if (enabled) 1f else 0.55f)
-                .background(fill, RoundedCornerShape(T4ADashboardTokens.ActionRadius))
-                .border(
-                    if (state.autoLockOn) 2.dp else 1.dp,
-                    color,
-                    RoundedCornerShape(T4ADashboardTokens.ActionRadius),
-                )
+            Modifier.fillMaxWidth().height(T4ADashboardTokens.ToggleHeight).alpha(if (enabled) 1f else 0.55f)
+                .background(fill, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
+                .border(2.dp, color, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
                 .combinedClickable(
                     enabled = enabled,
-                    onClick = {
-                        if (!state.autoLockOn && state.lockEnabled) {
-                            actions.setLocked(!state.locked)
-                        }
-                    },
+                    onClick = { if (!state.autoLockOn && state.lockEnabled) actions.setLocked(!state.locked) },
                     onLongClick = { menuExpanded = true },
-                ),
+                ).padding(horizontal = 5.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            MdiIcon(icon, if (enabled) color else muted, 24.dp, Modifier.size(36.dp))
-            Text(
-                label,
-                color = if (enabled) color else foregroundForInactive(darkMode),
-                fontSize = T4ADashboardTokens.ActionFontSize,
-                fontWeight = if (state.autoLockOn) FontWeight.Bold else FontWeight.Medium,
-                lineHeight = 12.sp,
-            )
+            MdiIcon(icon, if (enabled) color else muted, 28.dp, Modifier.size(40.dp))
+            Text(label, color = if (enabled) color else foregroundForInactive(darkMode), fontSize = T4ADashboardTokens.ControlFontSize, fontWeight = FontWeight.Bold, lineHeight = 11.sp)
         }
-
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.lock), color = T4ADashboardTokens.Red) },
-                onClick = {
-                    menuExpanded = false
-                    actions.setAutoLock(false)
-                    actions.setLocked(true)
-                },
-                enabled = state.lockEnabled,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.unlock), color = T4ADashboardTokens.Green) },
-                onClick = {
-                    menuExpanded = false
-                    actions.setAutoLock(false)
-                    actions.setLocked(false)
-                },
-                enabled = state.lockEnabled,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automatic_lock), color = T4ADashboardTokens.Blue) },
-                onClick = {
-                    menuExpanded = false
-                    actions.setAutoLock(true)
-                },
-                enabled = state.controlsEnabled,
-            )
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.lock), color = T4ADashboardTokens.Red) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(true) }, enabled = state.lockEnabled)
+            DropdownMenuItem(text = { Text(stringResource(R.string.unlock), color = T4ADashboardTokens.Green) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(false) }, enabled = state.lockEnabled)
+            DropdownMenuItem(text = { Text(stringResource(R.string.automatic_lock), color = T4ADashboardTokens.Blue) }, onClick = { menuExpanded = false; actions.setAutoLock(true) }, enabled = state.controlsEnabled)
         }
     }
 }
 
 @Composable
-private fun twoLine(@StringRes title: Int, @StringRes state: Int): String =
-    stringResource(R.string.two_line_state, stringResource(title), stringResource(state))
+private fun twoLine(@StringRes title: Int, @StringRes state: Int): String = stringResource(R.string.two_line_state, stringResource(title), stringResource(state))
 
 @Composable
-private fun RowScope.ModeTile(
-    mode: RidingMode,
-    active: Boolean,
-    enabled: Boolean,
-    surface: Color,
-    muted: Color,
-    darkMode: Boolean,
-    onClick: () -> Unit,
-) {
-    val color = modeColor(mode)
-    val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
-    Column(
-        Modifier.weight(1f)
-            .height(T4ADashboardTokens.ModeHeight)
-            .alpha(if (enabled) 1f else 0.55f)
-            .background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
-            .border(
-                if (active) 2.dp else 1.dp,
-                color,
-                RoundedCornerShape(T4ADashboardTokens.ModeRadius),
-            )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 3.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        MdiIcon(
-            modeIcon(mode),
-            if (active) color else color.copy(alpha = 0.68f),
-            22.dp,
-            Modifier.size(29.dp),
-        )
-        Text(
-            stringResource(modeLabelRes(mode)),
-            color = if (active) color else color.copy(alpha = 0.68f),
-            fontSize = T4ADashboardTokens.ModeFontSize,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
-            color = if (active) color else muted,
-            fontSize = 9.sp,
-        )
+private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, onClick: () -> Unit) {
+    val color = modeColor(mode); val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
+    Column(Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(29.dp))
+        Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = 9.sp)
     }
 }
 
 @StringRes
-private fun modeLabelRes(mode: RidingMode): Int = when (mode) {
-    RidingMode.WALK -> R.string.mode_walk
-    RidingMode.ECO -> R.string.mode_eco
-    RidingMode.RACE -> R.string.mode_race
-    RidingMode.SPORT -> R.string.mode_sport
-    RidingMode.UNKNOWN -> R.string.unknown
-}
+private fun modeLabelRes(mode: RidingMode): Int = when (mode) { RidingMode.WALK -> R.string.mode_walk; RidingMode.ECO -> R.string.mode_eco; RidingMode.RACE -> R.string.mode_race; RidingMode.SPORT -> R.string.mode_sport; RidingMode.UNKNOWN -> R.string.unknown }
 
 @Composable
-private fun ToggleTile(
-    label: String,
-    icon: String,
-    active: Boolean,
-    color: Color,
-    enabled: Boolean,
-    surface: Color,
-    muted: Color,
-    darkMode: Boolean,
-    modifier: Modifier = Modifier,
-    actionHeight: Dp = T4ADashboardTokens.ToggleHeight,
-    radius: Dp = T4ADashboardTokens.ToggleRadius,
-    iconSize: Dp = 28.dp,
-    onClick: () -> Unit,
-) {
+private fun ToggleTile(label: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, onClick: () -> Unit) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
-    Column(
-        modifier.height(actionHeight)
-            .alpha(if (enabled) 1f else 0.55f)
-            .background(fill, RoundedCornerShape(radius))
-            .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 5.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        MdiIcon(
-            icon,
-            if (active) color else muted,
-            iconSize,
-            Modifier.size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp),
-        )
-        Text(
-            label,
-            color = if (active) color else foregroundForInactive(darkMode),
-            fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) {
-                T4ADashboardTokens.ActionFontSize
-            } else {
-                T4ADashboardTokens.ControlFontSize
-            },
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-            lineHeight = 11.sp,
-        )
+    Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        MdiIcon(icon, if (active) color else muted, iconSize, Modifier.size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
+        Text(label, color = if (active) color else foregroundForInactive(darkMode), fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal, lineHeight = 11.sp)
     }
 }
 
 @Composable
-private fun DashboardCard(
-    surface: Color,
-    outline: Color,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        Modifier.fillMaxWidth()
-            .shadow(T4ADashboardTokens.CardElevation, RoundedCornerShape(T4ADashboardTokens.CardRadius))
-            .background(surface, RoundedCornerShape(T4ADashboardTokens.CardRadius))
-            .border(1.dp, outline, RoundedCornerShape(T4ADashboardTokens.CardRadius))
-            .padding(T4ADashboardTokens.CardPadding),
-        content = content,
-    )
+private fun DashboardCard(surface: Color, outline: Color, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().shadow(T4ADashboardTokens.CardElevation, RoundedCornerShape(T4ADashboardTokens.CardRadius)).background(surface, RoundedCornerShape(T4ADashboardTokens.CardRadius)).border(1.dp, outline, RoundedCornerShape(T4ADashboardTokens.CardRadius)).padding(T4ADashboardTokens.CardPadding), content = content)
 }
 
 @Composable
-private fun MdiIcon(
-    name: String,
-    color: Color,
-    iconSize: Dp,
-    modifier: Modifier = Modifier,
-    rotation: Float = 0f,
-) {
+private fun MdiIcon(name: String, color: Color, iconSize: Dp, modifier: Modifier = Modifier, rotation: Float = 0f) {
     val argb = color.toArgb()
-    AndroidView(
-        modifier,
-        factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } },
-        update = { image ->
-            image.rotation = rotation
-            val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
-            image.setImageDrawable(
-                IconicsDrawable(image.context, name).apply {
-                    colorList = ColorStateList.valueOf(argb)
-                    sizeXPx = pixels
-                    sizeYPx = pixels
-                }
-            )
-        },
-    )
+    AndroidView(modifier, factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } }, update = { image ->
+        image.rotation = rotation; val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
+        image.setImageDrawable(IconicsDrawable(image.context, name).apply { colorList = ColorStateList.valueOf(argb); sizeXPx = pixels; sizeYPx = pixels })
+    })
 }
 
-private fun signalIcon(rssi: Int?): String = when {
-    rssi == null -> "cmd-signal-cellular-outline"
-    rssi >= -40 -> "cmd-signal-cellular-3"
-    rssi >= -60 -> "cmd-signal-cellular-2"
-    else -> "cmd-signal-cellular-1"
-}
-
-private fun signalColor(rssi: Int?, muted: Color): Color = when {
-    rssi == null -> muted
-    rssi >= -40 -> T4ADashboardTokens.Green
-    rssi >= -60 -> T4ADashboardTokens.Orange
-    else -> T4ADashboardTokens.Red
-}
-
-private fun modeIcon(mode: RidingMode): String = when (mode) {
-    RidingMode.WALK -> "cmd-walk"
-    RidingMode.ECO -> "cmd-leaf"
-    RidingMode.RACE -> "cmd-flag-checkered"
-    RidingMode.SPORT -> "cmd-speedometer"
-    RidingMode.UNKNOWN -> "cmd-help-circle-outline"
-}
-
-private fun modeColor(mode: RidingMode): Color = when (mode) {
-    RidingMode.WALK -> T4ADashboardTokens.Cyan
-    RidingMode.ECO -> T4ADashboardTokens.Green
-    RidingMode.RACE -> T4ADashboardTokens.Orange
-    RidingMode.SPORT -> T4ADashboardTokens.Red
-    RidingMode.UNKNOWN -> T4ADashboardTokens.LightMuted
-}
-
-private fun foregroundForInactive(darkMode: Boolean): Color =
-    if (darkMode) T4ADashboardTokens.DarkForeground else T4ADashboardTokens.LightForeground
+private fun signalIcon(rssi: Int?): String = when { rssi == null -> "cmd-signal-cellular-outline"; rssi >= -40 -> "cmd-signal-cellular-3"; rssi >= -60 -> "cmd-signal-cellular-2"; else -> "cmd-signal-cellular-1" }
+private fun signalColor(rssi: Int?, muted: Color): Color = when { rssi == null -> muted; rssi >= -40 -> T4ADashboardTokens.Green; rssi >= -60 -> T4ADashboardTokens.Orange; else -> T4ADashboardTokens.Red }
+private fun modeIcon(mode: RidingMode): String = when (mode) { RidingMode.WALK -> "cmd-walk"; RidingMode.ECO -> "cmd-leaf"; RidingMode.RACE -> "cmd-flag-checkered"; RidingMode.SPORT -> "cmd-speedometer"; RidingMode.UNKNOWN -> "cmd-help-circle-outline" }
+private fun modeColor(mode: RidingMode): Color = when (mode) { RidingMode.WALK -> T4ADashboardTokens.Cyan; RidingMode.ECO -> T4ADashboardTokens.Green; RidingMode.RACE -> T4ADashboardTokens.Orange; RidingMode.SPORT -> T4ADashboardTokens.Red; RidingMode.UNKNOWN -> T4ADashboardTokens.LightMuted }
+private fun foregroundForInactive(darkMode: Boolean): Color = if (darkMode) T4ADashboardTokens.DarkForeground else T4ADashboardTokens.LightForeground
 
 @Preview(showBackground = true, widthDp = 412)
 @Composable
 private fun DashboardPreview() {
-    T4ADashboard(
-        T4ADashboardState(
-            connected = true,
-            deviceName = "T4A",
-            rssiDbm = -48,
-            batteryPercent = 76,
-            speed = 23,
-            speedUnit = SpeedUnit.KMH,
-            ridingMode = RidingMode.ECO,
-            locked = false,
-            lightOn = true,
-            initialPushOn = true,
-            cruiseOn = false,
-            autoLockOn = true,
-            odometerLabel = "Odômetro total",
-            odometerValue = "128,4 km",
-            usageTime = "01:42:18",
-            controlsEnabled = true,
-            lightEnabled = true,
-            initialPushEnabled = true,
-            cruiseEnabled = true,
-            modeEnabled = true,
-            lockEnabled = true,
-        ),
-        NoOpT4ADashboardActions,
-        false,
-        Modifier.padding(16.dp),
-    )
+    T4ADashboard(T4ADashboardState(connected = true, deviceName = "T4A", rssiDbm = -48, batteryPercent = 76, speed = 23, speedUnit = SpeedUnit.KMH, ridingMode = RidingMode.ECO, locked = false, lightOn = true, initialPushOn = true, cruiseOn = false, autoLockOn = true, odometerLabel = "Odômetro total", odometerValue = "128,4 km", usageTime = "01:42:18", controlsEnabled = true, lightEnabled = true, initialPushEnabled = true, cruiseEnabled = true, modeEnabled = true, lockEnabled = true), NoOpT4ADashboardActions, false, Modifier.padding(16.dp))
 }
