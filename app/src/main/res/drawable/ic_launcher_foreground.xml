@@ -32,12 +32,17 @@
         android:fillColor="#FF7FE9F4"
         android:pathData="M54,52 C57.3,52 60,54.7 60,58 C60,61.3 57.3,64 54,64 C50.7,64 48,61.3 48,58 C48,54.7 50.7,52 54,52 Z" />
 
-    <!-- Bluetooth integrated into the instrument center -->
+    <!-- Electric mobility symbol on the left -->
+    <path
+        android:fillColor="#FF7FE9F4"
+        android:pathData="M39,68 L31,79 L37,79 L34,89 L46,75 L40,75 Z" />
+
+    <!-- Bluetooth connectivity symbol on the right, kept inside the adaptive safe area -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M54,68 L54,88 L63,80 L48,72 M54,68 L63,76 L48,84"
+        android:pathData="M69,68 L69,88 L78,80 L63,72 M69,68 L78,76 L63,84"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="4" />
+        android:strokeWidth="3.5" />
 </vector>
