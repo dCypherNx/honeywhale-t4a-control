@@ -203,39 +203,48 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
         val barStart = iconWidth + iconToBarGap
         val barWidth = (maxWidth - barStart - barToValueGap - valueWidth).coerceAtLeast(1.dp)
 
-        MdiIcon(
-            "cmd-battery-charging",
-            if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
-            32.dp,
-            Modifier.align(Alignment.BottomStart).width(iconWidth).height(25.dp),
-            90f,
-        )
-
-        Box(Modifier.offset(x = barStart).width(barWidth).height(34.dp)) {
-            Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(T4ADashboardTokens.BatteryHeight),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                repeat(20) { index ->
-                    val threshold = (index + 1) * 5
-                    val activeColor = when { index < 4 -> T4ADashboardTokens.Red; index < 10 -> T4ADashboardTokens.Amber; else -> T4ADashboardTokens.Green }
-                    Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight).background(if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment, RoundedCornerShape(3.dp)))
+        Row(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            MdiIcon(
+                "cmd-battery-charging",
+                if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
+                32.dp,
+                Modifier.width(iconWidth).height(25.dp),
+                90f,
+            )
+            Spacer(Modifier.width(iconToBarGap))
+            Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight)) {
+                Row(
+                    Modifier.fillMaxWidth().height(T4ADashboardTokens.BatteryHeight),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    repeat(20) { index ->
+                        val threshold = (index + 1) * 5
+                        val activeColor = when { index < 4 -> T4ADashboardTokens.Red; index < 10 -> T4ADashboardTokens.Amber; else -> T4ADashboardTokens.Green }
+                        Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight).background(if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment, RoundedCornerShape(3.dp)))
+                    }
                 }
             }
+            Spacer(Modifier.width(barToValueGap))
+            Box(Modifier.width(valueWidth).height(T4ADashboardTokens.BatteryHeight), contentAlignment = Alignment.BottomEnd) {
+                Text(
+                    stringResource(R.string.percent, safePercent),
+                    color = if (safePercent == 0) muted else foreground,
+                    fontSize = 15.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                )
+            }
+        }
 
+        Box(Modifier.offset(x = barStart).width(barWidth).height(34.dp)) {
             safeMin?.let { BatteryRangeMarker(it, true, barWidth, Modifier.matchParentSize()) }
             safeMax?.let { BatteryRangeMarker(it, false, barWidth, Modifier.matchParentSize()) }
         }
-
-        Text(
-            stringResource(R.string.percent, safePercent),
-            color = if (safePercent == 0) muted else foreground,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.BottomEnd).width(valueWidth),
-        )
     }
 }
 
