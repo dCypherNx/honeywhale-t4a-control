@@ -117,7 +117,7 @@ final class AndroidBleRssiMonitor implements AutoCloseable {
 
     try {
       scanner.startScan(Collections.singletonList(filter), settings, callback);
-    } catch (RuntimeException | SecurityException error) {
+    } catch (RuntimeException error) {
       finishScan();
       reportUnavailable(error.getClass().getSimpleName());
       scheduleNext();
@@ -165,7 +165,7 @@ final class AndroidBleRssiMonitor implements AutoCloseable {
             == PackageManager.PERMISSION_GRANTED) {
           scanner.stopScan(callback);
         }
-      } catch (RuntimeException | SecurityException ignored) {
+      } catch (RuntimeException ignored) {
         // Diagnostic reader must never disturb the primary SDK session.
       }
     }
