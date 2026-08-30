@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private var lastStatusEvent = ""
     private val eventHistory = mutableStateListOf<String>()
     private val rawHistory = mutableStateListOf<String>()
+    private var rawLogFilter by mutableStateOf("ALL")
 
     private val sessionConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -529,6 +530,17 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun RawLogCard(foreground: ComposeColor) {
         val vertical = rememberScrollState()
         val horizontal = rememberScrollState()
+        val filterScroll = rememberScrollState()
+        val filterOptions = listOf("ALL", "RX", "TX", "INITIAL", "BATTERY", "OTHER")
+        val filterLabels = listOf(
+            getString(R.string.raw_filter_all),
+            getString(R.string.raw_filter_rx),
+            getString(R.string.raw_filter_tx),
+            getString(R.string.raw_filter_initial),
+            getString(R.string.raw_filter_battery),
+            getString(R.string.raw_filter_other),
+        )
+        val visibleEntries = if (rawLogFilter == "ALL") rawHistory else rawHistory.filter { rawLogOrigin(it) == rawLogFilter }
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -540,6 +552,18 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(getString(R.string.raw_log), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(filterScroll).padding(vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    filterOptions.forEachIndexed { index, filter ->
+                        if (rawLogFilter == filter) {
+                            Button(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
+                        } else {
+                            OutlinedButton(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
+                        }
+                    }
                 }
                 Box(
                     modifier = Modifier.fillMaxWidth()
@@ -553,7 +577,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                             .horizontalScroll(horizontal)
                             .verticalScroll(vertical),
                     ) {
-                        rawHistory.asReversed().forEach { entry ->
+                        visibleEntries.asReversed().forEach { entry ->
                             Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
                         }
                     }
@@ -633,6 +657,17 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     override fun onRawLog(value: String) { runOnUiThread { appendRaw(value) } }
     private fun appendEvent(value: String) { eventHistory.add(DateFormat.getTimeInstance().format(Date()) + "  " + value) }
     private fun appendRaw(value: String) { rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value) }
+
+    private fun rawLogOrigin(entry: String): String {
+        val payload = entry.substringAfter(' ', "")
+        return when (payload.substringBefore(' ').uppercase(Locale.ROOT)) {
+            "RX" -> "RX"
+            "TX" -> "TX"
+            "INITIAL" -> "INITIAL"
+            "BATTERY" -> "BATTERY"
+            else -> "OTHER"
+        }
+    }
 
     private fun rawLogText(): String = buildString {
         append("T4A ${BuildConfig.VERSION_NAME} (versionCode ${BuildConfig.VERSION_CODE})\n")
