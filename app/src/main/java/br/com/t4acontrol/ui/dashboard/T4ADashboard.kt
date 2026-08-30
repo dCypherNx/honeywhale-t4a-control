@@ -135,12 +135,19 @@ private fun LockStatusIndicator(state: T4ADashboardState) {
         state.locked -> T4ADashboardTokens.Red
         else -> T4ADashboardTokens.Green
     }
-    val icon = when {
-        state.autoLockOn -> "cmd-lock-clock"
-        state.locked -> "cmd-lock"
-        else -> "cmd-lock-open-variant"
+    if (state.autoLockOn) {
+        AutoLockIcon(color, 18.dp, Modifier.size(22.dp), 7.dp)
+    } else {
+        MdiIcon(if (state.locked) "cmd-lock" else "cmd-lock-open-variant", color, 18.dp, Modifier.size(22.dp))
     }
-    MdiIcon(icon, color, 18.dp, Modifier.size(22.dp))
+}
+
+@Composable
+private fun AutoLockIcon(color: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 10.dp) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        MdiIcon("cmd-lock", color, lockSize, Modifier.matchParentSize())
+        MdiIcon("cmd-bluetooth", color, bluetoothSize, Modifier.align(Alignment.Center).offset(y = 2.dp).size(bluetoothSize + 3.dp))
+    }
 }
 
 @Composable
@@ -245,8 +252,14 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     var menuExpanded by remember { mutableStateOf(false) }
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
     val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
-    val icon = when { state.autoLockOn -> "cmd-lock-clock"; state.locked -> "cmd-lock"; else -> "cmd-lock-open-variant" }
-    val label = when { state.autoLockOn -> stringResource(R.string.automatic); state.locked -> stringResource(R.string.locked); else -> stringResource(R.string.unlocked) }
+    val label = twoLine(
+        R.string.lock_control,
+        when {
+            state.autoLockOn -> R.string.automatic
+            state.locked -> R.string.state_active_short
+            else -> R.string.state_inactive_short
+        },
+    )
     val fill = color.copy(alpha = if (darkMode) 0.19f else 0.07f)
 
     Box(modifier.height(T4ADashboardTokens.ToggleHeight)) {
@@ -262,8 +275,18 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            MdiIcon(icon, if (enabled) color else muted, 28.dp, Modifier.size(40.dp))
-            Text(label, color = if (enabled) color else foregroundForInactive(darkMode), fontSize = T4ADashboardTokens.ControlFontSize, fontWeight = FontWeight.Bold, lineHeight = 11.sp)
+            if (state.autoLockOn) {
+                AutoLockIcon(if (enabled) color else muted, 28.dp, Modifier.size(40.dp), 11.dp)
+            } else {
+                MdiIcon(if (state.locked) "cmd-lock" else "cmd-lock-open-variant", if (enabled) color else muted, 28.dp, Modifier.size(40.dp))
+            }
+            Text(
+                label,
+                color = if (enabled) color else foregroundForInactive(darkMode),
+                fontSize = T4ADashboardTokens.ControlFontSize,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 11.sp,
+            )
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.lock), color = T4ADashboardTokens.Red) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(true) }, enabled = state.lockEnabled)
