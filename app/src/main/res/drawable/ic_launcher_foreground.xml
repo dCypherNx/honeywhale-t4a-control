@@ -32,17 +32,17 @@
         android:fillColor="#FF7FE9F4"
         android:pathData="M54,52 C57.3,52 60,54.7 60,58 C60,61.3 57.3,64 54,64 C50.7,64 48,61.3 48,58 C48,54.7 50.7,52 54,52 Z" />
 
-    <!-- Electric mobility symbol on the left -->
-    <path
-        android:fillColor="#FF7FE9F4"
-        android:pathData="M38,65 L31,75 L36.5,75 L34,84 L45,71.5 L39.5,71.5 Z" />
-
-    <!-- Complete Bluetooth rune, compact and fully inside the safe area -->
+    <!-- Bluetooth connectivity mark on the left, raised 3dp for the adaptive mask -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M68,61 L68,79 M68,61 L75,67 L68,72 M68,72 L75,77 L68,79 M68,72 L61,66 M68,72 L61,78"
+        android:pathData="M38,58 L38,76 M38,58 L45,64 L38,69 M38,69 L45,74 L38,76 M38,69 L31,63 M38,69 L31,75"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="2.8" />
+
+    <!-- Electric mobility symbol on the right -->
+    <path
+        android:fillColor="#FF7FE9F4"
+        android:pathData="M70,65 L63,75 L68.5,75 L66,84 L77,71.5 L71.5,71.5 Z" />
 </vector>
