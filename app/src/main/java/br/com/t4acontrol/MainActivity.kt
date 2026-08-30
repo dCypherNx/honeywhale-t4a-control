@@ -72,7 +72,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
@@ -255,37 +254,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun Header(foreground: ComposeColor) {
-        if (settings) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(40.dp).clickable { settings = false },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MdiIcon("cmd-arrow-left", T4A_BLUE, 28.dp, Modifier.size(32.dp))
-                }
-                Text(
-                    getString(R.string.settings),
-                    color = foreground,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-        } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = getString(R.string.app_name).uppercase(Locale.ROOT),
-                    color = foreground,
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier = Modifier.size(40.dp).clickable { settings = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MdiIcon("cmd-cog", T4A_BLUE, 27.dp, Modifier.size(32.dp))
-                }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (settings) getString(R.string.settings) else getString(R.string.app_name).uppercase(Locale.ROOT),
+                color = foreground,
+                fontSize = if (settings) 26.sp else 25.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier.size(40.dp).clickable { settings = !settings },
+                contentAlignment = Alignment.Center,
+            ) {
+                MdiIcon(if (settings) "cmd-arrow-left" else "cmd-cog", T4A_BLUE, if (settings) 28.dp else 27.dp, Modifier.size(32.dp))
             }
         }
     }
