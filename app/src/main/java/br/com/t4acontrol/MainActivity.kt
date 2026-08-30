@@ -21,7 +21,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,8 +43,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -60,9 +59,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
@@ -207,7 +203,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 ) {
                     Header(foreground)
                     if (current == null) {
-                        Text("Inicializando sessão T4A…", color = foreground)
+                        Text(getString(R.string.session_initializing), color = foreground)
                         return@Column
                     }
                     if (!current.authenticated) {
@@ -268,19 +264,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun LoginPanel(foreground: ComposeColor) {
         var email by remember { mutableStateOf("") }
         var password by remember { mutableStateOf("") }
-        Text("Autenticação", color = foreground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        TextField(value = email, onValueChange = { email = it }, label = { Text("E-mail") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        TextField(value = password, onValueChange = { password = it }, label = { Text("Senha") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
-        Button(onClick = { session.login(email.trim(), password); password = "" }, modifier = Modifier.fillMaxWidth()) { Text("Entrar") }
+        Text(getString(R.string.authentication), color = foreground, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        TextField(value = email, onValueChange = { email = it }, label = { Text(getString(R.string.email_hint)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        TextField(value = password, onValueChange = { password = it }, label = { Text(getString(R.string.password_hint)) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
+        Button(onClick = { session.login(email.trim(), password); password = "" }, modifier = Modifier.fillMaxWidth()) { Text(getString(R.string.login)) }
     }
 
     @Composable
     private fun PairingPanel(current: T4AState, foreground: ComposeColor) {
         val busy = current.pairing == T4AState.Pairing.SCANNING || current.pairing == T4AState.Pairing.PAIRING
-        Text("Pareamento: ${current.pairing}", color = foreground)
+        Text(getString(R.string.pairing_status, pairingLabel(current.pairing)), color = foreground)
         when {
-            current.pairing == T4AState.Pairing.READY -> Button(onClick = { session.pair() }, enabled = !busy) { Text("Parear T4A") }
-            !busy -> Button(onClick = { session.scan() }) { Text("Localizar T4A") }
+            current.pairing == T4AState.Pairing.READY -> Button(onClick = { session.pair() }, enabled = !busy) { Text(getString(R.string.pair_t4a)) }
+            !busy -> Button(onClick = { session.scan() }) { Text(getString(R.string.find_t4a)) }
         }
     }
 
@@ -289,10 +285,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         Text(getString(R.string.settings), color = foreground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
 
         SettingsSection(getString(R.string.connection_device_section), foreground, "connection") {
-            InfoLine("Conexão", getString(if (current.connected) R.string.connected else R.string.disconnected), foreground)
-            InfoLine("Dispositivo", current.deviceName.ifBlank { "--" }, foreground)
-            InfoLine("MAC", current.mac.ifBlank { "--" }, foreground)
-            InfoLine("RSSI", if (current.rssi == 0) "--" else getString(R.string.dbm, current.rssi), foreground)
+            InfoLine(getString(R.string.connection_label), getString(if (current.connected) R.string.connected else R.string.disconnected), foreground)
+            InfoLine(getString(R.string.device_label), current.deviceName.ifBlank { "--" }, foreground)
+            InfoLine(getString(R.string.mac_label), current.mac.ifBlank { "--" }, foreground)
+            InfoLine(getString(R.string.rssi_label), if (current.rssi == 0) "--" else getString(R.string.dbm, current.rssi), foreground)
         }
 
         SettingsSection(getString(R.string.display_section), foreground, "display") {
@@ -304,24 +300,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 applyKeepScreenOn(it)
             }
             Text(getString(R.string.theme_mode), color = foreground, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("system" to getString(R.string.theme_system), "light" to getString(R.string.theme_light), "dark" to getString(R.string.theme_dark)).forEach { (value, label) ->
-                    OutlinedButton(onClick = { applyTheme(value) }) { Text(label) }
-                }
-            }
+            SegmentedChoice(
+                labels = listOf(getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)),
+                selectedIndex = listOf("system", "light", "dark").indexOf(themeMode).coerceAtLeast(0),
+            ) { index -> applyTheme(listOf("system", "light", "dark")[index]) }
         }
 
         SettingsSection(getString(R.string.battery_section), foreground, "battery") {
             val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
             Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
-            T4ABatterySlider(
-                value = currentIndex.toFloat(),
-                onValueChange = { index ->
-                    val selected = index.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
-                    session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[selected])
-                },
-                onValueChangeFinished = {},
-            )
+            SegmentedChoice(
+                labels = BATTERY_RECHARGE_GAP_HOURS.map { getString(R.string.battery_recharge_gap_value, it) },
+                selectedIndex = currentIndex,
+            ) { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) }
             Text(
                 getString(R.string.battery_recharge_detection_note),
                 color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
@@ -336,29 +327,34 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         SettingsSection(getString(R.string.automatic_lock), foreground, "auto_lock") {
             SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
             Text(getString(R.string.auto_lock_distance), color = foreground)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("short" to getString(R.string.distance_short), "medium" to getString(R.string.distance_medium), "long" to getString(R.string.distance_long)).forEach { (value, label) ->
-                    OutlinedButton(onClick = { session.setAutoLockDistance(value) }) { Text(label) }
-                }
-            }
+            val distanceValues = listOf("short", "medium", "long")
+            SegmentedChoice(
+                labels = listOf(getString(R.string.distance_short), getString(R.string.distance_medium), getString(R.string.distance_long)),
+                selectedIndex = distanceValues.indexOf(current.autoLockDistance).coerceAtLeast(1),
+            ) { index -> session.setAutoLockDistance(distanceValues[index]) }
         }
 
         SettingsSection(getString(R.string.riding_preferences_section), foreground, "riding") {
-            Text(getString(R.string.unit_status, "").substringBefore(":"), color = foreground, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "mile") }) { Text(getString(R.string.miles)) }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_UNIT, "km") }) { Text(getString(R.string.kilometers)) }
-            }
+            Text(getString(R.string.unit), color = foreground, fontWeight = FontWeight.Bold)
+            val unitValues = listOf("km", "mile")
+            val unitValue = current.dps[T4ADashboardMapper.DP_UNIT]?.toString() ?: "km"
+            SegmentedChoice(
+                labels = listOf(getString(R.string.kilometers), getString(R.string.miles)),
+                selectedIndex = unitValues.indexOf(unitValue).coerceAtLeast(0),
+            ) { index -> session.publish(T4ADashboardMapper.DP_UNIT, unitValues[index]) }
+
             Text(getString(R.string.cruise), color = foreground, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, false) }) { Text(getString(R.string.disable)) }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_CRUISE, true) }) { Text(getString(R.string.enable)) }
-            }
+            SegmentedChoice(
+                labels = listOf(getString(R.string.disable), getString(R.string.enable)),
+                selectedIndex = if (dpBoolean(current.dps[T4ADashboardMapper.DP_CRUISE])) 1 else 0,
+            ) { index -> session.publish(T4ADashboardMapper.DP_CRUISE, index == 1) }
+
             Text(getString(R.string.start_mode), color = foreground, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "zero_start") }) { Text(getString(R.string.zero_start)) }
-                OutlinedButton(onClick = { session.publish(T4ADashboardMapper.DP_START, "not_zero_start") }) { Text(getString(R.string.initial_push)) }
-            }
+            val initialPush = current.dps[T4ADashboardMapper.DP_START]?.toString() == "not_zero_start"
+            SegmentedChoice(
+                labels = listOf(getString(R.string.zero_start), getString(R.string.initial_push)),
+                selectedIndex = if (initialPush) 1 else 0,
+            ) { index -> session.publish(T4ADashboardMapper.DP_START, if (index == 1) "not_zero_start" else "zero_start") }
         }
 
         SettingsSection(getString(R.string.diagnostics_section), foreground, "diagnostics") {
@@ -374,27 +370,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     @Composable
-    private fun T4ABatterySlider(
-        value: Float,
-        onValueChange: (Float) -> Unit,
-        onValueChangeFinished: () -> Unit,
+    private fun SegmentedChoice(
+        labels: List<String>,
+        selectedIndex: Int,
+        onSelected: (Int) -> Unit,
     ) {
-        val selectedIndex = value.toInt().coerceIn(0, BATTERY_RECHARGE_GAP_HOURS.lastIndex)
-        androidx.compose.material3.SingleChoiceSegmentedButtonRow(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            BATTERY_RECHARGE_GAP_HOURS.forEachIndexed { index, hours ->
+        val safeSelected = selectedIndex.coerceIn(0, labels.lastIndex)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            labels.forEachIndexed { index, label ->
                 SegmentedButton(
-                    selected = selectedIndex == index,
-                    onClick = {
-                        onValueChange(index.toFloat())
-                        onValueChangeFinished()
-                    },
-                    shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = BATTERY_RECHARGE_GAP_HOURS.size,
-                    ),
-                    colors = androidx.compose.material3.SegmentedButtonDefaults.colors(
+                    selected = safeSelected == index,
+                    onClick = { onSelected(index) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = labels.size),
+                    colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = ComposeColor(0xFF075EF0),
                         activeContentColor = ComposeColor.White,
                         activeBorderColor = ComposeColor(0xFF075EF0),
@@ -405,8 +393,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     icon = {},
                     label = {
                         Text(
-                            getString(R.string.battery_recharge_gap_value, hours),
-                            fontWeight = if (selectedIndex == index) FontWeight.Bold else FontWeight.Medium,
+                            label,
+                            fontWeight = if (safeSelected == index) FontWeight.Bold else FontWeight.Medium,
                         )
                     },
                 )
@@ -519,7 +507,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
-                    OutlinedButton(onClick = { saveRawLog() }) { Text("Salvar") }
+                    OutlinedButton(onClick = { saveRawLog() }) { Text(getString(R.string.save)) }
                 }
             } else {
                 entries.asReversed().forEach { entry ->
@@ -592,10 +580,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)
             contentResolver.update(uri, values, null, null)
-            Toast.makeText(this, "Log salvo em Downloads/T4A: $fileName", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.raw_log_saved, fileName), Toast.LENGTH_LONG).show()
         } catch (error: Exception) {
             uri?.let { runCatching { contentResolver.delete(it, null, null) } }
-            Toast.makeText(this, "Não foi possível salvar o log raw.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.raw_log_save_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -603,10 +591,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         if (!uiForeground || current?.pendingBatteryRechargePercent == null || batteryRechargeDialog != null) return
         val percent = current.pendingBatteryRechargePercent
         batteryRechargeDialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Recarga detectada")
-            .setMessage("A bateria subiu para $percent%. Deseja iniciar um novo ciclo de bateria?")
-            .setPositiveButton("Novo ciclo") { _, _ -> session.resolveBatteryRecharge(true); batteryRechargeDialog = null }
-            .setNegativeButton("Manter ciclo") { _, _ -> session.resolveBatteryRecharge(false); batteryRechargeDialog = null }
+            .setTitle(getString(R.string.battery_recharge_possible_title))
+            .setMessage(getString(R.string.battery_recharge_possible_message, percent))
+            .setPositiveButton(getString(R.string.battery_recharge_confirm)) { _, _ -> session.resolveBatteryRecharge(true); batteryRechargeDialog = null }
+            .setNegativeButton(getString(R.string.battery_recharge_reject)) { _, _ -> session.resolveBatteryRecharge(false); batteryRechargeDialog = null }
             .setOnCancelListener { batteryRechargeDialog = null }
             .create()
         batteryRechargeDialog?.show()
@@ -620,6 +608,21 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
+
+    private fun pairingLabel(pairing: T4AState.Pairing): String = getString(
+        when (pairing) {
+            T4AState.Pairing.PAIRED -> R.string.pairing_paired
+            T4AState.Pairing.PAIRING -> R.string.pairing_in_progress
+            T4AState.Pairing.READY -> R.string.pairing_ready
+            T4AState.Pairing.SCANNING -> R.string.pairing_scanning
+            T4AState.Pairing.REMOVING -> R.string.pairing_removing
+            T4AState.Pairing.NO_HOME -> R.string.pairing_no_home
+            T4AState.Pairing.UNPAIRED -> R.string.pairing_unpaired
+        }
+    )
+
+    private fun dpBoolean(value: Any?): Boolean =
+        value == true || value?.toString()?.equals("true", ignoreCase = true) == true || value?.toString() == "1"
 
     private fun batteryRechargeGapIndex(hours: Int): Int = BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
 
@@ -673,7 +676,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         if (hasBluetoothPermissions()) {
             if (uiForeground) connectSession()
         } else {
-            Toast.makeText(this, "Permissões Bluetooth são necessárias para manter a sessão T4A.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.bluetooth_permissions_required, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -685,7 +688,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             sessionBindingRequested = bindService(intent, sessionConnection, BIND_AUTO_CREATE)
         } catch (error: RuntimeException) {
             sessionBindingRequested = false
-            Toast.makeText(this, "Não foi possível iniciar a sessão T4A.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.session_start_failed, Toast.LENGTH_LONG).show()
         }
     }
 
