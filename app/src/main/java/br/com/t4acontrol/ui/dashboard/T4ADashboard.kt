@@ -67,7 +67,7 @@ object T4ADashboardTokens {
     val ToggleHeight: Dp = 76.dp
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
-    val BatteryHeight: Dp = 18.dp
+    val BatteryHeight: Dp = 16.dp
     val SecondRowIconSize: Dp = 31.dp
     val SpeedFontSize = 104.sp
     val SpeedUnitFontSize = 24.sp
@@ -195,7 +195,7 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
     val safePercent = percent.coerceIn(0, 100)
     val safeMin = observedMin?.coerceIn(0, 100)
     val safeMax = observedMax?.coerceIn(0, 100)
-    BoxWithConstraints(Modifier.fillMaxWidth().height(32.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(34.dp)) {
         val iconWidth = 38.dp
         val iconToBarGap = 8.dp
         val barToValueGap = 9.dp
@@ -207,11 +207,11 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
             "cmd-battery-charging",
             if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
             32.dp,
-            Modifier.align(Alignment.CenterStart).width(iconWidth).height(25.dp),
+            Modifier.align(Alignment.BottomStart).width(iconWidth).height(25.dp),
             90f,
         )
 
-        Box(Modifier.offset(x = barStart).width(barWidth).height(32.dp)) {
+        Box(Modifier.offset(x = barStart).width(barWidth).height(34.dp)) {
             Row(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(T4ADashboardTokens.BatteryHeight),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -234,7 +234,7 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.End,
             maxLines = 1,
-            modifier = Modifier.align(Alignment.CenterEnd).width(valueWidth),
+            modifier = Modifier.align(Alignment.BottomEnd).width(valueWidth),
         )
     }
 }
@@ -253,7 +253,7 @@ private fun BatteryRangeMarker(value: Int, minimum: Boolean, barWidth: Dp, modif
         val stroke = 1.25.dp.toPx()
         val barTop = size.height - T4ADashboardTokens.BatteryHeight.toPx()
         drawCircle(Color.Black, radius = radius, center = Offset(x, circleY), style = Stroke(stroke))
-        drawLine(Color.Black, Offset(x, circleY + radius + 1.dp.toPx()), Offset(x, barTop + T4ADashboardTokens.BatteryHeight.toPx()), stroke, StrokeCap.Round)
+        drawLine(Color.Black, Offset(x, circleY + radius + 1.dp.toPx()), Offset(x, barTop), stroke, StrokeCap.Round)
     }
 
     Text(
