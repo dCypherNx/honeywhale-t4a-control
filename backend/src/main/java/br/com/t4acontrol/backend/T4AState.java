@@ -30,6 +30,8 @@ public final class T4AState {
 
   public final boolean authenticated;
   public final String account;
+  public final long homeId;
+  public final String homeName;
   public final Pairing pairing;
   public final boolean connected;
   public final String deviceName;
@@ -51,6 +53,8 @@ public final class T4AState {
   public T4AState(
       boolean authenticated,
       String account,
+      long homeId,
+      String homeName,
       Pairing pairing,
       boolean connected,
       String deviceName,
@@ -70,6 +74,8 @@ public final class T4AState {
       String message) {
     this.authenticated = authenticated;
     this.account = account;
+    this.homeId = homeId;
+    this.homeName = homeName;
     this.pairing = pairing;
     this.connected = connected;
     this.deviceName = deviceName;
