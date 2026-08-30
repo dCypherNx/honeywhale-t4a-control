@@ -212,16 +212,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val current = state
         MaterialTheme(colorScheme = t4aColorScheme(darkMode)) {
             BackHandler(enabled = settings) { settings = false }
-            Box(
-                Modifier.fillMaxSize()
-                    .background(background)
-                    .safeDrawingPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+            Box(Modifier.fillMaxSize().background(background).safeDrawingPadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Header(foreground)
                     if (current == null) {
                         Text(getString(R.string.session_initializing), color = foreground)
@@ -241,11 +233,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                         SettingsPanel(current, foreground)
                         RawLogCard(foreground)
                     } else {
-                        T4ADashboard(
-                            state = T4ADashboardMapper.map(current, showTotalOdometer),
-                            actions = dashboardActions,
-                            darkMode = darkMode,
-                        )
+                        T4ADashboard(state = T4ADashboardMapper.map(current, showTotalOdometer), actions = dashboardActions, darkMode = darkMode)
                         DashboardEvents(foreground)
                     }
                 }
@@ -256,17 +244,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun Header(foreground: ComposeColor) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (settings) getString(R.string.settings) else getString(R.string.app_name).uppercase(Locale.ROOT),
-                color = foreground,
-                fontSize = if (settings) 26.sp else 25.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            Box(
-                modifier = Modifier.size(40.dp).clickable { settings = !settings },
-                contentAlignment = Alignment.Center,
-            ) {
+            Text(text = if (settings) getString(R.string.settings) else getString(R.string.app_name).uppercase(Locale.ROOT), color = foreground, fontSize = if (settings) 26.sp else 25.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Box(modifier = Modifier.size(40.dp).clickable { settings = !settings }, contentAlignment = Alignment.Center) {
                 MdiIcon(if (settings) "cmd-arrow-left" else "cmd-cog", T4A_BLUE, if (settings) 28.dp else 27.dp, Modifier.size(32.dp))
             }
         }
@@ -310,63 +289,38 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 applyKeepScreenOn(it)
             }
             Text(getString(R.string.theme_mode), color = foreground, fontWeight = FontWeight.Bold)
-            SegmentedChoice(
-                labels = listOf(getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)),
-                selectedIndex = listOf("system", "light", "dark").indexOf(themeMode).coerceAtLeast(0),
-            ) { index -> applyTheme(listOf("system", "light", "dark")[index]) }
+            SegmentedChoice(labels = listOf(getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)), selectedIndex = listOf("system", "light", "dark").indexOf(themeMode).coerceAtLeast(0)) { index -> applyTheme(listOf("system", "light", "dark")[index]) }
         }
 
         SettingsSection(getString(R.string.battery_section), "battery") {
             Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
-            SegmentedChoice(
-                labels = BATTERY_RECHARGE_GAP_HOURS.map { getString(R.string.battery_recharge_gap_value, it) },
-                selectedIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours),
-            ) { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) }
-            Text(
-                getString(R.string.battery_recharge_detection_note),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-            )
+            SegmentedChoice(labels = BATTERY_RECHARGE_GAP_HOURS.map { getString(R.string.battery_recharge_gap_value, it) }, selectedIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)) { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) }
+            Text(getString(R.string.battery_recharge_detection_note), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         }
 
         SettingsSection(getString(R.string.integrations_section), "integrations") {
-            Button(
-                onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(getString(R.string.configure_mqtt)) }
+            Button(onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text(getString(R.string.configure_mqtt)) }
         }
 
         SettingsSection(getString(R.string.automatic_lock), "auto_lock") {
             SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
             Text(getString(R.string.auto_lock_distance), color = foreground)
             val distanceValues = listOf("short", "medium", "long")
-            SegmentedChoice(
-                labels = listOf(getString(R.string.distance_short), getString(R.string.distance_medium), getString(R.string.distance_long)),
-                selectedIndex = distanceValues.indexOf(current.autoLockDistance).coerceAtLeast(1),
-            ) { index -> session.setAutoLockDistance(distanceValues[index]) }
+            SegmentedChoice(labels = listOf(getString(R.string.distance_short), getString(R.string.distance_medium), getString(R.string.distance_long)), selectedIndex = distanceValues.indexOf(current.autoLockDistance).coerceAtLeast(1)) { index -> session.setAutoLockDistance(distanceValues[index]) }
         }
 
         SettingsSection(getString(R.string.riding_preferences_section), "riding") {
             Text(getString(R.string.unit), color = foreground, fontWeight = FontWeight.Bold)
             val unitValues = listOf("km", "mile")
             val unitValue = current.dps[T4ADashboardMapper.DP_UNIT]?.toString() ?: "km"
-            SegmentedChoice(
-                labels = listOf(getString(R.string.kilometers), getString(R.string.miles)),
-                selectedIndex = unitValues.indexOf(unitValue).coerceAtLeast(0),
-            ) { index -> session.publish(T4ADashboardMapper.DP_UNIT, unitValues[index]) }
+            SegmentedChoice(labels = listOf(getString(R.string.kilometers), getString(R.string.miles)), selectedIndex = unitValues.indexOf(unitValue).coerceAtLeast(0)) { index -> session.publish(T4ADashboardMapper.DP_UNIT, unitValues[index]) }
 
             Text(getString(R.string.cruise), color = foreground, fontWeight = FontWeight.Bold)
-            SegmentedChoice(
-                labels = listOf(getString(R.string.disable), getString(R.string.enable)),
-                selectedIndex = if (dpBoolean(current.dps[T4ADashboardMapper.DP_CRUISE])) 1 else 0,
-            ) { index -> session.publish(T4ADashboardMapper.DP_CRUISE, index == 1) }
+            SegmentedChoice(labels = listOf(getString(R.string.disable), getString(R.string.enable)), selectedIndex = if (dpBoolean(current.dps[T4ADashboardMapper.DP_CRUISE])) 1 else 0) { index -> session.publish(T4ADashboardMapper.DP_CRUISE, index == 1) }
 
             Text(getString(R.string.start_mode), color = foreground, fontWeight = FontWeight.Bold)
             val initialPush = current.dps[T4ADashboardMapper.DP_START]?.toString() == "not_zero_start"
-            SegmentedChoice(
-                labels = listOf(getString(R.string.zero_start), getString(R.string.initial_push)),
-                selectedIndex = if (initialPush) 1 else 0,
-            ) { index -> session.publish(T4ADashboardMapper.DP_START, if (index == 1) "not_zero_start" else "zero_start") }
+            SegmentedChoice(labels = listOf(getString(R.string.zero_start), getString(R.string.initial_push)), selectedIndex = if (initialPush) 1 else 0) { index -> session.publish(T4ADashboardMapper.DP_START, if (index == 1) "not_zero_start" else "zero_start") }
         }
 
         SettingsSection(getString(R.string.diagnostics_section), "diagnostics", defaultExpanded = false) {
@@ -384,10 +338,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             InfoLine(getString(R.string.tuya_home_id_label), if (current.homeId == 0L) "--" else current.homeId.toString(), foreground)
             InfoLine(getString(R.string.pairing_label), pairingLabel(current.pairing), foreground)
             if (current.pairing == T4AState.Pairing.PAIRED) {
-                Button(
-                    onClick = { confirmUnpair() },
-                    colors = ButtonDefaults.buttonColors(containerColor = T4A_RED, contentColor = ComposeColor.White),
-                ) { Text(getString(R.string.remove_pairing)) }
+                Button(onClick = { confirmUnpair() }, colors = ButtonDefaults.buttonColors(containerColor = T4A_RED, contentColor = ComposeColor.White)) { Text(getString(R.string.remove_pairing)) }
             }
         }
     }
@@ -397,69 +348,22 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val safeSelected = selectedIndex.coerceIn(0, labels.lastIndex)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             labels.forEachIndexed { index, label ->
-                SegmentedButton(
-                    selected = safeSelected == index,
-                    onClick = { onSelected(index) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = labels.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = T4A_BLUE,
-                        activeContentColor = ComposeColor.White,
-                        activeBorderColor = T4A_BLUE,
-                        inactiveContainerColor = MaterialTheme.colorScheme.surface,
-                        inactiveContentColor = MaterialTheme.colorScheme.onSurface,
-                        inactiveBorderColor = MaterialTheme.colorScheme.outline,
-                    ),
-                    icon = {},
-                    label = { Text(label, fontWeight = if (safeSelected == index) FontWeight.Bold else FontWeight.Medium) },
-                )
+                SegmentedButton(selected = safeSelected == index, onClick = { onSelected(index) }, shape = SegmentedButtonDefaults.itemShape(index = index, count = labels.size), colors = SegmentedButtonDefaults.colors(activeContainerColor = T4A_BLUE, activeContentColor = ComposeColor.White, activeBorderColor = T4A_BLUE, inactiveContainerColor = MaterialTheme.colorScheme.surface, inactiveContentColor = MaterialTheme.colorScheme.onSurface, inactiveBorderColor = MaterialTheme.colorScheme.outline), icon = {}, label = { Text(label, fontWeight = if (safeSelected == index) FontWeight.Bold else FontWeight.Medium) })
             }
         }
     }
 
     @Composable
-    private fun SettingsSection(
-        title: String,
-        key: String,
-        defaultExpanded: Boolean = true,
-        content: @Composable () -> Unit,
-    ) {
-        var expanded by remember(key) {
-            mutableStateOf(preferences().getBoolean("section_$key", defaultExpanded))
-        }
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-        ) {
+    private fun SettingsSection(title: String, key: String, defaultExpanded: Boolean = true, content: @Composable () -> Unit) {
+        var expanded by remember(key) { mutableStateOf(preferences().getBoolean("section_$key", defaultExpanded)) }
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clickable {
-                            expanded = !expanded
-                            preferences().edit().putBoolean("section_$key", expanded).apply()
-                        }
-                        .padding(horizontal = 4.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        title,
-                        color = T4A_BLUE,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                    )
+                Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded; preferences().edit().putBoolean("section_$key", expanded).apply() }.padding(horizontal = 4.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = T4A_BLUE, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", T4A_BLUE, 18.dp, Modifier.size(28.dp))
                 }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(7.dp),
-                    ) { content() }
+                AnimatedVisibility(visible = expanded, enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(), exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { content() }
                 }
             }
         }
@@ -484,42 +388,18 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun DashboardEvents(foreground: ComposeColor) {
         val entries = eventHistory.takeLast(10)
-        var expanded by remember {
-            mutableStateOf(preferences().getBoolean("section_events", false))
-        }
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-        ) {
+        var expanded by remember { mutableStateOf(preferences().getBoolean("section_events", false)) }
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clickable {
-                            expanded = !expanded
-                            preferences().edit().putBoolean("section_events", expanded).apply()
-                        }
-                        .padding(horizontal = 4.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded; preferences().edit().putBoolean("section_events", expanded).apply() }.padding(horizontal = 4.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                     MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(getString(R.string.events), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
                     MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", T4A_BLUE, 18.dp, Modifier.size(28.dp))
                 }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        entries.asReversed().forEach { entry ->
-                            Text(entry, color = foreground, fontSize = 12.sp)
-                        }
+                AnimatedVisibility(visible = expanded, enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(), exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()) {
+                    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        entries.asReversed().forEach { entry -> Text(entry, color = foreground, fontSize = 12.sp) }
                     }
                 }
             }
@@ -531,60 +411,33 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val vertical = rememberScrollState()
         val horizontal = rememberScrollState()
         val filterScroll = rememberScrollState()
-        val filterOptions = listOf("ALL", "RX", "TX", "INITIAL", "BATTERY", "OTHER")
-        val filterLabels = listOf(
-            getString(R.string.raw_filter_all),
-            getString(R.string.raw_filter_rx),
-            getString(R.string.raw_filter_tx),
-            getString(R.string.raw_filter_initial),
-            getString(R.string.raw_filter_battery),
-            getString(R.string.raw_filter_other),
-        )
+        val origins = rawHistory.asSequence().map(::rawLogOrigin).filter { it.isNotBlank() }.distinct().sorted().toList()
+        val filterOptions = listOf("ALL") + origins
+        LaunchedEffect(filterOptions) {
+            if (rawLogFilter !in filterOptions) rawLogFilter = "ALL"
+        }
         val visibleEntries = if (rawLogFilter == "ALL") rawHistory else rawHistory.filter { rawLogOrigin(it) == rawLogFilter }
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
-        ) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)) {
             Column(Modifier.fillMaxWidth().padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
                     Spacer(Modifier.size(8.dp))
                     Text(getString(R.string.raw_log), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(filterScroll).padding(vertical = 5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    filterOptions.forEachIndexed { index, filter ->
-                        if (rawLogFilter == filter) {
-                            Button(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
-                        } else {
-                            OutlinedButton(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
-                        }
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(filterScroll).padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    filterOptions.forEach { filter ->
+                        androidx.compose.material3.FilterChip(
+                            selected = rawLogFilter == filter,
+                            onClick = { rawLogFilter = filter },
+                            label = { Text(if (filter == "ALL") getString(R.string.raw_filter_all) else filter, fontSize = 11.sp) },
+                        )
                     }
                 }
-                Box(
-                    modifier = Modifier.fillMaxWidth()
-                        .height(300.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                        .padding(8.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(end = 8.dp)
-                            .horizontalScroll(horizontal)
-                            .verticalScroll(vertical),
-                    ) {
-                        visibleEntries.asReversed().forEach { entry ->
-                            Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
-                        }
+                Box(modifier = Modifier.fillMaxWidth().height(300.dp).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)).padding(8.dp)) {
+                    Column(modifier = Modifier.padding(end = 8.dp).horizontalScroll(horizontal).verticalScroll(vertical)) {
+                        visibleEntries.asReversed().forEach { entry -> Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false) }
                     }
-                    VerticalScrollIndicator(
-                        scrollState = vertical,
-                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(3.dp),
-                    )
+                    VerticalScrollIndicator(scrollState = vertical, modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(3.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
@@ -606,19 +459,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 val thumb = max(minThumb, viewport * viewport / content).coerceAtMost(viewport)
                 val travel = viewport - thumb
                 val y = travel * scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-                Box(
-                    Modifier.align(Alignment.TopEnd)
-                        .fillMaxHeight()
-                        .width(3.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(99.dp)),
-                )
-                Box(
-                    Modifier.align(Alignment.TopEnd)
-                        .offset { IntOffset(0, y.roundToInt()) }
-                        .width(3.dp)
-                        .height(with(density) { thumb.toDp() })
-                        .background(T4A_BLUE.copy(alpha = 0.72f), RoundedCornerShape(99.dp)),
-                )
+                Box(Modifier.align(Alignment.TopEnd).fillMaxHeight().width(3.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(99.dp)))
+                Box(Modifier.align(Alignment.TopEnd).offset { IntOffset(0, y.roundToInt()) }.width(3.dp).height(with(density) { thumb.toDp() }).background(T4A_BLUE.copy(alpha = 0.72f), RoundedCornerShape(99.dp)))
             }
         }
     }
@@ -626,20 +468,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun MdiIcon(name: String, color: ComposeColor, iconSize: Dp, modifier: Modifier = Modifier) {
         val argb = color.toArgb()
-        AndroidView(
-            modifier = modifier,
-            factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } },
-            update = { image ->
-                val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
-                image.setImageDrawable(
-                    IconicsDrawable(image.context, name).apply {
-                        colorList = ColorStateList.valueOf(argb)
-                        sizeXPx = pixels
-                        sizeYPx = pixels
-                    }
-                )
-            },
-        )
+        AndroidView(modifier = modifier, factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } }, update = { image ->
+            val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
+            image.setImageDrawable(IconicsDrawable(image.context, name).apply { colorList = ColorStateList.valueOf(argb); sizeXPx = pixels; sizeYPx = pixels })
+        })
     }
 
     override fun onState(value: T4AState) {
@@ -659,14 +491,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun appendRaw(value: String) { rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value) }
 
     private fun rawLogOrigin(entry: String): String {
-        val payload = entry.substringAfter(' ', "")
-        return when (payload.substringBefore(' ').uppercase(Locale.ROOT)) {
-            "RX" -> "RX"
-            "TX" -> "TX"
-            "INITIAL" -> "INITIAL"
-            "BATTERY" -> "BATTERY"
-            else -> "OTHER"
-        }
+        val payload = entry.substringAfter(' ', "").trim()
+        if (payload.isEmpty()) return "OTHER"
+        val bracketed = Regex("^\\[([^]]+)]").find(payload)?.groupValues?.getOrNull(1)?.trim()
+        if (!bracketed.isNullOrEmpty()) return bracketed.uppercase(Locale.ROOT)
+        val prefix = payload.substringBefore(':').substringBefore(' ').trim().trim('[', ']', '(', ')')
+        return prefix.ifEmpty { "OTHER" }.uppercase(Locale.ROOT)
     }
 
     private fun rawLogText(): String = buildString {
@@ -690,10 +520,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/T4A")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
-            uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: throw java.io.IOException("MediaStore insert returned null")
-            contentResolver.openOutputStream(uri, "w")?.use { output -> output.write(rawLogText().toByteArray(Charsets.UTF_8)) }
-                ?: throw java.io.IOException("MediaStore output stream unavailable")
+            uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw java.io.IOException("MediaStore insert returned null")
+            contentResolver.openOutputStream(uri, "w")?.use { output -> output.write(rawLogText().toByteArray(Charsets.UTF_8)) } ?: throw java.io.IOException("MediaStore output stream unavailable")
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)
             contentResolver.update(uri, values, null, null)
@@ -738,9 +566,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
     )
 
-    private fun dpBoolean(value: Any?): Boolean =
-        value == true || value?.toString()?.equals("true", ignoreCase = true) == true || value?.toString() == "1"
-
+    private fun dpBoolean(value: Any?): Boolean = value == true || value?.toString()?.equals("true", ignoreCase = true) == true || value?.toString() == "1"
     private fun batteryRechargeGapIndex(hours: Int): Int = BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
 
     private fun applyTheme(value: String) {
@@ -751,37 +577,9 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun t4aColorScheme(darkMode: Boolean) = if (darkMode) {
-        darkColorScheme(
-            primary = T4A_BLUE,
-            onPrimary = ComposeColor.White,
-            secondary = T4A_BLUE,
-            tertiary = T4A_BLUE,
-            background = ComposeColor(0xFF0D1117),
-            onBackground = ComposeColor(0xFFF1F5F9),
-            surface = ComposeColor(0xFF171D26),
-            onSurface = ComposeColor(0xFFF1F5F9),
-            surfaceVariant = ComposeColor(0xFF202836),
-            onSurfaceVariant = ComposeColor(0xFFAAB4C3),
-            outline = ComposeColor(0xFF354052),
-            error = T4A_RED,
-            onError = ComposeColor.White,
-        )
+        darkColorScheme(primary = T4A_BLUE, onPrimary = ComposeColor.White, secondary = T4A_BLUE, tertiary = T4A_BLUE, background = ComposeColor(0xFF0D1117), onBackground = ComposeColor(0xFFF1F5F9), surface = ComposeColor(0xFF171D26), onSurface = ComposeColor(0xFFF1F5F9), surfaceVariant = ComposeColor(0xFF202836), onSurfaceVariant = ComposeColor(0xFFAAB4C3), outline = ComposeColor(0xFF354052), error = T4A_RED, onError = ComposeColor.White)
     } else {
-        lightColorScheme(
-            primary = T4A_BLUE,
-            onPrimary = ComposeColor.White,
-            secondary = T4A_BLUE,
-            tertiary = T4A_BLUE,
-            background = ComposeColor(0xFFF7F8FB),
-            onBackground = ComposeColor(0xFF101820),
-            surface = ComposeColor.White,
-            onSurface = ComposeColor(0xFF101820),
-            surfaceVariant = ComposeColor(0xFFF8FAFD),
-            onSurfaceVariant = ComposeColor(0xFF667085),
-            outline = ComposeColor(0xFFE4E8F0),
-            error = T4A_RED,
-            onError = ComposeColor.White,
-        )
+        lightColorScheme(primary = T4A_BLUE, onPrimary = ComposeColor.White, secondary = T4A_BLUE, tertiary = T4A_BLUE, background = ComposeColor(0xFFF7F8FB), onBackground = ComposeColor(0xFF101820), surface = ComposeColor.White, onSurface = ComposeColor(0xFF101820), surfaceVariant = ComposeColor(0xFFF8FAFD), onSurfaceVariant = ComposeColor(0xFF667085), outline = ComposeColor(0xFFE4E8F0), error = T4A_RED, onError = ComposeColor.White)
     }
 
     private fun isDarkMode(): Boolean = when (themeMode) {
@@ -795,10 +593,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         window.navigationBarColor = if (darkMode) 0xFF0D1117.toInt() else 0xFFF7F8FB.toInt()
         window.decorView.windowInsetsController?.let { controller ->
             val appearance = if (darkMode) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-            controller.setSystemBarsAppearance(
-                appearance,
-                WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
-            )
+            controller.setSystemBarsAppearance(appearance, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
         }
     }
 
@@ -811,16 +606,11 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     private fun ensurePermissions() {
         if (!hasBluetoothPermissions()) {
-            requestPermissions(
-                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION),
-                REQUEST_BLUETOOTH,
-            )
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_FINE_LOCATION), REQUEST_BLUETOOTH)
         }
     }
 
-    private fun hasBluetoothPermissions(): Boolean =
-        checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+    private fun hasBluetoothPermissions(): Boolean = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
