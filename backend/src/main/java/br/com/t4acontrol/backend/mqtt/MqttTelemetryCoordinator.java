@@ -260,7 +260,8 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     out.put("connected", state.connected);
     if (state.deviceName != null && !state.deviceName.isBlank()) out.put("device_name", state.deviceName);
     if (state.mac != null && !state.mac.isBlank()) out.put("mac", state.mac);
-    if (state.rssi != 0) out.put("rssi_dbm", state.rssi);
+    String rssiRange = rssiRange(state.rssi);
+    if (!rssiRange.isEmpty()) out.put("rssi_range", rssiRange);
 
     putIntegerIfPresent(out, "battery_percent", state.dps, "3");
     if (state.batteryObservedMin != null) out.put("battery_observed_min", state.batteryObservedMin);
@@ -280,6 +281,14 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
     if (location != null) appendLocation(out, location);
     return out;
+  }
+
+  private static String rssiRange(int rssi) {
+    if (rssi == 0) return "";
+    if (rssi >= -40) return "short";
+    if (rssi >= -60) return "medium";
+    if (rssi > -90) return "long";
+    return "out_of_range";
   }
 
   private Map<String, Object> location(LocationSnapshot snapshot) {
