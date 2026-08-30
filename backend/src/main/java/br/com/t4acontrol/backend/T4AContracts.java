@@ -80,10 +80,12 @@ public final class T4AContracts {
 
   public static final class Home {
     public final long id;
+    public final String name;
     public final List<Device> devices;
 
-    public Home(long id, List<Device> devices) {
+    public Home(long id, String name, List<Device> devices) {
       this.id = id;
+      this.name = value(name);
       this.devices =
           Collections.unmodifiableList(
               devices == null ? Collections.emptyList() : new ArrayList<>(devices));
