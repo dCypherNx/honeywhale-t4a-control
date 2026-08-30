@@ -157,43 +157,22 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
             val strokeWidth = size.width * 0.105f
 
             val pivotX = size.width * 0.62f
-            val shackleWidth = size.width * 0.31f
+            val shackleWidth = size.width * 0.35f
             val shackleTop = size.height * 0.06f
             val arcHeight = size.height * 0.38f
             val arcEndY = shackleTop + arcHeight / 2f
 
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(bodyLeft, bodyTop),
-                size = Size(bodyWidth, bodyHeight),
-                cornerRadius = CornerRadius(size.width * 0.09f, size.width * 0.09f),
-            )
+            drawRoundRect(color = color, topLeft = Offset(bodyLeft, bodyTop), size = Size(bodyWidth, bodyHeight), cornerRadius = CornerRadius(size.width * 0.09f, size.width * 0.09f))
 
             if (locked) {
                 val leftX = pivotX - shackleWidth
-                drawArc(
-                    color = color,
-                    startAngle = 180f,
-                    sweepAngle = 180f,
-                    useCenter = false,
-                    topLeft = Offset(leftX, shackleTop),
-                    size = Size(shackleWidth, arcHeight),
-                    style = Stroke(strokeWidth, cap = StrokeCap.Round),
-                )
+                drawArc(color = color, startAngle = 180f, sweepAngle = 180f, useCenter = false, topLeft = Offset(leftX, shackleTop), size = Size(shackleWidth, arcHeight), style = Stroke(strokeWidth, cap = StrokeCap.Round))
                 drawLine(color, Offset(leftX, arcEndY), Offset(leftX, bodyTop), strokeWidth, StrokeCap.Round)
                 drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
             } else {
                 val freeX = pivotX + shackleWidth
                 val freeEndY = arcEndY + size.height * 0.08f
-                drawArc(
-                    color = color,
-                    startAngle = 180f,
-                    sweepAngle = 180f,
-                    useCenter = false,
-                    topLeft = Offset(pivotX, shackleTop),
-                    size = Size(shackleWidth, arcHeight),
-                    style = Stroke(strokeWidth, cap = StrokeCap.Round),
-                )
+                drawArc(color = color, startAngle = 180f, sweepAngle = 180f, useCenter = false, topLeft = Offset(pivotX, shackleTop), size = Size(shackleWidth, arcHeight), style = Stroke(strokeWidth, cap = StrokeCap.Round))
                 drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
                 drawLine(color, Offset(freeX, arcEndY), Offset(freeX, freeEndY), strokeWidth, StrokeCap.Round)
             }
@@ -205,11 +184,7 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
 private fun AutoLockIcon(locked: Boolean, lockColor: Color, bluetoothColor: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 8.dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         StableLockIcon(locked, lockColor, Modifier.matchParentSize(), lockSize)
-        Box(
-            Modifier.align(Alignment.Center).offset(x = lockSize * 0.15f, y = lockSize * 0.16f).size(bluetoothSize + 4.dp)
-                .background(Color.White, CircleShape).border(1.dp, bluetoothColor, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(Modifier.align(Alignment.Center).offset(x = lockSize * 0.15f, y = lockSize * 0.16f).size(bluetoothSize + 4.dp).background(Color.White, CircleShape).border(1.dp, bluetoothColor, CircleShape), contentAlignment = Alignment.Center) {
             MdiIcon("cmd-bluetooth", bluetoothColor, bluetoothSize, Modifier.size(bluetoothSize + 1.dp))
         }
     }
@@ -253,9 +228,7 @@ private fun SpeedCard(state: T4ADashboardState, surface: Color, outline: Color, 
             BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(20.dp)) {
                 (5..45 step 5).forEach { value ->
                     val centerX = maxWidth * (value / 50f)
-                    Box(Modifier.offset(x = centerX - 12.dp).width(24.dp), contentAlignment = Alignment.Center) {
-                        Text(value.toString(), color = scaleTextColor, fontSize = 11.sp, fontWeight = if (darkMode) FontWeight.Medium else FontWeight.Normal)
-                    }
+                    Box(Modifier.offset(x = centerX - 12.dp).width(24.dp), contentAlignment = Alignment.Center) { Text(value.toString(), color = scaleTextColor, fontSize = 11.sp, fontWeight = if (darkMode) FontWeight.Medium else FontWeight.Normal) }
                 }
             }
         }
@@ -331,20 +304,9 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     val fill = color.copy(alpha = if (darkMode) 0.19f else 0.07f)
 
     Box(modifier.height(T4ADashboardTokens.ToggleHeight)) {
-        Column(
-            Modifier.fillMaxWidth().height(T4ADashboardTokens.ToggleHeight).alpha(if (enabled) 1f else 0.55f)
-                .background(fill, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
-                .border(2.dp, color, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
-                .combinedClickable(enabled = enabled, onClick = { if (!state.autoLockOn && state.lockEnabled) actions.setLocked(!state.locked) }, onLongClick = { menuExpanded = true })
-                .padding(horizontal = 5.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            if (state.autoLockOn) {
-                AutoLockIcon(state.locked, if (enabled) lockColor else muted, if (enabled) T4ADashboardTokens.Blue else muted, T4ADashboardTokens.SecondRowIconSize, Modifier.size(40.dp), 8.dp)
-            } else {
-                StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), T4ADashboardTokens.SecondRowIconSize)
-            }
+        Column(Modifier.fillMaxWidth().height(T4ADashboardTokens.ToggleHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ToggleRadius)).border(2.dp, color, RoundedCornerShape(T4ADashboardTokens.ToggleRadius)).combinedClickable(enabled = enabled, onClick = { if (!state.autoLockOn && state.lockEnabled) actions.setLocked(!state.locked) }, onLongClick = { menuExpanded = true }).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            if (state.autoLockOn) AutoLockIcon(state.locked, if (enabled) lockColor else muted, if (enabled) T4ADashboardTokens.Blue else muted, T4ADashboardTokens.SecondRowIconSize, Modifier.size(40.dp), 8.dp)
+            else StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), T4ADashboardTokens.SecondRowIconSize)
             ControlText(stringResource(R.string.lock_control), stateLabel, if (enabled) color else foregroundForInactive(darkMode), true)
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -360,13 +322,7 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
     val color = modeColor(mode)
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     val iconSize = when (mode) { RidingMode.WALK -> 30.dp; RidingMode.ECO -> 30.dp; RidingMode.RACE -> 29.dp; RidingMode.SPORT -> 31.dp; RidingMode.UNKNOWN -> 28.dp }
-    Column(
-        Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f)
-            .background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
-            .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 3.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Column(Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 3.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp)) }
         Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold, lineHeight = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = T4ADashboardTokens.ModeSpeedFontSize, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -400,10 +356,7 @@ private fun DashboardCard(surface: Color, outline: Color, content: @Composable C
 @Composable
 private fun MdiIcon(name: String, color: Color, iconSize: Dp, modifier: Modifier = Modifier, rotation: Float = 0f) {
     val argb = color.toArgb()
-    AndroidView(modifier, factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } }, update = { image ->
-        image.rotation = rotation; val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt()
-        image.setImageDrawable(IconicsDrawable(image.context, name).apply { colorList = ColorStateList.valueOf(argb); sizeXPx = pixels; sizeYPx = pixels })
-    })
+    AndroidView(modifier, factory = { context -> ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } }, update = { image -> image.rotation = rotation; val pixels = (iconSize.value * image.resources.displayMetrics.density).toInt(); image.setImageDrawable(IconicsDrawable(image.context, name).apply { colorList = ColorStateList.valueOf(argb); sizeXPx = pixels; sizeYPx = pixels }) })
 }
 
 private fun signalIcon(rssi: Int?): String = when { rssi == null -> "cmd-signal-cellular-outline"; rssi >= -40 -> "cmd-signal-cellular-3"; rssi >= -60 -> "cmd-signal-cellular-2"; else -> "cmd-signal-cellular-1" }
