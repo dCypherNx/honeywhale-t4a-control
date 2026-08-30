@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -286,6 +287,8 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
                 fontSize = T4ADashboardTokens.ControlFontSize,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -317,7 +320,15 @@ private fun ToggleTile(label: String, icon: String, active: Boolean, color: Colo
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         MdiIcon(icon, if (active) color else muted, iconSize, Modifier.size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
-        Text(label, color = if (active) color else foregroundForInactive(darkMode), fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal, lineHeight = 11.sp)
+        Text(
+            label,
+            color = if (active) color else foregroundForInactive(darkMode),
+            fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+            lineHeight = 11.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
