@@ -9,6 +9,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,7 +21,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -43,7 +49,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
@@ -340,39 +345,62 @@ class MqttSettingsActivity : ComponentActivity() {
         var expanded by remember(key) {
             mutableStateOf(getSharedPreferences("t4a_settings", MODE_PRIVATE).getBoolean("mqtt_section_$key", true))
         }
-        SettingsCard(darkMode) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .background(headerColor(darkMode), RoundedCornerShape(10.dp))
-                    .clickable {
-                        expanded = !expanded
-                        getSharedPreferences("t4a_settings", MODE_PRIVATE).edit().putBoolean("mqtt_section_$key", expanded).apply()
-                    }
-                    .padding(start = 7.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title, color = BLUE, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
-                MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(30.dp))
-            }
-            if (expanded) {
-                Column(
-                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) { content() }
+        val surface = surfaceColor(darkMode)
+        val outline = outlineColor(darkMode)
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = surface),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(headerColor(darkMode), RoundedCornerShape(10.dp))
+                        .border(1.dp, outline, RoundedCornerShape(10.dp))
+                        .clickable {
+                            expanded = !expanded
+                            getSharedPreferences("t4a_settings", MODE_PRIVATE).edit().putBoolean("mqtt_section_$key", expanded).apply()
+                        }
+                        .padding(start = 7.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        color = BLUE,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f).padding(vertical = 9.dp),
+                    )
+                    MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(30.dp))
+                }
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) { content() }
+                }
             }
         }
     }
 
     @Composable
     private fun SettingsCard(darkMode: Boolean, content: @Composable () -> Unit) {
-        Column(
-            Modifier.fillMaxWidth()
-                .shadow(2.dp, RoundedCornerShape(16.dp))
-                .background(surfaceColor(darkMode), RoundedCornerShape(16.dp))
-                .border(1.dp, outlineColor(darkMode), RoundedCornerShape(16.dp))
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) { content() }
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor(darkMode)),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) { content() }
+        }
     }
 
     @Composable
