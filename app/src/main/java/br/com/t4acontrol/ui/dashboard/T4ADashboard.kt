@@ -134,32 +134,45 @@ private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Co
 
 @Composable
 private fun LockStatusIndicator(state: T4ADashboardState) {
-    val color = when {
-        state.autoLockOn -> T4ADashboardTokens.Blue
-        state.locked -> T4ADashboardTokens.Red
-        else -> T4ADashboardTokens.Green
-    }
+    val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
+    val lockIcon = if (state.locked) "cmd-lock" else "cmd-lock-open-variant"
     if (state.autoLockOn) {
-        AutoLockIcon(color, 18.dp, Modifier.size(22.dp), 7.dp)
+        AutoLockIcon(
+            lockIcon = lockIcon,
+            lockColor = lockColor,
+            bluetoothColor = T4ADashboardTokens.Blue,
+            lockSize = 27.dp,
+            modifier = Modifier.size(33.dp),
+            bluetoothSize = 10.5.dp,
+            badgeOffsetY = (-3).dp,
+        )
     } else {
-        MdiIcon(if (state.locked) "cmd-lock" else "cmd-lock-open-variant", color, 18.dp, Modifier.size(22.dp))
+        MdiIcon(lockIcon, lockColor, 18.dp, Modifier.size(22.dp))
     }
 }
 
 @Composable
-private fun AutoLockIcon(color: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 10.dp) {
+private fun AutoLockIcon(
+    lockIcon: String,
+    lockColor: Color,
+    bluetoothColor: Color,
+    lockSize: Dp,
+    modifier: Modifier = Modifier,
+    bluetoothSize: Dp = 13.dp,
+    badgeOffsetY: Dp = (-5).dp,
+) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        MdiIcon("cmd-lock", color, lockSize, Modifier.matchParentSize())
+        MdiIcon(lockIcon, lockColor, lockSize, Modifier.matchParentSize())
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
-                .offset(x = 1.dp, y = 1.dp)
-                .size(bluetoothSize + 5.dp)
+                .offset(x = 1.dp, y = badgeOffsetY)
+                .size(bluetoothSize + 7.dp)
                 .background(Color.White, CircleShape)
-                .border(1.dp, color, CircleShape),
+                .border(1.dp, bluetoothColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            MdiIcon("cmd-bluetooth", color, bluetoothSize, Modifier.size(bluetoothSize + 1.dp))
+            MdiIcon("cmd-bluetooth", bluetoothColor, bluetoothSize, Modifier.size(bluetoothSize + 2.dp))
         }
     }
 }
@@ -280,6 +293,8 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     var menuExpanded by remember { mutableStateOf(false) }
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
     val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
+    val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
+    val lockIcon = if (state.locked) "cmd-lock" else "cmd-lock-open-variant"
     val stateLabel = when {
         state.autoLockOn -> stringResource(R.string.automatic)
         state.locked -> stringResource(R.string.state_on)
@@ -301,9 +316,17 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             verticalArrangement = Arrangement.Center,
         ) {
             if (state.autoLockOn) {
-                AutoLockIcon(if (enabled) color else muted, 28.dp, Modifier.size(40.dp), 11.dp)
+                AutoLockIcon(
+                    lockIcon = lockIcon,
+                    lockColor = if (enabled) lockColor else muted,
+                    bluetoothColor = if (enabled) T4ADashboardTokens.Blue else muted,
+                    lockSize = 28.dp,
+                    modifier = Modifier.size(40.dp),
+                    bluetoothSize = 13.dp,
+                    badgeOffsetY = (-5).dp,
+                )
             } else {
-                MdiIcon(if (state.locked) "cmd-lock" else "cmd-lock-open-variant", if (enabled) color else muted, 28.dp, Modifier.size(40.dp))
+                MdiIcon(lockIcon, if (enabled) lockColor else muted, 28.dp, Modifier.size(40.dp))
             }
             ControlText(
                 title = stringResource(R.string.lock_control),
