@@ -34,6 +34,7 @@ public final class T4ABackend {
   private static final String PREF_LOCK_VALUE = "lock_value";
   private static final String PREF_AUTO_LOCK = "auto_lock_distance";
   private static final String PREF_AUTO_LOCK_DISTANCE = "auto_lock_distance_level";
+  private static final String PREF_BLE_ADDRESS = "ble_address";
   private static final String PREF_BATTERY_OBSERVED_MIN = "battery_observed_min";
   private static final String PREF_BATTERY_OBSERVED_MAX = "battery_observed_max";
   private static final String PREF_BATTERY_CYCLE_STARTED_AT = "battery_cycle_started_at";
@@ -156,6 +157,7 @@ public final class T4ABackend {
         handler.post(() -> {
           if (found == null || found.bound || candidate != null) return;
           candidate = found;
+          if (!found.address.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, found.address).apply();
           rssi = found.rssi;
           pairing = T4AState.Pairing.READY;
           provisioner.stopDiscovery();
@@ -173,7 +175,7 @@ public final class T4ABackend {
     pairing = T4AState.Pairing.PAIRING;
     emit("Pareando…");
     provisioner.pair(homeId, candidate, new T4AContracts.Callback<T4AContracts.Device>() {
-      @Override public void onSuccess(T4AContracts.Device result) { handler.post(() -> attach(result)); }
+      @Override public void onSuccess(T4AContracts.Device result) { handler.post(() -> attach(withRememberedBleAddress(result))); }
       @Override public void onError(String code, String error) {
         handler.post(() -> {
           pairing = T4AState.Pairing.READY;
@@ -275,7 +277,7 @@ public final class T4ABackend {
           homeId = home.id;
           homeName = home.name;
           if (home.devices.isEmpty()) clearDevice("Nenhum T4A pareado");
-          else attach(home.devices.get(0));
+          else attach(withRememberedBleAddress(home.devices.get(0)));
         });
       }
       @Override public void onError(String code, String error) {
@@ -286,7 +288,9 @@ public final class T4ABackend {
 
   private void attach(T4AContracts.Device value) {
     transport.detach();
+    value = withRememberedBleAddress(value);
     device = value;
+    if (!value.mac.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, value.mac).apply();
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
     schema.clear();
@@ -301,12 +305,13 @@ public final class T4ABackend {
       mergeDps(value.dps, false);
     }
     applyRememberedLock();
-    transport.attach(value, new T4AContracts.DeviceListener() {
+    final T4AContracts.Device attached = value;
+    transport.attach(attached, new T4AContracts.DeviceListener() {
       @Override public void onDpUpdate(String id, Map<String, Object> update) {
         handler.post(() -> {
           raw("RX " + JSON.toJSONString(update));
           mergeDps(update, true);
-          connected = transport.isConnected(value.id);
+          connected = transport.isConnected(attached.id);
           emitState();
         });
       }
@@ -331,12 +336,28 @@ public final class T4ABackend {
     if (device == null) return;
     T4AContracts.Device latest = transport.cachedDevice(device.id);
     if (latest != null) {
-      device = latest;
+      device = withRememberedBleAddress(latest);
       mergeDps(latest.dps, false);
     }
     connected = transport.isConnected(device.id);
     message = connected ? "T4A conectado" : "T4A pareado · aguardando aproximação";
     emitState();
+  }
+
+  private T4AContracts.Device withRememberedBleAddress(T4AContracts.Device value) {
+    if (value == null) return null;
+    String address = value.mac;
+    if (address.isEmpty() && device != null && device.id.equals(value.id) && !device.mac.isEmpty()) address = device.mac;
+    if (address.isEmpty() && candidate != null && !candidate.address.isEmpty()) address = candidate.address;
+    if (address.isEmpty()) address = preferences.getString(PREF_BLE_ADDRESS, "");
+    if (!address.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, address).apply();
+    if (address.equals(value.mac)) return value;
+    return new T4AContracts.Device(value.id, value.name, address, value.uuid, value.dps, value.schema);
+  }
+
+  private String rssiAddress() {
+    if (device != null && !device.mac.isEmpty()) return device.mac;
+    return preferences.getString(PREF_BLE_ADDRESS, "");
   }
 
   private void clearDevice(String reason) {
@@ -345,6 +366,7 @@ public final class T4ABackend {
     candidate = null;
     connected = false;
     rssi = 0;
+    preferences.edit().remove(PREF_BLE_ADDRESS).apply();
     clearPendingLock();
     clearPendingBatteryRecharge();
     dps.clear();
@@ -542,11 +564,17 @@ public final class T4ABackend {
   }
 
   private void pollRssi() {
-    if (device == null || device.mac.isEmpty()) return;
+    if (device == null) return;
+    String address = rssiAddress();
+    if (address.isEmpty()) {
+      rssi = 0;
+      emitState();
+      return;
+    }
     long requestStarted = System.currentTimeMillis();
     lastRssiRead = requestStarted;
     try {
-      transport.readRssi(device.mac, (success, value) -> handler.post(() -> {
+      transport.readRssi(address, (success, value) -> handler.post(() -> {
         lastRssiResponse = System.currentTimeMillis();
         if (success && value != 0) {
           rssi = value;
