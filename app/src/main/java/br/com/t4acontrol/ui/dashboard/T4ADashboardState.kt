@@ -11,6 +11,8 @@ data class T4ADashboardState(
     val deviceName: String = "--",
     val rssiDbm: Int? = null,
     val batteryPercent: Int = 0,
+    val batteryObservedMin: Int? = null,
+    val batteryObservedMax: Int? = null,
     val speed: Int = 0,
     val speedUnit: SpeedUnit = SpeedUnit.KMH,
     val ridingMode: RidingMode = RidingMode.UNKNOWN,
