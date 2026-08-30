@@ -124,19 +124,19 @@ class MqttSettingsActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        getString(R.string.mqtt_title),
+                        color = foreground,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
                     Box(
                         modifier = Modifier.size(40.dp).clickable { finish() },
                         contentAlignment = Alignment.Center,
                     ) {
                         MdiIcon("cmd-arrow-left", BLUE, 28.dp, Modifier.size(32.dp))
                     }
-                    Text(
-                        getString(R.string.mqtt_title),
-                        color = foreground,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
                 }
 
                 Text(getString(R.string.mqtt_description), color = muted, fontSize = 13.sp)
