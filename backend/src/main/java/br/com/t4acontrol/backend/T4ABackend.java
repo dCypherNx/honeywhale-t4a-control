@@ -212,6 +212,7 @@ public final class T4ABackend {
 
   public void setAutoLockEnabled(boolean enabled) {
     preferences.edit().putBoolean(PREF_AUTO_LOCK, enabled).apply();
+    raw("[AUTO_LOCK] enabled=" + enabled + " distance=" + preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM));
     event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
     emitState();
     if (enabled) evaluateAutoLock();
@@ -220,6 +221,8 @@ public final class T4ABackend {
   public void setAutoLockDistance(String distance) {
     if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
     preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
+    int lockRssi = autoLockThreshold(distance);
+    raw("[AUTO_LOCK] distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + (lockRssi + 8) + " dBm");
     emitState();
     evaluateAutoLock();
   }
@@ -567,7 +570,9 @@ public final class T4ABackend {
     if (device == null) return;
     String address = rssiAddress();
     if (address.isEmpty()) {
+      int previousRssi = rssi;
       rssi = 0;
+      if (previousRssi != 0 && preferences.getBoolean(PREF_AUTO_LOCK, false)) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
       emitState();
       return;
     }
@@ -576,11 +581,14 @@ public final class T4ABackend {
     try {
       transport.readRssi(address, (success, value) -> handler.post(() -> {
         lastRssiResponse = System.currentTimeMillis();
+        int previousRssi = rssi;
         if (success && value != 0) {
           rssi = value;
           rssiFailures = 0;
+          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != value) logAutoLockRssi(previousRssi, value);
         } else {
           rssi = 0;
+          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
           if (++rssiFailures >= 3) recoverRssi();
         }
         evaluateAutoLock();
@@ -590,7 +598,9 @@ public final class T4ABackend {
         if (running && connected && lastRssiResponse < requestStarted) recoverRssi();
       }, RSSI_RESPONSE_TIMEOUT_MS);
     } catch (RuntimeException ignored) {
+      int previousRssi = rssi;
       rssi = 0;
+      if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
       recoverRssi();
       emitState();
     }
@@ -602,16 +612,30 @@ public final class T4ABackend {
     connectPairedDevice();
   }
 
+  private int autoLockThreshold(String distance) {
+    return DISTANCE_SHORT.equals(distance) ? -40 : DISTANCE_LONG.equals(distance) ? -80 : -60;
+  }
+
+  private void logAutoLockRssi(int previousRssi, int currentRssi) {
+    String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
+    int lockRssi = autoLockThreshold(distance);
+    int unlockRssi = lockRssi + 8;
+    String lockState = Boolean.TRUE.equals(dps.get(DP_LOCK)) ? "unlocked" : "locked";
+    raw("[AUTO_LOCK] RSSI " + (previousRssi == 0 ? "initial" : previousRssi) + " -> " + currentRssi + " dBm distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + unlockRssi + " state=" + lockState);
+  }
+
   private void evaluateAutoLock() {
     if (!preferences.getBoolean(PREF_AUTO_LOCK, false) || !connected || rssi == 0 || pendingLockValue != null) return;
     boolean unlocked = Boolean.TRUE.equals(dps.get(DP_LOCK));
     String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
-    int lockRssi = DISTANCE_SHORT.equals(distance) ? -40 : DISTANCE_LONG.equals(distance) ? -80 : -60;
+    int lockRssi = autoLockThreshold(distance);
     int unlockRssi = lockRssi + 8;
     if (rssi <= lockRssi && unlocked) {
+      raw("[AUTO_LOCK] action=lock rssi=" + rssi + " threshold=" + lockRssi + " dBm");
       event("Sinal distante (" + rssi + " dBm): bloqueando");
       publish(DP_LOCK, false);
     } else if (rssi >= unlockRssi && !unlocked) {
+      raw("[AUTO_LOCK] action=unlock rssi=" + rssi + " threshold=" + unlockRssi + " dBm");
       event("Sinal próximo (" + rssi + " dBm): desbloqueando");
       publish(DP_LOCK, true);
     }
