@@ -35,14 +35,14 @@
     <!-- Electric mobility symbol on the left -->
     <path
         android:fillColor="#FF7FE9F4"
-        android:pathData="M39,68 L31,79 L37,79 L34,89 L46,75 L40,75 Z" />
+        android:pathData="M38,66 L31,76 L36.5,76 L34,85 L45,72.5 L39.5,72.5 Z" />
 
-    <!-- Bluetooth connectivity symbol on the right, kept inside the adaptive safe area -->
+    <!-- Clean Bluetooth rune on the right -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M69,68 L69,88 L78,80 L63,72 M69,68 L78,76 L63,84"
+        android:pathData="M69,65 L69,85 M69,65 L77,73 L61,82 M69,85 L77,77 L61,68"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="3.5" />
+        android:strokeWidth="3" />
 </vector>
