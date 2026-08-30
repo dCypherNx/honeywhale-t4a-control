@@ -21,6 +21,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +45,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
@@ -413,36 +420,48 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val header = if (isDarkMode()) ComposeColor(0xFF202836) else ComposeColor(0xFFF8FAFD)
         val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
         var expanded by remember(key) { mutableStateOf(preferences().getBoolean("section_$key", true)) }
-        Column(
-            Modifier.fillMaxWidth()
-                .shadow(2.dp, RoundedCornerShape(16.dp))
-                .background(surface, RoundedCornerShape(16.dp))
-                .border(1.dp, outline, RoundedCornerShape(16.dp))
-                .padding(10.dp),
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = surface),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .background(header, RoundedCornerShape(10.dp))
-                    .clickable {
-                        expanded = !expanded
-                        preferences().edit().putBoolean("section_$key", expanded).apply()
-                    }
-                    .padding(start = 7.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title, color = ComposeColor(0xFF075EF0), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
-                MdiIcon(
-                    name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
-                    color = ComposeColor(0xFF075EF0),
-                    iconSize = 18.dp,
-                    modifier = Modifier.size(30.dp),
-                )
-            }
-            if (expanded) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) { content() }
+            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(header, RoundedCornerShape(10.dp))
+                        .border(1.dp, outline, RoundedCornerShape(10.dp))
+                        .clickable {
+                            expanded = !expanded
+                            preferences().edit().putBoolean("section_$key", expanded).apply()
+                        }
+                        .padding(start = 7.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        title,
+                        color = ComposeColor(0xFF075EF0),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f).padding(vertical = 9.dp),
+                    )
+                    MdiIcon(
+                        name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
+                        color = ComposeColor(0xFF075EF0),
+                        iconSize = 18.dp,
+                        modifier = Modifier.size(30.dp),
+                    )
+                }
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) { content() }
+                }
             }
         }
     }
