@@ -301,8 +301,8 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
     val iconSize = when (mode) {
         RidingMode.WALK -> 30.dp
         RidingMode.ECO -> 30.dp
-        RidingMode.RACE -> 27.dp
-        RidingMode.SPORT -> 26.dp
+        RidingMode.RACE -> 29.dp
+        RidingMode.SPORT -> 31.dp
         RidingMode.UNKNOWN -> 28.dp
     }
     Column(
@@ -310,30 +310,29 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
             .background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
             .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 3.dp, vertical = 2.dp),
+            .padding(horizontal = 3.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp))
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                stringResource(modeLabelRes(mode)),
-                color = if (active) color else color.copy(alpha = 0.68f),
-                fontSize = T4ADashboardTokens.ModeFontSize,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
-                color = if (active) color else muted,
-                fontSize = T4ADashboardTokens.ModeSpeedFontSize,
-                lineHeight = 11.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp))
         }
+        Text(
+            stringResource(modeLabelRes(mode)),
+            color = if (active) color else color.copy(alpha = 0.68f),
+            fontSize = T4ADashboardTokens.ModeFontSize,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
+            color = if (active) color else muted,
+            fontSize = T4ADashboardTokens.ModeSpeedFontSize,
+            lineHeight = 11.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
