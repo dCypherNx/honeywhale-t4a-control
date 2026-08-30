@@ -140,14 +140,7 @@ private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Co
 private fun LockStatusIndicator(state: T4ADashboardState) {
     val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
     if (state.autoLockOn) {
-        AutoLockIcon(
-            locked = state.locked,
-            lockColor = lockColor,
-            bluetoothColor = T4ADashboardTokens.Blue,
-            lockSize = 27.dp,
-            modifier = Modifier.size(33.dp),
-            bluetoothSize = 10.5.dp,
-        )
+        AutoLockIcon(state.locked, lockColor, T4ADashboardTokens.Blue, 27.dp, Modifier.size(33.dp), 10.5.dp)
     } else {
         StableLockIcon(state.locked, lockColor, Modifier.size(33.dp), 27.dp)
     }
@@ -157,15 +150,15 @@ private fun LockStatusIndicator(state: T4ADashboardState) {
 private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = Modifier, lockSize: Dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(lockSize)) {
-            val bodyLeft = size.width * 0.20f
-            val bodyTop = size.height * 0.46f
-            val bodyWidth = size.width * 0.60f
-            val bodyHeight = size.height * 0.40f
-            val strokeWidth = size.width * 0.11f
-            val shackleLeft = size.width * 0.31f
-            val shackleTop = size.height * 0.10f
-            val shackleWidth = size.width * 0.38f
+            val bodyLeft = size.width * 0.18f
+            val bodyTop = size.height * 0.47f
+            val bodyWidth = size.width * 0.64f
+            val bodyHeight = size.height * 0.39f
+            val strokeWidth = size.width * 0.105f
+            val shackleWidth = size.width * 0.40f
             val shackleHeight = size.height * 0.50f
+            val shackleTop = size.height * 0.10f
+            val connectedX = bodyLeft + bodyWidth * 0.72f
 
             drawRoundRect(
                 color = color,
@@ -173,7 +166,9 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
                 size = Size(bodyWidth, bodyHeight),
                 cornerRadius = CornerRadius(size.width * 0.08f, size.width * 0.08f),
             )
+
             if (locked) {
+                val shackleLeft = (size.width - shackleWidth) / 2f
                 drawArc(
                     color = color,
                     startAngle = 180f,
@@ -183,39 +178,39 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
                     size = Size(shackleWidth, shackleHeight),
                     style = Stroke(strokeWidth, cap = StrokeCap.Round),
                 )
+                drawLine(color, Offset(shackleLeft, shackleTop + shackleHeight / 2f), Offset(shackleLeft, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(shackleLeft + shackleWidth, shackleTop + shackleHeight / 2f), Offset(shackleLeft + shackleWidth, bodyTop), strokeWidth, StrokeCap.Round)
             } else {
+                // Open state: the right leg stays anchored to exactly the same body area;
+                // the shackle is the closed geometry rotated 180° around that anchor.
+                val radiusX = shackleWidth / 2f
+                val radiusY = shackleHeight / 2f
+                val centerX = connectedX - radiusX
+                val centerY = bodyTop - radiusY
+                val arcLeft = centerX - radiusX
+                val arcTop = centerY - radiusY
                 drawArc(
                     color = color,
-                    startAngle = 175f,
-                    sweepAngle = 235f,
+                    startAngle = 0f,
+                    sweepAngle = 180f,
                     useCenter = false,
-                    topLeft = Offset(shackleLeft + size.width * 0.06f, shackleTop),
+                    topLeft = Offset(arcLeft, arcTop),
                     size = Size(shackleWidth, shackleHeight),
                     style = Stroke(strokeWidth, cap = StrokeCap.Round),
                 )
+                drawLine(color, Offset(connectedX, centerY), Offset(connectedX, bodyTop), strokeWidth, StrokeCap.Round)
             }
         }
     }
 }
 
 @Composable
-private fun AutoLockIcon(
-    locked: Boolean,
-    lockColor: Color,
-    bluetoothColor: Color,
-    lockSize: Dp,
-    modifier: Modifier = Modifier,
-    bluetoothSize: Dp = 13.dp,
-) {
+private fun AutoLockIcon(locked: Boolean, lockColor: Color, bluetoothColor: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 13.dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         StableLockIcon(locked, lockColor, Modifier.matchParentSize(), lockSize)
         Box(
-            Modifier
-                .align(Alignment.Center)
-                .offset(x = lockSize * 0.16f, y = lockSize * 0.18f)
-                .size(bluetoothSize + 6.dp)
-                .background(Color.White, CircleShape)
-                .border(1.dp, bluetoothColor, CircleShape),
+            Modifier.align(Alignment.Center).offset(x = lockSize * 0.16f, y = lockSize * 0.18f).size(bluetoothSize + 6.dp)
+                .background(Color.White, CircleShape).border(1.dp, bluetoothColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             MdiIcon("cmd-bluetooth", bluetoothColor, bluetoothSize, Modifier.size(bluetoothSize + 2.dp))
@@ -251,12 +246,7 @@ private fun SpeedCard(state: T4ADashboardState, surface: Color, outline: Color, 
             if (state.ridingMode != RidingMode.UNKNOWN) {
                 BoxWithConstraints(Modifier.matchParentSize()) {
                     val centerX = maxWidth * 0.975f - 11.dp
-                    MdiIcon(
-                        modeIcon(state.ridingMode),
-                        modeColor(state.ridingMode),
-                        23.dp,
-                        Modifier.offset(x = centerX - 14.dp, y = 6.dp).size(28.dp),
-                    )
+                    MdiIcon(modeIcon(state.ridingMode), modeColor(state.ridingMode), 23.dp, Modifier.offset(x = centerX - 14.dp, y = 6.dp).size(28.dp))
                 }
             }
             Row(Modifier.align(Alignment.TopCenter).height(130.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -340,11 +330,7 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
     val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
     val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
-    val stateLabel = when {
-        state.autoLockOn -> stringResource(R.string.automatic)
-        state.locked -> stringResource(R.string.state_on)
-        else -> stringResource(R.string.state_off)
-    }
+    val stateLabel = when { state.autoLockOn -> stringResource(R.string.automatic); state.locked -> stringResource(R.string.state_on); else -> stringResource(R.string.state_off) }
     val fill = color.copy(alpha = if (darkMode) 0.19f else 0.07f)
 
     Box(modifier.height(T4ADashboardTokens.ToggleHeight)) {
@@ -352,32 +338,17 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             Modifier.fillMaxWidth().height(T4ADashboardTokens.ToggleHeight).alpha(if (enabled) 1f else 0.55f)
                 .background(fill, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
                 .border(2.dp, color, RoundedCornerShape(T4ADashboardTokens.ToggleRadius))
-                .combinedClickable(
-                    enabled = enabled,
-                    onClick = { if (!state.autoLockOn && state.lockEnabled) actions.setLocked(!state.locked) },
-                    onLongClick = { menuExpanded = true },
-                ).padding(horizontal = 5.dp, vertical = 4.dp),
+                .combinedClickable(enabled = enabled, onClick = { if (!state.autoLockOn && state.lockEnabled) actions.setLocked(!state.locked) }, onLongClick = { menuExpanded = true })
+                .padding(horizontal = 5.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             if (state.autoLockOn) {
-                AutoLockIcon(
-                    locked = state.locked,
-                    lockColor = if (enabled) lockColor else muted,
-                    bluetoothColor = if (enabled) T4ADashboardTokens.Blue else muted,
-                    lockSize = T4ADashboardTokens.SecondRowIconSize,
-                    modifier = Modifier.size(40.dp),
-                    bluetoothSize = 14.dp,
-                )
+                AutoLockIcon(state.locked, if (enabled) lockColor else muted, if (enabled) T4ADashboardTokens.Blue else muted, T4ADashboardTokens.SecondRowIconSize, Modifier.size(40.dp), 14.dp)
             } else {
                 StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), T4ADashboardTokens.SecondRowIconSize)
             }
-            ControlText(
-                title = stringResource(R.string.lock_control),
-                state = stateLabel,
-                color = if (enabled) color else foregroundForInactive(darkMode),
-                bold = true,
-            )
+            ControlText(stringResource(R.string.lock_control), stateLabel, if (enabled) color else foregroundForInactive(darkMode), true)
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.lock), color = T4ADashboardTokens.Red) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(true) }, enabled = state.lockEnabled)
@@ -391,41 +362,17 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
 private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, onClick: () -> Unit) {
     val color = modeColor(mode)
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
-    val iconSize = when (mode) {
-        RidingMode.WALK -> 30.dp
-        RidingMode.ECO -> 30.dp
-        RidingMode.RACE -> 29.dp
-        RidingMode.SPORT -> 31.dp
-        RidingMode.UNKNOWN -> 28.dp
-    }
+    val iconSize = when (mode) { RidingMode.WALK -> 30.dp; RidingMode.ECO -> 30.dp; RidingMode.RACE -> 29.dp; RidingMode.SPORT -> 31.dp; RidingMode.UNKNOWN -> 28.dp }
     Column(
         Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f)
             .background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
             .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 3.dp, vertical = 3.dp),
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp))
-        }
-        Text(
-            stringResource(modeLabelRes(mode)),
-            color = if (active) color else color.copy(alpha = 0.68f),
-            fontSize = T4ADashboardTokens.ModeFontSize,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
-            color = if (active) color else muted,
-            fontSize = T4ADashboardTokens.ModeSpeedFontSize,
-            lineHeight = 11.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp)) }
+        Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold, lineHeight = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = T4ADashboardTokens.ModeSpeedFontSize, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -437,13 +384,7 @@ private fun ToggleTile(title: String, stateLabel: String, icon: String, active: 
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         MdiIcon(icon, if (active) color else muted, iconSize, Modifier.offset(x = iconOffsetX).size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
-        ControlText(
-            title = title,
-            state = stateLabel,
-            color = if (active) color else foregroundForInactive(darkMode),
-            bold = active,
-            fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize,
-        )
+        ControlText(title, stateLabel, if (active) color else foregroundForInactive(darkMode), active, if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize)
     }
 }
 
