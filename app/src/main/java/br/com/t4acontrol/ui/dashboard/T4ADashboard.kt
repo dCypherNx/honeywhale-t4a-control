@@ -59,7 +59,7 @@ object T4ADashboardTokens {
     val ModeRadius: Dp = 12.dp
     val ToggleRadius: Dp = 14.dp
     val ActionRadius: Dp = 12.dp
-    val ModeHeight: Dp = 78.dp
+    val ModeHeight: Dp = 76.dp
     val ToggleHeight: Dp = 76.dp
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
@@ -68,6 +68,7 @@ object T4ADashboardTokens {
     val SpeedUnitFontSize = 24.sp
     val SectionTitleFontSize = 19.sp
     val ModeFontSize = 12.sp
+    val ModeSpeedFontSize = 11.sp
     val ControlFontSize = 10.sp
     val ActionFontSize = 11.sp
     val MetricFontSize = 11.sp
@@ -239,9 +240,9 @@ private fun RidingControls(state: T4ADashboardState, surface: Color, outline: Co
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ToggleTile(twoLine(R.string.light, if (state.lightOn) R.string.state_on else R.string.state_off), "cmd-car-light-dimmed", state.lightOn, T4ADashboardTokens.Orange, state.lightEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setLight(!state.lightOn) }
-            ToggleTile(twoLine(R.string.start_mode, if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
-            ToggleTile(twoLine(R.string.cruise, if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setCruise(!state.cruiseOn) }
+            ToggleTile(stringResource(R.string.light), stringResource(if (state.lightOn) R.string.state_on else R.string.state_off), "cmd-car-light-dimmed", state.lightOn, T4ADashboardTokens.Orange, state.lightEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setLight(!state.lightOn) }
+            ToggleTile(stringResource(R.string.start_mode), stringResource(if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
+            ToggleTile(stringResource(R.string.cruise), stringResource(if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setCruise(!state.cruiseOn) }
             ConsolidatedLockControl(state, surface, muted, darkMode, actions, Modifier.weight(1f))
         }
     }
@@ -253,14 +254,11 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     var menuExpanded by remember { mutableStateOf(false) }
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
     val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
-    val label = twoLine(
-        R.string.lock_control,
-        when {
-            state.autoLockOn -> R.string.automatic
-            state.locked -> R.string.state_active_short
-            else -> R.string.state_inactive_short
-        },
-    )
+    val stateLabel = when {
+        state.autoLockOn -> stringResource(R.string.automatic)
+        state.locked -> stringResource(R.string.state_on)
+        else -> stringResource(R.string.state_off)
+    }
     val fill = color.copy(alpha = if (darkMode) 0.19f else 0.07f)
 
     Box(modifier.height(T4ADashboardTokens.ToggleHeight)) {
@@ -281,14 +279,11 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             } else {
                 MdiIcon(if (state.locked) "cmd-lock" else "cmd-lock-open-variant", if (enabled) color else muted, 28.dp, Modifier.size(40.dp))
             }
-            Text(
-                label,
+            ControlText(
+                title = stringResource(R.string.lock_control),
+                state = stateLabel,
                 color = if (enabled) color else foregroundForInactive(darkMode),
-                fontSize = T4ADashboardTokens.ControlFontSize,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 11.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                bold = true,
             )
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -300,15 +295,27 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
 }
 
 @Composable
-private fun twoLine(@StringRes title: Int, @StringRes state: Int): String = stringResource(R.string.two_line_state, stringResource(title), stringResource(state))
-
-@Composable
 private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, onClick: () -> Unit) {
     val color = modeColor(mode); val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(29.dp))
-        Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold)
-        Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = 9.sp)
+        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(27.dp))
+        Text(
+            stringResource(modeLabelRes(mode)),
+            color = if (active) color else color.copy(alpha = 0.68f),
+            fontSize = T4ADashboardTokens.ModeFontSize,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'),
+            color = if (active) color else muted,
+            fontSize = T4ADashboardTokens.ModeSpeedFontSize,
+            lineHeight = 11.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -316,20 +323,25 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
 private fun modeLabelRes(mode: RidingMode): Int = when (mode) { RidingMode.WALK -> R.string.mode_walk; RidingMode.ECO -> R.string.mode_eco; RidingMode.RACE -> R.string.mode_race; RidingMode.SPORT -> R.string.mode_sport; RidingMode.UNKNOWN -> R.string.unknown }
 
 @Composable
-private fun ToggleTile(label: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, onClick: () -> Unit) {
+private fun ToggleTile(title: String, stateLabel: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, onClick: () -> Unit) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         MdiIcon(icon, if (active) color else muted, iconSize, Modifier.size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
-        Text(
-            label,
+        ControlText(
+            title = title,
+            state = stateLabel,
             color = if (active) color else foregroundForInactive(darkMode),
+            bold = active,
             fontSize = if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-            lineHeight = 11.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+@Composable
+private fun ControlText(title: String, state: String, color: Color, bold: Boolean, fontSize: androidx.compose.ui.unit.TextUnit = T4ADashboardTokens.ControlFontSize) {
+    val weight = if (bold) FontWeight.Bold else FontWeight.Normal
+    Text(title, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Text(state, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
