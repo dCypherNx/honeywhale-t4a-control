@@ -37,12 +37,12 @@
         android:fillColor="#FF7FE9F4"
         android:pathData="M38,65 L31,75 L36.5,75 L34,84 L45,71.5 L39.5,71.5 Z" />
 
-    <!-- Bluetooth connectivity mark, intentionally inset from circular/adaptive mask edges -->
+    <!-- Complete Bluetooth rune, compact and fully inside the safe area -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M68,63 L68,79 M68,63 L74,69 L62,76 M68,79 L74,73 L62,66"
+        android:pathData="M68,61 L68,79 M68,61 L75,67 L68,72 M68,72 L75,77 L68,79 M68,72 L61,66 M68,72 L61,78"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="2.7" />
+        android:strokeWidth="2.8" />
 </vector>
