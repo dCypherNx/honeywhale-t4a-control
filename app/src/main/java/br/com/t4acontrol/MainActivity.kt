@@ -45,6 +45,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,8 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,7 +68,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
@@ -96,6 +98,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         private const val PREF_TOTAL_ODOMETER = "show_total_odometer"
         private const val PREF_THEME = "theme_mode"
         private val BATTERY_RECHARGE_GAP_HOURS = intArrayOf(1, 2, 4, 8)
+        private val T4A_BLUE = ComposeColor(0xFF075EF0)
+        private val T4A_RED = ComposeColor(0xFFE91925)
     }
 
     private var session: T4ASession = T4ASession.EMPTY
@@ -196,7 +200,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val background = if (darkMode) ComposeColor(0xFF0D1117) else ComposeColor(0xFFF7F8FB)
         val foreground = if (darkMode) ComposeColor(0xFFF1F5F9) else ComposeColor(0xFF101820)
         val current = state
-        MaterialTheme {
+        MaterialTheme(colorScheme = t4aColorScheme(darkMode)) {
             BackHandler(enabled = settings) { settings = false }
             Box(
                 Modifier.fillMaxSize()
@@ -253,13 +257,13 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             Box(
                 modifier = Modifier.size(52.dp)
                     .background(surface, RoundedCornerShape(99.dp))
-                    .border(1.dp, ComposeColor(0xFF075EF0), RoundedCornerShape(99.dp))
+                    .border(1.dp, T4A_BLUE, RoundedCornerShape(99.dp))
                     .clickable { settings = !settings },
                 contentAlignment = Alignment.Center,
             ) {
                 MdiIcon(
                     name = if (settings) "cmd-arrow-left" else "cmd-cog",
-                    color = ComposeColor(0xFF075EF0),
+                    color = T4A_BLUE,
                     iconSize = 24.dp,
                     modifier = Modifier.size(32.dp),
                 )
@@ -372,7 +376,15 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
 
         SettingsSection(getString(R.string.pairing_section), foreground, "pairing") {
-            Button(onClick = { confirmUnpair() }) { Text(getString(R.string.remove_pairing)) }
+            Button(
+                onClick = { confirmUnpair() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = T4A_RED,
+                    contentColor = ComposeColor.White,
+                ),
+            ) {
+                Text(getString(R.string.remove_pairing))
+            }
         }
     }
 
@@ -390,9 +402,9 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     onClick = { onSelected(index) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = labels.size),
                     colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = ComposeColor(0xFF075EF0),
+                        activeContainerColor = T4A_BLUE,
                         activeContentColor = ComposeColor.White,
-                        activeBorderColor = ComposeColor(0xFF075EF0),
+                        activeBorderColor = T4A_BLUE,
                         inactiveContainerColor = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White,
                         inactiveContentColor = if (isDarkMode()) ComposeColor(0xFFF1F5F9) else ComposeColor(0xFF101820),
                         inactiveBorderColor = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0),
@@ -438,16 +450,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                         .padding(start = 7.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        title,
-                        color = ComposeColor(0xFF075EF0),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(vertical = 9.dp),
-                    )
+                    Text(title, color = T4A_BLUE, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
                     MdiIcon(
                         name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
-                        color = ComposeColor(0xFF075EF0),
+                        color = T4A_BLUE,
                         iconSize = 18.dp,
                         modifier = Modifier.size(30.dp),
                     )
@@ -490,15 +496,14 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
         Column(
             Modifier.fillMaxWidth()
-                .shadow(2.dp, RoundedCornerShape(16.dp))
                 .background(surface, RoundedCornerShape(16.dp))
                 .border(1.dp, outline, RoundedCornerShape(16.dp))
                 .padding(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MdiIcon(name = "cmd-format-list-bulleted", color = ComposeColor(0xFF075EF0), iconSize = 20.dp, modifier = Modifier.size(24.dp))
+                MdiIcon(name = "cmd-format-list-bulleted", color = T4A_BLUE, iconSize = 20.dp, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.size(8.dp))
-                Text(getString(if (settings) R.string.raw_log else R.string.events), color = ComposeColor(0xFF075EF0), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(getString(if (settings) R.string.raw_log else R.string.events), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             if (settings) {
                 val vertical = rememberScrollState()
@@ -649,6 +654,41 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         themeMode = value
         preferences().edit().putString(PREF_THEME, value).apply()
         configurationTick++
+    }
+
+    @Composable
+    private fun t4aColorScheme(darkMode: Boolean) = if (darkMode) {
+        darkColorScheme(
+            primary = T4A_BLUE,
+            onPrimary = ComposeColor.White,
+            secondary = T4A_BLUE,
+            tertiary = T4A_BLUE,
+            background = ComposeColor(0xFF0D1117),
+            onBackground = ComposeColor(0xFFF1F5F9),
+            surface = ComposeColor(0xFF171D26),
+            onSurface = ComposeColor(0xFFF1F5F9),
+            surfaceVariant = ComposeColor(0xFF202836),
+            onSurfaceVariant = ComposeColor(0xFFAAB4C3),
+            outline = ComposeColor(0xFF354052),
+            error = T4A_RED,
+            onError = ComposeColor.White,
+        )
+    } else {
+        lightColorScheme(
+            primary = T4A_BLUE,
+            onPrimary = ComposeColor.White,
+            secondary = T4A_BLUE,
+            tertiary = T4A_BLUE,
+            background = ComposeColor(0xFFF7F8FB),
+            onBackground = ComposeColor(0xFF101820),
+            surface = ComposeColor.White,
+            onSurface = ComposeColor(0xFF101820),
+            surfaceVariant = ComposeColor(0xFFF8FAFD),
+            onSurfaceVariant = ComposeColor(0xFF667085),
+            outline = ComposeColor(0xFFE4E8F0),
+            error = T4A_RED,
+            onError = ComposeColor.White,
+        )
     }
 
     private fun isDarkMode(): Boolean = when (themeMode) {
