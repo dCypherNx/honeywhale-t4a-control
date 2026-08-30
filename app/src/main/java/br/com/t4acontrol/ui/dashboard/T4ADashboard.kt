@@ -64,7 +64,7 @@ object T4ADashboardTokens {
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
     val BatteryHeight: Dp = 16.dp
-    val SpeedFontSize = 96.sp
+    val SpeedFontSize = 104.sp
     val SpeedUnitFontSize = 24.sp
     val SectionTitleFontSize = 19.sp
     val ModeFontSize = 12.sp
@@ -79,6 +79,7 @@ object T4ADashboardTokens {
     val Cyan = Color(0xFF08A6B7)
     val Orange = Color(0xFFFF8A00)
     val Amber = Color(0xFFFFB300)
+    val DarkScaleBlue = Color(0xFF8AB4FF)
     val LightBackground = Color(0xFFF7F8FB)
     val DarkBackground = Color(0xFF0D1117)
     val LightSurface = Color.White
@@ -172,18 +173,32 @@ private fun BatteryIndicator(percent: Int, foreground: Color, muted: Color) {
 
 @Composable
 private fun SpeedCard(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, darkMode: Boolean) {
+    val speedTextColor = if (darkMode) Color.White else foreground
+    val scaleTextColor = if (darkMode) T4ADashboardTokens.DarkScaleBlue else T4ADashboardTokens.Blue
     DashboardCard(surface, outline) {
         Box(Modifier.fillMaxWidth().height(T4ADashboardTokens.SpeedGaugeHeight)) {
             SpeedSegments(state.speed, state.ridingMode, darkMode, Modifier.matchParentSize())
-            if (state.ridingMode != RidingMode.UNKNOWN) MdiIcon(modeIcon(state.ridingMode), modeColor(state.ridingMode), 23.dp, Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 8.dp).size(28.dp))
-            Row(Modifier.align(Alignment.TopCenter).height(126.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.speed_value, state.speed), color = foreground, fontSize = T4ADashboardTokens.SpeedFontSize, fontWeight = FontWeight.Bold)
-                Text(stringResource(if (state.speedUnit == SpeedUnit.MPH) R.string.metric_mph else R.string.metric_kmh), color = foreground, fontSize = T4ADashboardTokens.SpeedUnitFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, top = 32.dp))
+            if (state.ridingMode != RidingMode.UNKNOWN) {
+                BoxWithConstraints(Modifier.matchParentSize()) {
+                    val centerX = maxWidth * 0.95f
+                    MdiIcon(
+                        modeIcon(state.ridingMode),
+                        modeColor(state.ridingMode),
+                        23.dp,
+                        Modifier.offset(x = centerX - 14.dp, y = 6.dp).size(28.dp),
+                    )
+                }
+            }
+            Row(Modifier.align(Alignment.TopCenter).height(130.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.speed_value, state.speed), color = speedTextColor, fontSize = T4ADashboardTokens.SpeedFontSize, fontWeight = FontWeight.Bold)
+                Text(stringResource(if (state.speedUnit == SpeedUnit.MPH) R.string.metric_mph else R.string.metric_kmh), color = speedTextColor, fontSize = T4ADashboardTokens.SpeedUnitFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, top = 34.dp))
             }
             BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(20.dp)) {
                 (5..45 step 5).forEach { value ->
                     val centerX = maxWidth * (value / 50f)
-                    Box(Modifier.offset(x = centerX - 12.dp).width(24.dp), contentAlignment = Alignment.Center) { Text(value.toString(), color = T4ADashboardTokens.Blue, fontSize = 10.sp) }
+                    Box(Modifier.offset(x = centerX - 12.dp).width(24.dp), contentAlignment = Alignment.Center) {
+                        Text(value.toString(), color = scaleTextColor, fontSize = 11.sp, fontWeight = if (darkMode) FontWeight.Medium else FontWeight.Normal)
+                    }
                 }
             }
         }
