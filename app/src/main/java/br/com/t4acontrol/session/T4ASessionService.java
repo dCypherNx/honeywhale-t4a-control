@@ -44,6 +44,7 @@ public final class T4ASessionService extends Service
   private T4ABackend backend;
   private MqttTelemetryCoordinator mqttTelemetry;
   private AndroidLocationProvider locationProvider;
+  private AndroidBleRssiMonitor androidBleRssiMonitor;
   private ConnectivityManager connectivityManager;
   private ConnectivityManager.NetworkCallback networkCallback;
   private T4AState lastState;
@@ -60,6 +61,17 @@ public final class T4ASessionService extends Service
         notification("Sessão T4A iniciando…"),
         foregroundServiceTypes());
     startNetworkDiagnostics();
+
+    androidBleRssiMonitor =
+        new AndroidBleRssiMonitor(
+            this,
+            (mac, rssi, status) -> {
+              if (rssi != null) {
+                rawTagged("BT", "RSSI " + rssi + " dBm mac=" + mac + " source=android_scan");
+              } else {
+                rawTagged("BT", "RSSI unavailable mac=" + mac + " source=android_scan status=" + status);
+              }
+            });
 
     T4AApplication application = (T4AApplication) getApplication();
     mqttTelemetry = application.createMqttTelemetryCoordinator(this);
@@ -124,6 +136,10 @@ public final class T4ASessionService extends Service
   public void onDestroy() {
     rawTagged("ANDROID", "DESTROY instance=" + instanceId);
     stopNetworkDiagnostics();
+    if (androidBleRssiMonitor != null) {
+      androidBleRssiMonitor.close();
+      androidBleRssiMonitor = null;
+    }
     if (locationProvider != null) {
       locationProvider.close();
       locationProvider = null;
@@ -145,7 +161,10 @@ public final class T4ASessionService extends Service
     T4AState previous = lastState;
     lastState = state;
     if (previous == null || previous.connected != state.connected) {
-      rawTagged("BT", state.connected ? "CONNECTED" : "DISCONNECTED");
+      rawTagged("SDK", state.connected ? "CONNECTED" : "DISCONNECTED");
+    }
+    if (androidBleRssiMonitor != null) {
+      androidBleRssiMonitor.setTarget(state.mac, state.connected);
     }
     if (mqttTelemetry != null) mqttTelemetry.onState(state);
     if (locationProvider != null) {
@@ -166,7 +185,16 @@ public final class T4ASessionService extends Service
 
   @Override
   public void onRawLog(String entry) {
-    rawTagged("T4A", entry);
+    if (entry == null || entry.isBlank()) return;
+    String value = entry;
+    if (value.startsWith("[BT] RSSI ")) {
+      value = "[SDK]" + value.substring(4);
+    }
+    if (value.startsWith("[")) {
+      forwardRaw(value);
+    } else {
+      rawTagged("T4A", value);
+    }
   }
 
   @Override
@@ -180,7 +208,10 @@ public final class T4ASessionService extends Service
   }
 
   private void rawTagged(String source, String message) {
-    String value = "[" + source + "] " + message;
+    forwardRaw("[" + source + "] " + message);
+  }
+
+  private void forwardRaw(String value) {
     debug("RAW " + value);
     for (T4ASession.Listener listener : listeners) listener.onRawLog(value);
   }

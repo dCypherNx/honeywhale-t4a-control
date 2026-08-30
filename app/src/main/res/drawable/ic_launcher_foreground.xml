@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Segmented speedometer arc -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M24,58 C24,41.4 37.4,28 54,28 C70.6,28 84,41.4 84,58"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+
+    <!-- Segment gaps preserve the dashboard identity -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M31,39 L36,44 M47,29 L48,37 M61,29 L60,37 M77,39 L72,44"
+        android:strokeColor="#FF075EF0"
+        android:strokeLineCap="round"
+        android:strokeWidth="4" />
+
+    <!-- Cyan speedometer needle and hub -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M54,58 L70,42"
+        android:strokeColor="#FF7FE9F4"
+        android:strokeLineCap="round"
+        android:strokeWidth="5" />
+    <path
+        android:fillColor="#FF7FE9F4"
+        android:pathData="M54,52 C57.3,52 60,54.7 60,58 C60,61.3 57.3,64 54,64 C50.7,64 48,61.3 48,58 C48,54.7 50.7,52 54,52 Z" />
+
+    <!-- Clean, proportionally balanced Bluetooth mark -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M36,63 L36,81 M36,63 L44,70 L36,75 M36,75 L44,82 L36,87 M36,75 L29,68 M36,75 L29,82"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.4" />
+
+    <!-- Balanced cyan lightning mark -->
+    <path
+        android:fillColor="#FF7FE9F4"
+        android:pathData="M72,62 L64,75 L70,75 L67,86 L79,71 L73,71 Z" />
+</vector>

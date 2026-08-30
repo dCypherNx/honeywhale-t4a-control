@@ -2,50 +2,71 @@
 <resources>
     <string name="app_name">T4A Control</string>
     <string name="checking_account">Verificando conta…</string>
+    <string name="session_initializing">Inicializando sessão T4A…</string>
+    <string name="authentication">Autenticação</string>
     <string name="email_hint">E-mail</string>
     <string name="password_hint">Senha</string>
     <string name="login">Entrar</string>
     <string name="events">Eventos</string>
     <string name="raw_log">Log raw</string>
+    <string name="raw_filter_all">Todos</string>
+    <string name="raw_filter_rx" translatable="false">RX</string>
+    <string name="raw_filter_tx" translatable="false">TX</string>
+    <string name="raw_filter_initial" translatable="false">INITIAL</string>
+    <string name="raw_filter_battery" translatable="false">BATTERY</string>
+    <string name="raw_filter_other">Outros</string>
     <string name="copy">Copiar</string>
+    <string name="save">Salvar</string>
     <string name="raw_log_copied">Log copiado para a área de transferência</string>
+    <string name="raw_log_saved">Log salvo em Downloads/T4A: %1$s</string>
+    <string name="raw_log_save_failed">Não foi possível salvar o log raw.</string>
     <string name="account">Conta: %1$s</string>
     <string name="account_unauthenticated">Conta não autenticada</string>
     <string name="connected">Conectado</string>
     <string name="disconnected">Desconectado</string>
+    <string name="connection_label">Conexão</string>
+    <string name="device_label">Dispositivo</string>
+    <string name="mac_label" translatable="false">MAC</string>
+    <string name="rssi_label" translatable="false">RSSI</string>
     <string name="device">Dispositivo: %1$s</string>
     <string name="mac">MAC: %1$s</string>
     <string name="signal">Sinal\n%1$s</string>
     <string name="unavailable">indisponível</string>
-    <string name="dbm">%1$d dBm</string>
+    <string name="dbm" translatable="false">%1$d dBm</string>
     <string name="percent">%1$d%%</string>
     <string name="speed_value">%1$d</string>
-    <string name="metric_kmh">km/h</string>
-    <string name="metric_mph">mph</string>
+    <string name="metric_kmh" translatable="false">km/h</string>
+    <string name="metric_mph" translatable="false">mph</string>
     <string name="riding">PILOTAGEM</string>
-    <string name="mode_walk">WALK</string>
-    <string name="mode_eco">ECO</string>
-    <string name="mode_race">RACE</string>
-    <string name="mode_sport">SPORT</string>
+    <string name="mode_walk" translatable="false">WALK</string>
+    <string name="mode_eco" translatable="false">ECO</string>
+    <string name="mode_race" translatable="false">RACE</string>
+    <string name="mode_sport" translatable="false">SPORT</string>
     <string name="speed_limit">%1$s\n%2$d km/h</string>
     <string name="light">Farol</string>
     <string name="start_mode">Partida</string>
     <string name="cruise">Cruzeiro</string>
+    <string name="lock_control">Bloqueio</string>
     <string name="two_line_state">%1$s\n%2$s</string>
     <string name="state_on">Ligado</string>
     <string name="state_off">Desligado</string>
     <string name="state_zero">Eletrônica</string>
     <string name="state_kick">Assistida</string>
+    <string name="state_active_short">Ativo</string>
+    <string name="state_inactive_short">Inativo</string>
     <string name="unlock">Desbloquear</string>
     <string name="lock">Bloquear</string>
+    <string name="locked">Bloqueado</string>
+    <string name="unlocked">Desbloqueado</string>
+    <string name="automatic">Automático</string>
     <string name="automatic_lock">Trava automática</string>
-    <string name="auto_lock_distance">Distância para bloqueio por Bluetooth</string>
-    <string name="distance_short">Curta</string>
-    <string name="distance_medium">Média</string>
-    <string name="distance_long">Longa</string>
+    <string name="auto_lock_distance">Distância para bloqueio por Bluetooth · fora de alcance ≤ -90 dBm</string>
+    <string name="distance_short">Curta\n≥ -40 dBm</string>
+    <string name="distance_medium">Média\n-60 a -41 dBm</string>
+    <string name="distance_long">Longa\n-89 a -61 dBm</string>
     <string name="distance_short_range">%1$s\n≥ -40 dBm</string>
-    <string name="distance_medium_range">%1$s\n-60 a -40 dBm</string>
-    <string name="distance_long_range">%1$s\n≤ -60 dBm</string>
+    <string name="distance_medium_range">%1$s\n-60 a -41 dBm</string>
+    <string name="distance_long_range">%1$s\n-89 a -61 dBm</string>
     <string name="state_active">Ligada</string>
     <string name="lock_state">Bloqueio: %1$s</string>
     <string name="state_locked">bloqueado</string>
@@ -75,6 +96,7 @@
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Escuro</string>
     <string name="riding_preferences_section">Preferências de pilotagem</string>
+    <string name="unit">Unidade</string>
     <string name="miles">Milhas</string>
     <string name="kilometers">Quilômetros</string>
     <string name="disable">Desativar</string>
@@ -82,7 +104,12 @@
     <string name="zero_start">Partida zero</string>
     <string name="initial_push">Impulso inicial</string>
     <string name="diagnostics_section">Diagnóstico</string>
+    <string name="tuya_pairing_section">Tuya e pareamento</string>
+    <string name="tuya_account_label">Conta</string>
+    <string name="tuya_home_label">Casa</string>
+    <string name="tuya_home_id_label">ID da casa</string>
     <string name="pairing_section">Pareamento</string>
+    <string name="pairing_label">Pareamento</string>
     <string name="remove_pairing">Remover pareamento</string>
     <string name="remove_pairing_question">Remover pareamento?</string>
     <string name="remove_pairing_message">O T4A será liberado para outro aplicativo ou plataforma.</string>
@@ -104,29 +131,31 @@
     <string name="unknown">desconhecido</string>
     <string name="dp_fallback">DP %1$s</string>
     <string name="dp_entry">%1$s (DP %2$s): %3$s\n</string>
+    <string name="bluetooth_permissions_required">Permissões Bluetooth são necessárias para manter a sessão T4A.</string>
+    <string name="session_start_failed">Não foi possível iniciar a sessão T4A.</string>
 
-    <string name="mqtt_title">MQTT</string>
+    <string name="mqtt_title" translatable="false">MQTT</string>
     <string name="mqtt_back">Voltar</string>
     <string name="mqtt_description">Configure o broker usado para envio de telemetria. Esta tela não controla o T4A remotamente.</string>
     <string name="mqtt_enabled">Habilitar MQTT</string>
     <string name="mqtt_status_enabled">Configuração ativa</string>
     <string name="mqtt_status_disabled">Configuração desativada</string>
     <string name="mqtt_status_saved">Configuração salva</string>
-    <string name="mqtt_broker_section">Broker</string>
-    <string name="mqtt_transport">Transporte</string>
-    <string name="mqtt_transport_tcp">TCP</string>
-    <string name="mqtt_transport_tls">TLS</string>
-    <string name="mqtt_transport_ws">WS</string>
-    <string name="mqtt_transport_wss">WSS</string>
-    <string name="mqtt_host">Host</string>
-    <string name="mqtt_host_hint">mqtt.exemplo.local</string>
-    <string name="mqtt_port">Porta</string>
-    <string name="mqtt_port_hint">1883</string>
-    <string name="mqtt_websocket_path">Path WebSocket</string>
-    <string name="mqtt_websocket_path_hint">/mqtt</string>
-    <string name="mqtt_websocket_path_note">Usado somente nos transportes WS/WSS.</string>
-    <string name="mqtt_keep_alive">Keep-alive (segundos)</string>
-    <string name="mqtt_keep_alive_hint">60</string>
+    <string name="mqtt_broker_section" translatable="false">Broker</string>
+    <string name="mqtt_transport" translatable="false">Transport</string>
+    <string name="mqtt_transport_tcp" translatable="false">TCP</string>
+    <string name="mqtt_transport_tls" translatable="false">TLS</string>
+    <string name="mqtt_transport_ws" translatable="false">WS</string>
+    <string name="mqtt_transport_wss" translatable="false">WSS</string>
+    <string name="mqtt_host" translatable="false">Host</string>
+    <string name="mqtt_host_hint" translatable="false">mqtt.example.local</string>
+    <string name="mqtt_port" translatable="false">Port</string>
+    <string name="mqtt_port_hint" translatable="false">1883</string>
+    <string name="mqtt_websocket_path" translatable="false">WebSocket Path</string>
+    <string name="mqtt_websocket_path_hint" translatable="false">/mqtt</string>
+    <string name="mqtt_websocket_path_note">Usado somente com WS/WSS.</string>
+    <string name="mqtt_keep_alive" translatable="false">Keep Alive</string>
+    <string name="mqtt_keep_alive_hint" translatable="false">60</string>
     <string name="mqtt_credentials_section">Autenticação</string>
     <string name="mqtt_username">Usuário</string>
     <string name="mqtt_username_hint">Opcional</string>
@@ -134,21 +163,21 @@
     <string name="mqtt_password_hint">Opcional</string>
     <string name="mqtt_password_secure">A senha é armazenada criptografada pelo Android Keystore.</string>
     <string name="mqtt_identity_section">Identidade e tópico</string>
-    <string name="mqtt_client_id">Client ID</string>
-    <string name="mqtt_client_id_hint">t4a-control</string>
-    <string name="mqtt_base_topic">Tópico-base</string>
-    <string name="mqtt_base_topic_hint">t4a</string>
+    <string name="mqtt_client_id" translatable="false">Client ID</string>
+    <string name="mqtt_client_id_hint" translatable="false">t4a-control</string>
+    <string name="mqtt_base_topic" translatable="false">Base Topic</string>
+    <string name="mqtt_base_topic_hint" translatable="false">t4a</string>
     <string name="mqtt_topic_note">A publicação de telemetria usará este prefixo; os sub-tópicos serão definidos pela camada MQTT.</string>
-    <string name="mqtt_discovery_enabled">Home Assistant Discovery</string>
+    <string name="mqtt_discovery_enabled" translatable="false">Home Assistant Discovery</string>
     <string name="mqtt_discovery_note">Quando habilitado, o aplicativo poderá anunciar automaticamente o T4A ao Home Assistant via MQTT Discovery.</string>
     <string name="mqtt_save">Salvar configuração</string>
     <string name="mqtt_saved">Configuração MQTT salva</string>
-    <string name="mqtt_error_host">Informe o host do broker.</string>
-    <string name="mqtt_error_port">A porta deve estar entre 1 e 65535.</string>
-    <string name="mqtt_error_transport">Selecione um transporte MQTT válido.</string>
-    <string name="mqtt_error_websocket_path">Informe um path WebSocket válido.</string>
+    <string name="mqtt_error_host">Informe o Host do Broker.</string>
+    <string name="mqtt_error_port">Port deve estar entre 1 e 65535.</string>
+    <string name="mqtt_error_transport">Selecione um MQTT Transport válido.</string>
+    <string name="mqtt_error_websocket_path">Informe um WebSocket Path válido.</string>
     <string name="mqtt_error_client_id">Informe o Client ID.</string>
-    <string name="mqtt_error_base_topic">Informe o tópico-base.</string>
-    <string name="mqtt_error_keep_alive">Keep-alive deve estar entre 10 e 3600 segundos.</string>
+    <string name="mqtt_error_base_topic">Informe o Base Topic.</string>
+    <string name="mqtt_error_keep_alive">Keep Alive deve estar entre 10 e 3600 segundos.</string>
     <string name="mqtt_error_storage">Não foi possível salvar a configuração MQTT.</string>
 </resources>
