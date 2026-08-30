@@ -1,0 +1,137 @@
+name: One-shot UI raw filter patch
+
+on:
+  push:
+    branches: [ feature/compose-ui ]
+    paths:
+      - '.github/workflows/one-shot-ui-raw-filter.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/compose-ui
+      - name: Apply UI refinements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          dashboard = Path('app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboard.kt')
+          text = dashboard.read_text()
+          old = 'val bodyHeight = size.height * 0.47f'
+          new = 'val bodyHeight = size.height * 0.55f'
+          if old not in text:
+              raise SystemExit('dashboard bodyHeight anchor not found')
+          dashboard.write_text(text.replace(old, new, 1))
+
+          main = Path('app/src/main/java/br/com/t4acontrol/MainActivity.kt')
+          text = main.read_text()
+
+          old = '''    private val eventHistory = mutableStateListOf<String>()
+    private val rawHistory = mutableStateListOf<String>()
+'''
+          new = '''    private val eventHistory = mutableStateListOf<String>()
+    private val rawHistory = mutableStateListOf<String>()
+    private var rawLogFilter by mutableStateOf("ALL")
+'''
+          if old not in text:
+              raise SystemExit('rawHistory anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(getString(R.string.raw_log), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Box(
+'''
+          new = '''                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(getString(R.string.raw_log), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                val filterOptions = listOf("ALL", "RX", "TX", "INITIAL", "BATTERY", "OTHER")
+                val filterLabels = listOf(
+                    getString(R.string.raw_filter_all),
+                    getString(R.string.raw_filter_rx),
+                    getString(R.string.raw_filter_tx),
+                    getString(R.string.raw_filter_initial),
+                    getString(R.string.raw_filter_battery),
+                    getString(R.string.raw_filter_other),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    filterOptions.forEachIndexed { index, filter ->
+                        if (rawLogFilter == filter) {
+                            Button(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
+                        } else {
+                            OutlinedButton(onClick = { rawLogFilter = filter }) { Text(filterLabels[index], fontSize = 11.sp) }
+                        }
+                    }
+                }
+                val visibleEntries = if (rawLogFilter == "ALL") rawHistory else rawHistory.filter { rawLogOrigin(it) == rawLogFilter }
+                Box(
+'''
+          if old not in text:
+              raise SystemExit('RawLogCard header anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''                        rawHistory.asReversed().forEach { entry ->
+                            Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
+                        }
+'''
+          new = '''                        visibleEntries.asReversed().forEach { entry ->
+                            Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
+                        }
+'''
+          if old not in text:
+              raise SystemExit('raw display anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    private fun rawLogText(): String = buildString {
+'''
+          new = '''    private fun rawLogOrigin(entry: String): String {
+        val payload = entry.substringAfter(' ', "")
+        return when (payload.substringBefore(' ').uppercase(Locale.ROOT)) {
+            "RX" -> "RX"
+            "TX" -> "TX"
+            "INITIAL" -> "INITIAL"
+            "BATTERY" -> "BATTERY"
+            else -> "OTHER"
+        }
+    }
+
+    private fun rawLogText(): String = buildString {
+'''
+          if old not in text:
+              raise SystemExit('rawLogText anchor not found')
+          main.write_text(text.replace(old, new, 1))
+
+          strings = Path('app/src/main/res/values/strings.xml')
+          text = strings.read_text()
+          old = '    <string name="raw_log">Log raw</string>\n'
+          new = '''    <string name="raw_log">Log raw</string>
+    <string name="raw_filter_all">Todos</string>
+    <string name="raw_filter_rx" translatable="false">RX</string>
+    <string name="raw_filter_tx" translatable="false">TX</string>
+    <string name="raw_filter_initial" translatable="false">INITIAL</string>
+    <string name="raw_filter_battery" translatable="false">BATTERY</string>
+    <string name="raw_filter_other">Outros</string>
+'''
+          if old not in text:
+              raise SystemExit('strings raw_log anchor not found')
+          strings.write_text(text.replace(old, new, 1))
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/br/com/t4acontrol/MainActivity.kt app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboard.kt app/src/main/res/values/strings.xml
+          git commit -m "Refine lock body and filter raw log"
+          git push origin HEAD:feature/compose-ui
