@@ -34,6 +34,8 @@ object T4ADashboardMapper {
             deviceName = state.deviceName.ifBlank { "--" },
             rssiDbm = state.rssi.takeUnless { it == 0 },
             batteryPercent = integer(state.dps[DP_BATTERY]).coerceIn(0, 100),
+            batteryObservedMin = state.batteryObservedMin?.coerceIn(0, 100),
+            batteryObservedMax = state.batteryObservedMax?.coerceIn(0, 100),
             speed = displayedSpeed.roundToInt().coerceAtLeast(0),
             speedUnit = unit,
             ridingMode = ridingMode(state.dps[DP_LEVEL]),
