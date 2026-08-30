@@ -92,7 +92,12 @@
     <string name="zero_start">Partida zero</string>
     <string name="initial_push">Impulso inicial</string>
     <string name="diagnostics_section">Diagnóstico</string>
+    <string name="tuya_pairing_section">Tuya e pareamento</string>
+    <string name="tuya_account_label">Conta</string>
+    <string name="tuya_home_label">Casa</string>
+    <string name="tuya_home_id_label">ID da casa</string>
     <string name="pairing_section">Pareamento</string>
+    <string name="pairing_label">Pareamento</string>
     <string name="remove_pairing">Remover pareamento</string>
     <string name="remove_pairing_question">Remover pareamento?</string>
     <string name="remove_pairing_message">O T4A será liberado para outro aplicativo ou plataforma.</string>
