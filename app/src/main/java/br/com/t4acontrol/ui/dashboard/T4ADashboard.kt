@@ -298,7 +298,7 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
 private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, onClick: () -> Unit) {
     val color = modeColor(mode); val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(Modifier.weight(1f).height(T4ADashboardTokens.ModeHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(T4ADashboardTokens.ModeRadius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 3.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(27.dp))
+        MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), 22.dp, Modifier.size(29.dp))
         Text(
             stringResource(modeLabelRes(mode)),
             color = if (active) color else color.copy(alpha = 0.68f),
