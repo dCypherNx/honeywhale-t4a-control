@@ -197,7 +197,7 @@ public final class T4ABackend {
       dps.put(DP_LOCK, remembered);
     }
     Map<String, Object> command = Collections.singletonMap(dpId, value);
-    raw("TX " + JSON.toJSONString(command));
+    raw("[SDK] TX " + JSON.toJSONString(command));
     transport.publish(device.id, command, new T4AContracts.ResultCallback() {
       @Override public void onSuccess() {
         if (!QUIET_DPS.contains(dpId)) event("Comando DP " + dpId + " aceito; aguardando confirmação");
@@ -212,7 +212,7 @@ public final class T4ABackend {
 
   public void setAutoLockEnabled(boolean enabled) {
     preferences.edit().putBoolean(PREF_AUTO_LOCK, enabled).apply();
-    raw("[AUTO_LOCK] enabled=" + enabled + " distance=" + preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM));
+    raw("[APP] AUTO_LOCK enabled=" + enabled + " distance=" + preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM));
     event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
     emitState();
     if (enabled) evaluateAutoLock();
@@ -222,7 +222,7 @@ public final class T4ABackend {
     if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
     preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
     int lockRssi = autoLockThreshold(distance);
-    raw("[AUTO_LOCK] distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + (lockRssi + 8) + " dBm");
+    raw("[APP] AUTO_LOCK distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + (lockRssi + 8) + " dBm");
     emitState();
     evaluateAutoLock();
   }
@@ -241,12 +241,12 @@ public final class T4ABackend {
       batteryObservedMax = pendingBatteryRechargeMax;
       batteryCycleStartedAt = pendingBatteryRechargeDetectedAt;
       persistBatteryObservation();
-      raw("BATTERY CYCLE CONFIRMED {\"min\":" + batteryObservedMin + ",\"max\":" + batteryObservedMax + ",\"startedAt\":" + batteryCycleStartedAt + "}");
+      raw("[APP] BATTERY CYCLE CONFIRMED {\"min\":" + batteryObservedMin + ",\"max\":" + batteryObservedMax + ",\"startedAt\":" + batteryCycleStartedAt + "}");
       event("Novo ciclo de bateria iniciado");
     } else {
       mergePendingBatteryObservation();
       persistBatteryObservation();
-      raw("BATTERY CYCLE REJECTED {\"candidate\":" + pendingBatteryRechargePercent + "}");
+      raw("[APP] BATTERY CYCLE REJECTED {\"candidate\":" + pendingBatteryRechargePercent + "}");
       event("Ciclo de bateria atual preservado");
     }
     clearPendingBatteryRecharge();
@@ -304,7 +304,7 @@ public final class T4ABackend {
       }
     }
     if (value.dps != null) {
-      raw("INITIAL " + JSON.toJSONString(value.dps));
+      raw("[SDK] INITIAL " + JSON.toJSONString(value.dps));
       mergeDps(value.dps, false);
     }
     applyRememberedLock();
@@ -312,7 +312,7 @@ public final class T4ABackend {
     transport.attach(attached, new T4AContracts.DeviceListener() {
       @Override public void onDpUpdate(String id, Map<String, Object> update) {
         handler.post(() -> {
-          raw("RX " + JSON.toJSONString(update));
+          raw("[SDK] RX " + JSON.toJSONString(update));
           mergeDps(update, true);
           connected = transport.isConnected(attached.id);
           emitState();
@@ -489,7 +489,7 @@ public final class T4ABackend {
       pendingBatteryRechargeMin = percent;
       pendingBatteryRechargeMax = percent;
       pendingBatteryRechargeDetectedAt = now;
-      raw("BATTERY RECHARGE CANDIDATE {\"previousMin\":" + batteryObservedMin + ",\"previousMax\":" + batteryObservedMax + ",\"firstLive\":" + percent + ",\"gapHours\":" + batteryRechargeMinGapHours() + "}");
+      raw("[APP] BATTERY RECHARGE CANDIDATE {\"previousMin\":" + batteryObservedMin + ",\"previousMax\":" + batteryObservedMax + ",\"firstLive\":" + percent + ",\"gapHours\":" + batteryRechargeMinGapHours() + "}");
       event("Possível recarga de bateria detectada");
     } else if (pendingBatteryRechargePercent != null) {
       if (pendingBatteryRechargeMin == null || percent < pendingBatteryRechargeMin) pendingBatteryRechargeMin = percent;
@@ -572,7 +572,7 @@ public final class T4ABackend {
     if (address.isEmpty()) {
       int previousRssi = rssi;
       rssi = 0;
-      if (previousRssi != 0 && preferences.getBoolean(PREF_AUTO_LOCK, false)) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
+      if (previousRssi != 0 && preferences.getBoolean(PREF_AUTO_LOCK, false)) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       emitState();
       return;
     }
@@ -588,7 +588,7 @@ public final class T4ABackend {
           if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != value) logAutoLockRssi(previousRssi, value);
         } else {
           rssi = 0;
-          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
+          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
           if (++rssiFailures >= 3) recoverRssi();
         }
         evaluateAutoLock();
@@ -600,7 +600,7 @@ public final class T4ABackend {
     } catch (RuntimeException ignored) {
       int previousRssi = rssi;
       rssi = 0;
-      if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[AUTO_LOCK] RSSI " + previousRssi + " -> unavailable");
+      if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       recoverRssi();
       emitState();
     }
@@ -621,7 +621,7 @@ public final class T4ABackend {
     int lockRssi = autoLockThreshold(distance);
     int unlockRssi = lockRssi + 8;
     String lockState = Boolean.TRUE.equals(dps.get(DP_LOCK)) ? "unlocked" : "locked";
-    raw("[AUTO_LOCK] RSSI " + (previousRssi == 0 ? "initial" : previousRssi) + " -> " + currentRssi + " dBm distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + unlockRssi + " state=" + lockState);
+    raw("[BT] RSSI " + (previousRssi == 0 ? "initial" : previousRssi) + " -> " + currentRssi + " dBm autoLockDistance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + unlockRssi + " state=" + lockState);
   }
 
   private void evaluateAutoLock() {
@@ -631,11 +631,11 @@ public final class T4ABackend {
     int lockRssi = autoLockThreshold(distance);
     int unlockRssi = lockRssi + 8;
     if (rssi <= lockRssi && unlocked) {
-      raw("[AUTO_LOCK] action=lock rssi=" + rssi + " threshold=" + lockRssi + " dBm");
+      raw("[APP] AUTO_LOCK action=lock rssi=" + rssi + " threshold=" + lockRssi + " dBm");
       event("Sinal distante (" + rssi + " dBm): bloqueando");
       publish(DP_LOCK, false);
     } else if (rssi >= unlockRssi && !unlocked) {
-      raw("[AUTO_LOCK] action=unlock rssi=" + rssi + " threshold=" + unlockRssi + " dBm");
+      raw("[APP] AUTO_LOCK action=unlock rssi=" + rssi + " threshold=" + unlockRssi + " dBm");
       event("Sinal próximo (" + rssi + " dBm): desbloqueando");
       publish(DP_LOCK, true);
     }
