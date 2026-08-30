@@ -155,10 +155,13 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
             val bodyWidth = size.width * 0.64f
             val bodyHeight = size.height * 0.39f
             val strokeWidth = size.width * 0.105f
-            val shackleWidth = size.width * 0.40f
-            val shackleHeight = size.height * 0.50f
-            val shackleTop = size.height * 0.10f
-            val connectedX = bodyLeft + bodyWidth * 0.72f
+
+            // The body never moves. The right shackle leg is the physical pivot.
+            val pivotX = size.width * 0.63f
+            val shackleWidth = size.width * 0.32f
+            val shackleTop = size.height * 0.08f
+            val arcHeight = size.height * 0.40f
+            val arcEndY = shackleTop + arcHeight / 2f
 
             drawRoundRect(
                 color = color,
@@ -168,37 +171,35 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
             )
 
             if (locked) {
-                val shackleLeft = (size.width - shackleWidth) / 2f
+                // Closed: both legs terminate in the lock body.
+                val leftX = pivotX - shackleWidth
                 drawArc(
                     color = color,
                     startAngle = 180f,
                     sweepAngle = 180f,
                     useCenter = false,
-                    topLeft = Offset(shackleLeft, shackleTop),
-                    size = Size(shackleWidth, shackleHeight),
+                    topLeft = Offset(leftX, shackleTop),
+                    size = Size(shackleWidth, arcHeight),
                     style = Stroke(strokeWidth, cap = StrokeCap.Round),
                 )
-                drawLine(color, Offset(shackleLeft, shackleTop + shackleHeight / 2f), Offset(shackleLeft, bodyTop), strokeWidth, StrokeCap.Round)
-                drawLine(color, Offset(shackleLeft + shackleWidth, shackleTop + shackleHeight / 2f), Offset(shackleLeft + shackleWidth, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(leftX, arcEndY), Offset(leftX, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
             } else {
-                // Open state: the right leg stays anchored to exactly the same body area;
-                // the shackle is the closed geometry rotated 180° around that anchor.
-                val radiusX = shackleWidth / 2f
-                val radiusY = shackleHeight / 2f
-                val centerX = connectedX - radiusX
-                val centerY = bodyTop - radiusY
-                val arcLeft = centerX - radiusX
-                val arcTop = centerY - radiusY
+                // Open: the same shackle is rotated 180° around the connected vertical axis.
+                // In front projection this is a horizontal mirror around the pivot leg:
+                // the pivot remains fixed in the body, while the opposite leg moves outside it.
+                val freeX = pivotX + shackleWidth
                 drawArc(
                     color = color,
-                    startAngle = 0f,
+                    startAngle = 180f,
                     sweepAngle = 180f,
                     useCenter = false,
-                    topLeft = Offset(arcLeft, arcTop),
-                    size = Size(shackleWidth, shackleHeight),
+                    topLeft = Offset(pivotX, shackleTop),
+                    size = Size(shackleWidth, arcHeight),
                     style = Stroke(strokeWidth, cap = StrokeCap.Round),
                 )
-                drawLine(color, Offset(connectedX, centerY), Offset(connectedX, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(pivotX, arcEndY), Offset(pivotX, bodyTop), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(freeX, arcEndY), Offset(freeX, bodyTop), strokeWidth, StrokeCap.Round)
             }
         }
     }
