@@ -26,6 +26,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,12 +36,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -68,12 +72,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -90,6 +98,8 @@ import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity(), T4ASession.Listener {
     companion object {
@@ -224,19 +234,19 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     if (current.pairing != T4AState.Pairing.PAIRED) {
                         Text(current.message, color = foreground)
                         PairingPanel(current, foreground)
-                        EventLog(settings = false, foreground = foreground)
+                        DashboardEvents(foreground)
                         return@Column
                     }
                     if (settings) {
                         SettingsPanel(current, foreground)
-                        EventLog(settings = true, foreground = foreground)
+                        RawLogCard(foreground)
                     } else {
                         T4ADashboard(
                             state = T4ADashboardMapper.map(current, showTotalOdometer),
                             actions = dashboardActions,
                             darkMode = darkMode,
                         )
-                        EventLog(settings = false, foreground = foreground)
+                        DashboardEvents(foreground)
                     }
                 }
             }
@@ -245,28 +255,37 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun Header(foreground: ComposeColor) {
-        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = getString(R.string.app_name).uppercase(Locale.ROOT),
-                color = foreground,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            Box(
-                modifier = Modifier.size(52.dp)
-                    .background(surface, RoundedCornerShape(99.dp))
-                    .border(1.dp, T4A_BLUE, RoundedCornerShape(99.dp))
-                    .clickable { settings = !settings },
-                contentAlignment = Alignment.Center,
-            ) {
-                MdiIcon(
-                    name = if (settings) "cmd-arrow-left" else "cmd-cog",
-                    color = T4A_BLUE,
-                    iconSize = 24.dp,
-                    modifier = Modifier.size(32.dp),
+        if (settings) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.size(40.dp).clickable { settings = false },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MdiIcon("cmd-arrow-left", T4A_BLUE, 28.dp, Modifier.size(32.dp))
+                }
+                Text(
+                    getString(R.string.settings),
+                    color = foreground,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp),
                 )
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = getString(R.string.app_name).uppercase(Locale.ROOT),
+                    color = foreground,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier = Modifier.size(40.dp).clickable { settings = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MdiIcon("cmd-cog", T4A_BLUE, 27.dp, Modifier.size(32.dp))
+                }
             }
         }
     }
@@ -293,16 +312,14 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     @Composable
     private fun SettingsPanel(current: T4AState, foreground: ComposeColor) {
-        Text(getString(R.string.settings), color = foreground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-
-        SettingsSection(getString(R.string.connection_device_section), foreground, "connection") {
+        SettingsSection(getString(R.string.connection_device_section), "connection") {
             InfoLine(getString(R.string.connection_label), getString(if (current.connected) R.string.connected else R.string.disconnected), foreground)
             InfoLine(getString(R.string.device_label), current.deviceName.ifBlank { "--" }, foreground)
             InfoLine(getString(R.string.mac_label), current.mac.ifBlank { "--" }, foreground)
             InfoLine(getString(R.string.rssi_label), if (current.rssi == 0) "--" else getString(R.string.dbm, current.rssi), foreground)
         }
 
-        SettingsSection(getString(R.string.display_section), foreground, "display") {
+        SettingsSection(getString(R.string.display_section), "display") {
             val keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
             var keepOn by remember { mutableStateOf(keepScreenOn) }
             SettingSwitch(getString(R.string.keep_screen_on), keepOn, foreground) {
@@ -317,25 +334,27 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             ) { index -> applyTheme(listOf("system", "light", "dark")[index]) }
         }
 
-        SettingsSection(getString(R.string.battery_section), foreground, "battery") {
-            val currentIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours)
+        SettingsSection(getString(R.string.battery_section), "battery") {
             Text(getString(R.string.battery_recharge_detection), color = foreground, fontWeight = FontWeight.Bold)
             SegmentedChoice(
                 labels = BATTERY_RECHARGE_GAP_HOURS.map { getString(R.string.battery_recharge_gap_value, it) },
-                selectedIndex = currentIndex,
+                selectedIndex = batteryRechargeGapIndex(current.batteryRechargeMinGapHours),
             ) { index -> session.setBatteryRechargeMinGapHours(BATTERY_RECHARGE_GAP_HOURS[index]) }
             Text(
                 getString(R.string.battery_recharge_detection_note),
-                color = if (isDarkMode()) ComposeColor(0xFFAAB4C3) else ComposeColor(0xFF667085),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
             )
         }
 
-        SettingsSection(getString(R.string.integrations_section), foreground, "integrations") {
-            Button(onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) }) { Text(getString(R.string.configure_mqtt)) }
+        SettingsSection(getString(R.string.integrations_section), "integrations") {
+            Button(
+                onClick = { startActivity(Intent(this@MainActivity, MqttSettingsActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(getString(R.string.configure_mqtt)) }
         }
 
-        SettingsSection(getString(R.string.automatic_lock), foreground, "auto_lock") {
+        SettingsSection(getString(R.string.automatic_lock), "auto_lock") {
             SettingSwitch(getString(R.string.state_active), current.autoLockEnabled, foreground) { session.setAutoLockEnabled(it) }
             Text(getString(R.string.auto_lock_distance), color = foreground)
             val distanceValues = listOf("short", "medium", "long")
@@ -345,7 +364,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             ) { index -> session.setAutoLockDistance(distanceValues[index]) }
         }
 
-        SettingsSection(getString(R.string.riding_preferences_section), foreground, "riding") {
+        SettingsSection(getString(R.string.riding_preferences_section), "riding") {
             Text(getString(R.string.unit), color = foreground, fontWeight = FontWeight.Bold)
             val unitValues = listOf("km", "mile")
             val unitValue = current.dps[T4ADashboardMapper.DP_UNIT]?.toString() ?: "km"
@@ -368,32 +387,31 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             ) { index -> session.publish(T4ADashboardMapper.DP_START, if (index == 1) "not_zero_start" else "zero_start") }
         }
 
-        SettingsSection(getString(R.string.diagnostics_section), foreground, "diagnostics") {
-            current.dps.toSortedMap().forEach { (id, value) ->
-                val name = current.schema[id]?.code ?: getString(R.string.dp_fallback, id)
-                Text("$name ($id): $value", color = foreground, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        SettingsSection(getString(R.string.diagnostics_section), "diagnostics", defaultExpanded = false) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                current.dps.toSortedMap().forEach { (id, value) ->
+                    val name = current.schema[id]?.code ?: getString(R.string.dp_fallback, id)
+                    Text("$name ($id): $value", color = foreground, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
             }
         }
 
-        SettingsSection(getString(R.string.pairing_section), foreground, "pairing") {
-            Button(
-                onClick = { confirmUnpair() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = T4A_RED,
-                    contentColor = ComposeColor.White,
-                ),
-            ) {
-                Text(getString(R.string.remove_pairing))
+        SettingsSection(getString(R.string.tuya_pairing_section), "tuya_pairing", defaultExpanded = false) {
+            InfoLine(getString(R.string.tuya_account_label), current.account.ifBlank { "--" }, foreground)
+            InfoLine(getString(R.string.tuya_home_label), current.homeName.ifBlank { "--" }, foreground)
+            InfoLine(getString(R.string.tuya_home_id_label), if (current.homeId == 0L) "--" else current.homeId.toString(), foreground)
+            InfoLine(getString(R.string.pairing_label), pairingLabel(current.pairing), foreground)
+            if (current.pairing == T4AState.Pairing.PAIRED) {
+                Button(
+                    onClick = { confirmUnpair() },
+                    colors = ButtonDefaults.buttonColors(containerColor = T4A_RED, contentColor = ComposeColor.White),
+                ) { Text(getString(R.string.remove_pairing)) }
             }
         }
     }
 
     @Composable
-    private fun SegmentedChoice(
-        labels: List<String>,
-        selectedIndex: Int,
-        onSelected: (Int) -> Unit,
-    ) {
+    private fun SegmentedChoice(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Unit) {
         val safeSelected = selectedIndex.coerceIn(0, labels.lastIndex)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             labels.forEachIndexed { index, label ->
@@ -405,17 +423,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                         activeContainerColor = T4A_BLUE,
                         activeContentColor = ComposeColor.White,
                         activeBorderColor = T4A_BLUE,
-                        inactiveContainerColor = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White,
-                        inactiveContentColor = if (isDarkMode()) ComposeColor(0xFFF1F5F9) else ComposeColor(0xFF101820),
-                        inactiveBorderColor = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0),
+                        inactiveContainerColor = MaterialTheme.colorScheme.surface,
+                        inactiveContentColor = MaterialTheme.colorScheme.onSurface,
+                        inactiveBorderColor = MaterialTheme.colorScheme.outline,
                     ),
                     icon = {},
-                    label = {
-                        Text(
-                            label,
-                            fontWeight = if (safeSelected == index) FontWeight.Bold else FontWeight.Medium,
-                        )
-                    },
+                    label = { Text(label, fontWeight = if (safeSelected == index) FontWeight.Bold else FontWeight.Medium) },
                 )
             }
         }
@@ -424,39 +437,37 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun SettingsSection(
         title: String,
-        foreground: ComposeColor,
         key: String,
+        defaultExpanded: Boolean = true,
         content: @Composable () -> Unit,
     ) {
-        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
-        val header = if (isDarkMode()) ComposeColor(0xFF202836) else ComposeColor(0xFFF8FAFD)
-        val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
-        var expanded by remember(key) { mutableStateOf(preferences().getBoolean("section_$key", true)) }
+        var expanded by remember(key) {
+            mutableStateOf(preferences().getBoolean("section_$key", defaultExpanded))
+        }
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = surface),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
         ) {
-            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .background(header, RoundedCornerShape(10.dp))
-                        .border(1.dp, outline, RoundedCornerShape(10.dp))
                         .clickable {
                             expanded = !expanded
                             preferences().edit().putBoolean("section_$key", expanded).apply()
                         }
-                        .padding(start = 7.dp, end = 4.dp),
+                        .padding(horizontal = 4.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(title, color = T4A_BLUE, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
-                    MdiIcon(
-                        name = if (expanded) "cmd-chevron-up" else "cmd-chevron-down",
+                    Text(
+                        title,
                         color = T4A_BLUE,
-                        iconSize = 18.dp,
-                        modifier = Modifier.size(30.dp),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
                     )
+                    MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", T4A_BLUE, 18.dp, Modifier.size(28.dp))
                 }
                 AnimatedVisibility(
                     visible = expanded,
@@ -464,8 +475,8 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                     exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
                     ) { content() }
                 }
             }
@@ -483,60 +494,126 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     @Composable
     private fun InfoLine(label: String, value: String, foreground: ComposeColor) {
         Row(Modifier.fillMaxWidth()) {
-            Text("$label:", color = foreground, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.45f))
-            Text(value, color = foreground, modifier = Modifier.weight(0.55f))
+            Text("$label:", color = foreground, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.42f))
+            Text(value, color = foreground, modifier = Modifier.weight(0.58f))
         }
     }
 
     @Composable
-    private fun EventLog(settings: Boolean, foreground: ComposeColor) {
-        val source = if (settings) rawHistory else eventHistory
-        val entries = if (settings) source else source.takeLast(10)
-        val surface = if (isDarkMode()) ComposeColor(0xFF171D26) else ComposeColor.White
-        val outline = if (isDarkMode()) ComposeColor(0xFF354052) else ComposeColor(0xFFE4E8F0)
-        Column(
-            Modifier.fillMaxWidth()
-                .background(surface, RoundedCornerShape(16.dp))
-                .border(1.dp, outline, RoundedCornerShape(16.dp))
-                .padding(10.dp),
+    private fun DashboardEvents(foreground: ComposeColor) {
+        val entries = eventHistory.takeLast(10)
+        var expanded by remember {
+            mutableStateOf(preferences().getBoolean("section_events", false))
+        }
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                MdiIcon(name = "cmd-format-list-bulleted", color = T4A_BLUE, iconSize = 20.dp, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.size(8.dp))
-                Text(getString(if (settings) R.string.raw_log else R.string.events), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            }
-            if (settings) {
-                val vertical = rememberScrollState()
-                val horizontal = rememberScrollState()
-                Box(
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Row(
                     modifier = Modifier.fillMaxWidth()
-                        .height(220.dp)
-                        .border(1.dp, outline, RoundedCornerShape(10.dp))
-                        .background(if (isDarkMode()) ComposeColor(0xFF10151D) else ComposeColor(0xFFF8FAFD), RoundedCornerShape(10.dp))
-                        .padding(8.dp),
+                        .clickable {
+                            expanded = !expanded
+                            preferences().edit().putBoolean("section_events", expanded).apply()
+                        }
+                        .padding(horizontal = 4.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(getString(R.string.events), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", T4A_BLUE, 18.dp, Modifier.size(28.dp))
+                }
+                AnimatedVisibility(
+                    visible = expanded,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                 ) {
                     Column(
-                        modifier = Modifier.horizontalScroll(horizontal).verticalScroll(vertical),
+                        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         entries.asReversed().forEach { entry ->
-                            Text(
-                                entry,
-                                color = foreground,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                softWrap = false,
-                            )
+                            Text(entry, color = foreground, fontSize = 12.sp)
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            }
+        }
+    }
+
+    @Composable
+    private fun RawLogCard(foreground: ComposeColor) {
+        val vertical = rememberScrollState()
+        val horizontal = rememberScrollState()
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    MdiIcon("cmd-format-list-bulleted", T4A_BLUE, 20.dp, Modifier.size(24.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text(getString(R.string.raw_log), color = T4A_BLUE, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                        .height(300.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                        .padding(8.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(end = 8.dp)
+                            .horizontalScroll(horizontal)
+                            .verticalScroll(vertical),
+                    ) {
+                        rawHistory.asReversed().forEach { entry ->
+                            Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
+                        }
+                    }
+                    VerticalScrollIndicator(
+                        scrollState = vertical,
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(3.dp),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                     OutlinedButton(onClick = { copyRawLog() }) { Text(getString(R.string.copy)) }
                     OutlinedButton(onClick = { saveRawLog() }) { Text(getString(R.string.save)) }
                 }
-            } else {
-                entries.asReversed().forEach { entry ->
-                    Text(entry, color = foreground, fontSize = 12.sp)
-                }
+            }
+        }
+    }
+
+    @Composable
+    private fun VerticalScrollIndicator(scrollState: ScrollState, modifier: Modifier = Modifier) {
+        var viewportHeight by remember { mutableIntStateOf(0) }
+        val density = LocalDensity.current
+        Box(modifier.onSizeChanged { viewportHeight = it.height }) {
+            if (scrollState.maxValue > 0 && viewportHeight > 0) {
+                val viewport = viewportHeight.toFloat()
+                val content = viewport + scrollState.maxValue.toFloat()
+                val minThumb = with(density) { 24.dp.toPx() }
+                val thumb = max(minThumb, viewport * viewport / content).coerceAtMost(viewport)
+                val travel = viewport - thumb
+                val y = travel * scrollState.value.toFloat() / scrollState.maxValue.toFloat()
+                Box(
+                    Modifier.align(Alignment.TopEnd)
+                        .fillMaxHeight()
+                        .width(3.dp)
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(99.dp)),
+                )
+                Box(
+                    Modifier.align(Alignment.TopEnd)
+                        .offset { IntOffset(0, y.roundToInt()) }
+                        .width(3.dp)
+                        .height(with(density) { thumb.toDp() })
+                        .background(T4A_BLUE.copy(alpha = 0.72f), RoundedCornerShape(99.dp)),
+                )
             }
         }
     }
