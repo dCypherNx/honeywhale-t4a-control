@@ -13,9 +13,7 @@ import java.util.Set;
 public final class T4ABackend {
   public interface Listener {
     void onState(T4AState state);
-
     void onEvent(String event);
-
     void onRawLog(String entry);
   }
 
@@ -61,6 +59,7 @@ public final class T4ABackend {
   private boolean connected;
   private String message = "";
   private long homeId;
+  private String homeName = "";
   private T4AContracts.Device device;
   private T4AContracts.DiscoveredDevice candidate;
   private int rssi;
@@ -79,34 +78,22 @@ public final class T4ABackend {
   private Integer pendingBatteryRechargeMax;
   private Long pendingBatteryRechargeDetectedAt;
 
-  private final Runnable maintenance =
-      new Runnable() {
-        @Override
-        public void run() {
-          if (!running) return;
-          refreshFromCache();
-          if (device != null && !transport.isConnected(device.id)) {
-            connectPairedDevice();
-          }
-          if (connected && System.currentTimeMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
-          long delay =
-              connected
-                  ? STATE_REFRESH_MS
-                  : (foreground ? FOREGROUND_RECONNECT_MS : BACKGROUND_RECONNECT_MS);
-          handler.postDelayed(this, delay);
-        }
-      };
+  private final Runnable maintenance = new Runnable() {
+    @Override public void run() {
+      if (!running) return;
+      refreshFromCache();
+      if (device != null && !transport.isConnected(device.id)) connectPairedDevice();
+      if (connected && System.currentTimeMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
+      long delay = connected ? STATE_REFRESH_MS : (foreground ? FOREGROUND_RECONNECT_MS : BACKGROUND_RECONNECT_MS);
+      handler.postDelayed(this, delay);
+    }
+  };
 
-  public T4ABackend(
-      Context context,
-      T4AProvisioner provisioner,
-      T4ATransport transport,
-      Listener listener) {
+  public T4ABackend(Context context, T4AProvisioner provisioner, T4ATransport transport, Listener listener) {
     this.listener = listener;
     this.provisioner = provisioner;
     this.transport = transport;
-    this.preferences =
-        context.getApplicationContext().getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
+    this.preferences = context.getApplicationContext().getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
     restoreBatteryObservation();
   }
 
@@ -137,37 +124,26 @@ public final class T4ABackend {
   public void destroy() {
     running = false;
     handler.removeCallbacksAndMessages(null);
-    try {
-      transport.destroy();
-    } finally {
-      if (provisioner != (Object) transport) provisioner.destroy();
-    }
+    try { transport.destroy(); }
+    finally { if (provisioner != (Object) transport) provisioner.destroy(); }
   }
 
   public void login(String email, String password) {
     message = "Autenticando…";
     emitState();
-    provisioner.login(
-        "55",
-        email,
-        password,
-        new T4AContracts.Callback<String>() {
-          @Override
-          public void onSuccess(String restoredAccount) {
-            handler.post(
-                () -> {
-                  authenticated = true;
-                  account = restoredAccount.isEmpty() ? email : restoredAccount;
-                  event("Conta autenticada");
-                  queryHomes();
-                });
-          }
-
-          @Override
-          public void onError(String code, String error) {
-            handler.post(() -> emit("Falha no login: " + error));
-          }
+    provisioner.login("55", email, password, new T4AContracts.Callback<String>() {
+      @Override public void onSuccess(String restoredAccount) {
+        handler.post(() -> {
+          authenticated = true;
+          account = restoredAccount.isEmpty() ? email : restoredAccount;
+          event("Conta autenticada");
+          queryHomes();
         });
+      }
+      @Override public void onError(String code, String error) {
+        handler.post(() -> emit("Falha no login: " + error));
+      }
+    });
   }
 
   public void scan() {
@@ -175,51 +151,36 @@ public final class T4ABackend {
     candidate = null;
     pairing = T4AState.Pairing.SCANNING;
     emit("Procurando T4A…");
-    provisioner.startDiscovery(
-        15000,
-        new T4AContracts.DiscoveryListener() {
-          @Override
-          public void onDevice(T4AContracts.DiscoveredDevice found) {
-            handler.post(
-                () -> {
-                  if (found == null || found.bound || candidate != null) return;
-                  candidate = found;
-                  rssi = found.rssi;
-                  pairing = T4AState.Pairing.READY;
-                  provisioner.stopDiscovery();
-                  emit("T4A pronto para parear");
-                });
-          }
-
-          @Override
-          public void onError(String code, String error) {
-            handler.post(() -> emit("Falha ao procurar T4A: " + code));
-          }
+    provisioner.startDiscovery(15000, new T4AContracts.DiscoveryListener() {
+      @Override public void onDevice(T4AContracts.DiscoveredDevice found) {
+        handler.post(() -> {
+          if (found == null || found.bound || candidate != null) return;
+          candidate = found;
+          rssi = found.rssi;
+          pairing = T4AState.Pairing.READY;
+          provisioner.stopDiscovery();
+          emit("T4A pronto para parear");
         });
+      }
+      @Override public void onError(String code, String error) {
+        handler.post(() -> emit("Falha ao procurar T4A: " + code));
+      }
+    });
   }
 
   public void pair() {
     if (candidate == null || homeId == 0) return;
     pairing = T4AState.Pairing.PAIRING;
     emit("Pareando…");
-    provisioner.pair(
-        homeId,
-        candidate,
-        new T4AContracts.Callback<T4AContracts.Device>() {
-          @Override
-          public void onSuccess(T4AContracts.Device result) {
-            handler.post(() -> attach(result));
-          }
-
-          @Override
-          public void onError(String code, String error) {
-            handler.post(
-                () -> {
-                  pairing = T4AState.Pairing.READY;
-                  emit("Pareamento falhou: " + code);
-                });
-          }
+    provisioner.pair(homeId, candidate, new T4AContracts.Callback<T4AContracts.Device>() {
+      @Override public void onSuccess(T4AContracts.Device result) { handler.post(() -> attach(result)); }
+      @Override public void onError(String code, String error) {
+        handler.post(() -> {
+          pairing = T4AState.Pairing.READY;
+          emit("Pareamento falhou: " + code);
         });
+      }
+    });
   }
 
   public void publish(String dpId, Object value) {
@@ -230,48 +191,32 @@ public final class T4ABackend {
       pendingLockValue = value;
       pendingLockUntil = System.currentTimeMillis() + LOCK_CONFIRM_TIMEOUT_MS;
       boolean remembered = Boolean.TRUE.equals(value);
-      preferences
-          .edit()
-          .putBoolean(PREF_LOCK_KNOWN, true)
-          .putBoolean(PREF_LOCK_VALUE, remembered)
-          .apply();
+      preferences.edit().putBoolean(PREF_LOCK_KNOWN, true).putBoolean(PREF_LOCK_VALUE, remembered).apply();
       dps.put(DP_LOCK, remembered);
     }
     Map<String, Object> command = Collections.singletonMap(dpId, value);
     raw("TX " + JSON.toJSONString(command));
-    transport.publish(
-        device.id,
-        command,
-        new T4AContracts.ResultCallback() {
-          @Override
-          public void onSuccess() {
-            if (!QUIET_DPS.contains(dpId))
-              event("Comando DP " + dpId + " aceito; aguardando confirmação");
-          }
-
-          @Override
-          public void onError(String code, String error) {
-            pendingDps.remove(dpId);
-            if (DP_LOCK.equals(dpId)) clearPendingLock();
-            emit("Comando recusado: " + code);
-          }
-        });
+    transport.publish(device.id, command, new T4AContracts.ResultCallback() {
+      @Override public void onSuccess() {
+        if (!QUIET_DPS.contains(dpId)) event("Comando DP " + dpId + " aceito; aguardando confirmação");
+      }
+      @Override public void onError(String code, String error) {
+        pendingDps.remove(dpId);
+        if (DP_LOCK.equals(dpId)) clearPendingLock();
+        emit("Comando recusado: " + code);
+      }
+    });
   }
 
   public void setAutoLockEnabled(boolean enabled) {
     preferences.edit().putBoolean(PREF_AUTO_LOCK, enabled).apply();
-    event(
-        enabled
-            ? "Bloqueio automático por distância ativado"
-            : "Bloqueio automático por distância desativado");
+    event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
     emitState();
     if (enabled) evaluateAutoLock();
   }
 
   public void setAutoLockDistance(String distance) {
-    if (!DISTANCE_SHORT.equals(distance)
-        && !DISTANCE_MEDIUM.equals(distance)
-        && !DISTANCE_LONG.equals(distance)) return;
+    if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
     preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
     emitState();
     evaluateAutoLock();
@@ -291,22 +236,12 @@ public final class T4ABackend {
       batteryObservedMax = pendingBatteryRechargeMax;
       batteryCycleStartedAt = pendingBatteryRechargeDetectedAt;
       persistBatteryObservation();
-      raw(
-          "BATTERY CYCLE CONFIRMED {\"min\":"
-              + batteryObservedMin
-              + ",\"max\":"
-              + batteryObservedMax
-              + ",\"startedAt\":"
-              + batteryCycleStartedAt
-              + "}");
+      raw("BATTERY CYCLE CONFIRMED {\"min\":" + batteryObservedMin + ",\"max\":" + batteryObservedMax + ",\"startedAt\":" + batteryCycleStartedAt + "}");
       event("Novo ciclo de bateria iniciado");
     } else {
       mergePendingBatteryObservation();
       persistBatteryObservation();
-      raw(
-          "BATTERY CYCLE REJECTED {\"candidate\":"
-              + pendingBatteryRechargePercent
-              + "}");
+      raw("BATTERY CYCLE REJECTED {\"candidate\":" + pendingBatteryRechargePercent + "}");
       event("Ciclo de bateria atual preservado");
     }
     clearPendingBatteryRecharge();
@@ -317,45 +252,36 @@ public final class T4ABackend {
     if (device == null) return;
     pairing = T4AState.Pairing.REMOVING;
     emit("Removendo pareamento…");
-    provisioner.remove(
-        device.id,
-        new T4AContracts.ResultCallback() {
-          @Override
-          public void onSuccess() {
-            handler.post(() -> clearDevice("T4A liberado para outro aplicativo"));
-          }
-
-          @Override
-          public void onError(String code, String error) {
-            pairing = T4AState.Pairing.PAIRED;
-            emit("Falha ao remover pareamento: " + code);
-          }
-        });
+    provisioner.remove(device.id, new T4AContracts.ResultCallback() {
+      @Override public void onSuccess() { handler.post(() -> clearDevice("T4A liberado para outro aplicativo")); }
+      @Override public void onError(String code, String error) {
+        pairing = T4AState.Pairing.PAIRED;
+        emit("Falha ao remover pareamento: " + code);
+      }
+    });
   }
 
   private void queryHomes() {
-    provisioner.loadPrimaryHome(
-        new T4AContracts.Callback<T4AContracts.Home>() {
-          @Override
-          public void onSuccess(T4AContracts.Home home) {
-            handler.post(
-                () -> {
-                  if (home == null || home.id == 0) {
-                    pairing = T4AState.Pairing.NO_HOME;
-                    emit("Conta sem casa configurada");
-                    return;
-                  }
-                  homeId = home.id;
-                  if (home.devices.isEmpty()) clearDevice("Nenhum T4A pareado");
-                  else attach(home.devices.get(0));
-                });
+    provisioner.loadPrimaryHome(new T4AContracts.Callback<T4AContracts.Home>() {
+      @Override public void onSuccess(T4AContracts.Home home) {
+        handler.post(() -> {
+          if (home == null || home.id == 0) {
+            homeId = 0L;
+            homeName = "";
+            pairing = T4AState.Pairing.NO_HOME;
+            emit("Conta sem casa configurada");
+            return;
           }
-
-          @Override
-          public void onError(String code, String error) {
-            handler.post(() -> emit("Falha ao carregar T4A: " + code));
-          }
+          homeId = home.id;
+          homeName = home.name;
+          if (home.devices.isEmpty()) clearDevice("Nenhum T4A pareado");
+          else attach(home.devices.get(0));
         });
+      }
+      @Override public void onError(String code, String error) {
+        handler.post(() -> emit("Falha ao carregar T4A: " + code));
+      }
+    });
   }
 
   private void attach(T4AContracts.Device value) {
@@ -367,8 +293,7 @@ public final class T4ABackend {
     if (value.schema != null) {
       for (Map.Entry<String, T4AContracts.DpSchema> entry : value.schema.entrySet()) {
         T4AContracts.DpSchema item = entry.getValue();
-        schema.put(
-            entry.getKey(), new T4AState.DpInfo(item.code, item.mode, item.type));
+        schema.put(entry.getKey(), new T4AState.DpInfo(item.code, item.mode, item.type));
       }
     }
     if (value.dps != null) {
@@ -376,39 +301,21 @@ public final class T4ABackend {
       mergeDps(value.dps, false);
     }
     applyRememberedLock();
-    transport.attach(
-        value,
-        new T4AContracts.DeviceListener() {
-          @Override
-          public void onDpUpdate(String id, Map<String, Object> update) {
-            handler.post(
-                () -> {
-                  raw("RX " + JSON.toJSONString(update));
-                  mergeDps(update, true);
-                  connected = transport.isConnected(value.id);
-                  emitState();
-                });
-          }
-
-          @Override
-          public void onRemoved(String id) {
-            handler.post(() -> clearDevice("T4A removido"));
-          }
-
-          @Override
-          public void onConnectionChanged(String id, boolean online) {
-            handler.post(
-                () -> {
-                  connected = online;
-                  emitState();
-                });
-          }
-
-          @Override
-          public void onDeviceInfoChanged(String id) {
-            handler.post(T4ABackend.this::queryHomes);
-          }
+    transport.attach(value, new T4AContracts.DeviceListener() {
+      @Override public void onDpUpdate(String id, Map<String, Object> update) {
+        handler.post(() -> {
+          raw("RX " + JSON.toJSONString(update));
+          mergeDps(update, true);
+          connected = transport.isConnected(value.id);
+          emitState();
         });
+      }
+      @Override public void onRemoved(String id) { handler.post(() -> clearDevice("T4A removido")); }
+      @Override public void onConnectionChanged(String id, boolean online) {
+        handler.post(() -> { connected = online; emitState(); });
+      }
+      @Override public void onDeviceInfoChanged(String id) { handler.post(T4ABackend.this::queryHomes); }
+    });
     connectPairedDevice();
     emit("T4A pareado");
   }
@@ -447,65 +354,53 @@ public final class T4ABackend {
     emit(reason);
   }
 
-  private void emit(String value) {
-    message = value;
-    emitState();
-  }
-
-  private void event(String value) {
-    listener.onEvent(value);
-  }
-
-  private void raw(String value) {
-    listener.onRawLog(value);
-  }
+  private void emit(String value) { message = value; emitState(); }
+  private void event(String value) { listener.onEvent(value); }
+  private void raw(String value) { listener.onRawLog(value); }
 
   private void emitState() {
     String name = device == null ? "" : device.name;
     String mac = device == null ? "" : device.mac;
-    listener.onState(
-        new T4AState(
-            authenticated,
-            account,
-            pairing,
-            connected,
-            name,
-            mac,
-            rssi,
-            dps,
-            schema,
-            pendingDps.keySet(),
-            preferences.getBoolean(PREF_AUTO_LOCK, false),
-            preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM),
-            batteryObservedMin,
-            batteryObservedMax,
-            batteryCycleStartedAt,
-            batteryRechargeMinGapHours(),
-            pendingBatteryRechargePercent,
-            pendingBatteryRechargeDetectedAt,
-            message));
+    listener.onState(new T4AState(
+        authenticated,
+        account,
+        homeId,
+        homeName,
+        pairing,
+        connected,
+        name,
+        mac,
+        rssi,
+        dps,
+        schema,
+        pendingDps.keySet(),
+        preferences.getBoolean(PREF_AUTO_LOCK, false),
+        preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM),
+        batteryObservedMin,
+        batteryObservedMax,
+        batteryCycleStartedAt,
+        batteryRechargeMinGapHours(),
+        pendingBatteryRechargePercent,
+        pendingBatteryRechargeDetectedAt,
+        message));
   }
 
   private void mergeDps(Map<String, Object> update, boolean confirmsCommand) {
     if (update == null) return;
     Map<String, Object> accepted = canonicalDps(update);
-    // INITIAL/cache é diagnóstico. Não estabelece bateria, velocidade nem trava.
     if (!confirmsCommand) {
       accepted.remove(DP_SPEED);
       accepted.remove(DP_BATTERY);
       accepted.remove(DP_LOCK);
-    } else {
-      filterLiveBattery(accepted);
-    }
-    if (confirmsCommand)
+    } else filterLiveBattery(accepted);
+    if (confirmsCommand) {
       for (String id : accepted.keySet()) {
-        if (!DP_LOCK.equals(id) && pendingDps.remove(id) != null && !QUIET_DPS.contains(id))
-          event("DP " + id + " confirmado pelo T4A");
+        if (!DP_LOCK.equals(id) && pendingDps.remove(id) != null && !QUIET_DPS.contains(id)) event("DP " + id + " confirmado pelo T4A");
       }
+    }
     if (accepted.containsKey(DP_LOCK) && pendingLockValue != null) {
       Object reported = accepted.get(DP_LOCK);
-      boolean confirmed =
-          String.valueOf(pendingLockValue).equalsIgnoreCase(String.valueOf(reported));
+      boolean confirmed = String.valueOf(pendingLockValue).equalsIgnoreCase(String.valueOf(reported));
       if (confirmed) {
         clearPendingLock();
         event("Trava confirmada pelo T4A");
@@ -520,11 +415,7 @@ public final class T4ABackend {
     if (confirmsCommand && accepted.containsKey(DP_LOCK)) {
       boolean reported = booleanValue(accepted.get(DP_LOCK));
       accepted.put(DP_LOCK, reported);
-      preferences
-          .edit()
-          .putBoolean(PREF_LOCK_KNOWN, true)
-          .putBoolean(PREF_LOCK_VALUE, reported)
-          .apply();
+      preferences.edit().putBoolean(PREF_LOCK_KNOWN, true).putBoolean(PREF_LOCK_VALUE, reported).apply();
     }
     dps.putAll(accepted);
   }
@@ -555,14 +446,13 @@ public final class T4ABackend {
     long previousLastAt = preferences.getLong(PREF_BATTERY_LAST_LIVE_AT, 0L);
     boolean hasCycle = batteryObservedMin != null && batteryObservedMax != null;
     long rechargeMinGapMs = batteryRechargeMinGapHours() * 60L * 60L * 1000L;
-    boolean rechargeEvidence =
-        hasCycle
-            && pendingBatteryRechargePercent == null
-            && previousLast >= 0
-            && previousLastAt > 0L
-            && now - previousLastAt >= rechargeMinGapMs
-            && percent >= previousLast + BATTERY_RECHARGE_MIN_RISE
-            && percent >= batteryObservedMax - BATTERY_RECHARGE_MAX_DISTANCE;
+    boolean rechargeEvidence = hasCycle
+        && pendingBatteryRechargePercent == null
+        && previousLast >= 0
+        && previousLastAt > 0L
+        && now - previousLastAt >= rechargeMinGapMs
+        && percent >= previousLast + BATTERY_RECHARGE_MIN_RISE
+        && percent >= batteryObservedMax - BATTERY_RECHARGE_MAX_DISTANCE;
 
     if (!hasCycle) {
       batteryObservedMin = percent;
@@ -574,60 +464,30 @@ public final class T4ABackend {
       pendingBatteryRechargeMin = percent;
       pendingBatteryRechargeMax = percent;
       pendingBatteryRechargeDetectedAt = now;
-      raw(
-          "BATTERY RECHARGE CANDIDATE {\"previousMin\":"
-              + batteryObservedMin
-              + ",\"previousMax\":"
-              + batteryObservedMax
-              + ",\"firstLive\":"
-              + percent
-              + ",\"gapHours\":"
-              + batteryRechargeMinGapHours()
-              + "}");
+      raw("BATTERY RECHARGE CANDIDATE {\"previousMin\":" + batteryObservedMin + ",\"previousMax\":" + batteryObservedMax + ",\"firstLive\":" + percent + ",\"gapHours\":" + batteryRechargeMinGapHours() + "}");
       event("Possível recarga de bateria detectada");
     } else if (pendingBatteryRechargePercent != null) {
-      if (pendingBatteryRechargeMin == null || percent < pendingBatteryRechargeMin)
-        pendingBatteryRechargeMin = percent;
-      if (pendingBatteryRechargeMax == null || percent > pendingBatteryRechargeMax)
-        pendingBatteryRechargeMax = percent;
+      if (pendingBatteryRechargeMin == null || percent < pendingBatteryRechargeMin) pendingBatteryRechargeMin = percent;
+      if (pendingBatteryRechargeMax == null || percent > pendingBatteryRechargeMax) pendingBatteryRechargeMax = percent;
     } else {
       boolean changed = false;
-      if (percent < batteryObservedMin) {
-        batteryObservedMin = percent;
-        changed = true;
-      }
-      if (percent > batteryObservedMax) {
-        batteryObservedMax = percent;
-        changed = true;
-      }
-      if (batteryCycleStartedAt == null) {
-        batteryCycleStartedAt = now;
-        changed = true;
-      }
+      if (percent < batteryObservedMin) { batteryObservedMin = percent; changed = true; }
+      if (percent > batteryObservedMax) { batteryObservedMax = percent; changed = true; }
+      if (batteryCycleStartedAt == null) { batteryCycleStartedAt = now; changed = true; }
       if (changed) persistBatteryObservation();
     }
 
-    preferences
-        .edit()
-        .putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent)
-        .putLong(PREF_BATTERY_LAST_LIVE_AT, now)
-        .apply();
+    preferences.edit().putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent).putLong(PREF_BATTERY_LAST_LIVE_AT, now).apply();
   }
 
   private void mergePendingBatteryObservation() {
-    if (pendingBatteryRechargeMin != null
-        && (batteryObservedMin == null || pendingBatteryRechargeMin < batteryObservedMin))
-      batteryObservedMin = pendingBatteryRechargeMin;
-    if (pendingBatteryRechargeMax != null
-        && (batteryObservedMax == null || pendingBatteryRechargeMax > batteryObservedMax))
-      batteryObservedMax = pendingBatteryRechargeMax;
+    if (pendingBatteryRechargeMin != null && (batteryObservedMin == null || pendingBatteryRechargeMin < batteryObservedMin)) batteryObservedMin = pendingBatteryRechargeMin;
+    if (pendingBatteryRechargeMax != null && (batteryObservedMax == null || pendingBatteryRechargeMax > batteryObservedMax)) batteryObservedMax = pendingBatteryRechargeMax;
   }
 
   private void persistBatteryObservation() {
-    if (batteryObservedMin == null || batteryObservedMax == null || batteryCycleStartedAt == null)
-      return;
-    preferences
-        .edit()
+    if (batteryObservedMin == null || batteryObservedMax == null || batteryCycleStartedAt == null) return;
+    preferences.edit()
         .putInt(PREF_BATTERY_OBSERVED_MIN, batteryObservedMin)
         .putInt(PREF_BATTERY_OBSERVED_MAX, batteryObservedMax)
         .putLong(PREF_BATTERY_CYCLE_STARTED_AT, batteryCycleStartedAt)
@@ -642,34 +502,19 @@ public final class T4ABackend {
   }
 
   private int batteryRechargeMinGapHours() {
-    int value =
-        preferences.getInt(
-            PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS);
+    int value = preferences.getInt(PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS);
     return validBatteryRechargeGapHours(value) ? value : DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS;
   }
 
-  private boolean validBatteryRechargeGapHours(int hours) {
-    return hours == 1 || hours == 2 || hours == 4 || hours == 8;
-  }
-
-  private Integer batteryPercent(Object value) {
-    return integerValue(value);
-  }
-
+  private boolean validBatteryRechargeGapHours(int hours) { return hours == 1 || hours == 2 || hours == 4 || hours == 8; }
+  private Integer batteryPercent(Object value) { return integerValue(value); }
   private Integer integerValue(Object value) {
     if (value instanceof Number) return ((Number) value).intValue();
-    try {
-      return Integer.parseInt(String.valueOf(value));
-    } catch (NumberFormatException ignored) {
-      return null;
-    }
+    try { return Integer.parseInt(String.valueOf(value)); }
+    catch (NumberFormatException ignored) { return null; }
   }
-
   private boolean booleanValue(Object value) {
-    return value != null
-        && (Boolean.TRUE.equals(value)
-            || "true".equalsIgnoreCase(value.toString())
-            || "1".equals(value.toString()));
+    return value != null && (Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(value.toString()) || "1".equals(value.toString()));
   }
 
   private Map<String, Object> canonicalDps(Map<String, Object> update) {
@@ -691,15 +536,9 @@ public final class T4ABackend {
     return normalized;
   }
 
-  private void clearPendingLock() {
-    pendingLockValue = null;
-    pendingLockUntil = 0L;
-  }
-
+  private void clearPendingLock() { pendingLockValue = null; pendingLockUntil = 0L; }
   private void applyRememberedLock() {
-    if (preferences.getBoolean(PREF_LOCK_KNOWN, false)) {
-      dps.put(DP_LOCK, preferences.getBoolean(PREF_LOCK_VALUE, true));
-    }
+    if (preferences.getBoolean(PREF_LOCK_KNOWN, false)) dps.put(DP_LOCK, preferences.getBoolean(PREF_LOCK_VALUE, true));
   }
 
   private void pollRssi() {
@@ -707,27 +546,21 @@ public final class T4ABackend {
     long requestStarted = System.currentTimeMillis();
     lastRssiRead = requestStarted;
     try {
-      transport.readRssi(
-          device.mac,
-          (success, value) ->
-              handler.post(
-                  () -> {
-                    lastRssiResponse = System.currentTimeMillis();
-                    if (success && value != 0) {
-                      rssi = value;
-                      rssiFailures = 0;
-                    } else {
-                      rssi = 0;
-                      if (++rssiFailures >= 3) recoverRssi();
-                    }
-                    evaluateAutoLock();
-                    emitState();
-                  }));
-      handler.postDelayed(
-          () -> {
-            if (running && connected && lastRssiResponse < requestStarted) recoverRssi();
-          },
-          RSSI_RESPONSE_TIMEOUT_MS);
+      transport.readRssi(device.mac, (success, value) -> handler.post(() -> {
+        lastRssiResponse = System.currentTimeMillis();
+        if (success && value != 0) {
+          rssi = value;
+          rssiFailures = 0;
+        } else {
+          rssi = 0;
+          if (++rssiFailures >= 3) recoverRssi();
+        }
+        evaluateAutoLock();
+        emitState();
+      }));
+      handler.postDelayed(() -> {
+        if (running && connected && lastRssiResponse < requestStarted) recoverRssi();
+      }, RSSI_RESPONSE_TIMEOUT_MS);
     } catch (RuntimeException ignored) {
       rssi = 0;
       recoverRssi();
@@ -742,14 +575,10 @@ public final class T4ABackend {
   }
 
   private void evaluateAutoLock() {
-    if (!preferences.getBoolean(PREF_AUTO_LOCK, false)
-        || !connected
-        || rssi == 0
-        || pendingLockValue != null) return;
+    if (!preferences.getBoolean(PREF_AUTO_LOCK, false) || !connected || rssi == 0 || pendingLockValue != null) return;
     boolean unlocked = Boolean.TRUE.equals(dps.get(DP_LOCK));
     String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
-    int lockRssi =
-        DISTANCE_SHORT.equals(distance) ? -40 : DISTANCE_LONG.equals(distance) ? -80 : -60;
+    int lockRssi = DISTANCE_SHORT.equals(distance) ? -40 : DISTANCE_LONG.equals(distance) ? -80 : -60;
     int unlockRssi = lockRssi + 8;
     if (rssi <= lockRssi && unlocked) {
       event("Sinal distante (" + rssi + " dBm): bloqueando");
