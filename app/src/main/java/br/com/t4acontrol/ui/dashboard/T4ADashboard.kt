@@ -195,10 +195,23 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
     val safePercent = percent.coerceIn(0, 100)
     val safeMin = observedMin?.coerceIn(0, 100)
     val safeMax = observedMax?.coerceIn(0, 100)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        MdiIcon("cmd-battery-charging", if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red, 32.dp, Modifier.width(38.dp).height(25.dp), 90f)
-        Spacer(Modifier.width(8.dp))
-        BoxWithConstraints(Modifier.weight(1f).height(32.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(32.dp)) {
+        val iconWidth = 38.dp
+        val iconToBarGap = 8.dp
+        val barToValueGap = 9.dp
+        val valueWidth = 40.dp
+        val barStart = iconWidth + iconToBarGap
+        val barWidth = (maxWidth - barStart - barToValueGap - valueWidth).coerceAtLeast(1.dp)
+
+        MdiIcon(
+            "cmd-battery-charging",
+            if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red,
+            32.dp,
+            Modifier.align(Alignment.CenterStart).width(iconWidth).height(25.dp),
+            90f,
+        )
+
+        Box(Modifier.offset(x = barStart).width(barWidth).height(32.dp)) {
             Row(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(T4ADashboardTokens.BatteryHeight),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -210,11 +223,19 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
                 }
             }
 
-            safeMin?.let { BatteryRangeMarker(it, true, maxWidth, Modifier.matchParentSize()) }
-            safeMax?.let { BatteryRangeMarker(it, false, maxWidth, Modifier.matchParentSize()) }
+            safeMin?.let { BatteryRangeMarker(it, true, barWidth, Modifier.matchParentSize()) }
+            safeMax?.let { BatteryRangeMarker(it, false, barWidth, Modifier.matchParentSize()) }
         }
-        Spacer(Modifier.width(9.dp))
-        Text(stringResource(R.string.percent, safePercent), color = if (safePercent == 0) muted else foreground, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+
+        Text(
+            stringResource(R.string.percent, safePercent),
+            color = if (safePercent == 0) muted else foreground,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.align(Alignment.CenterEnd).width(valueWidth),
+        )
     }
 }
 
