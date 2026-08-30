@@ -67,7 +67,7 @@ object T4ADashboardTokens {
     val ToggleHeight: Dp = 76.dp
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
-    val BatteryHeight: Dp = 16.dp
+    val BatteryHeight: Dp = 18.dp
     val SecondRowIconSize: Dp = 31.dp
     val SpeedFontSize = 104.sp
     val SpeedUnitFontSize = 24.sp
@@ -251,9 +251,8 @@ private fun BatteryRangeMarker(value: Int, minimum: Boolean, barWidth: Dp, modif
         val circleY = 6.dp.toPx()
         val radius = 3.dp.toPx()
         val stroke = 1.25.dp.toPx()
-        val barTop = size.height - T4ADashboardTokens.BatteryHeight.toPx()
         drawCircle(Color.Black, radius = radius, center = Offset(x, circleY), style = Stroke(stroke))
-        drawLine(Color.Black, Offset(x, circleY + radius + 1.dp.toPx()), Offset(x, barTop), stroke, StrokeCap.Round)
+        drawLine(Color.Black, Offset(x, circleY + radius + 1.dp.toPx()), Offset(x, size.height), stroke, StrokeCap.Round)
     }
 
     Text(
