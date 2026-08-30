@@ -68,6 +68,7 @@ object T4ADashboardTokens {
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
     val BatteryHeight: Dp = 16.dp
+    val SecondRowIconSize: Dp = 31.dp
     val SpeedFontSize = 104.sp
     val SpeedUnitFontSize = 24.sp
     val SectionTitleFontSize = 19.sp
@@ -364,12 +365,12 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
                     locked = state.locked,
                     lockColor = if (enabled) lockColor else muted,
                     bluetoothColor = if (enabled) T4ADashboardTokens.Blue else muted,
-                    lockSize = 28.dp,
+                    lockSize = T4ADashboardTokens.SecondRowIconSize,
                     modifier = Modifier.size(40.dp),
-                    bluetoothSize = 13.dp,
+                    bluetoothSize = 14.dp,
                 )
             } else {
-                StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), 28.dp)
+                StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), T4ADashboardTokens.SecondRowIconSize)
             }
             ControlText(
                 title = stringResource(R.string.lock_control),
@@ -432,7 +433,7 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
 private fun modeLabelRes(mode: RidingMode): Int = when (mode) { RidingMode.WALK -> R.string.mode_walk; RidingMode.ECO -> R.string.mode_eco; RidingMode.RACE -> R.string.mode_race; RidingMode.SPORT -> R.string.mode_sport; RidingMode.UNKNOWN -> R.string.unknown }
 
 @Composable
-private fun ToggleTile(title: String, stateLabel: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = 28.dp, iconOffsetX: Dp = 0.dp, onClick: () -> Unit) {
+private fun ToggleTile(title: String, stateLabel: String, icon: String, active: Boolean, color: Color, enabled: Boolean, surface: Color, muted: Color, darkMode: Boolean, modifier: Modifier = Modifier, actionHeight: Dp = T4ADashboardTokens.ToggleHeight, radius: Dp = T4ADashboardTokens.ToggleRadius, iconSize: Dp = T4ADashboardTokens.SecondRowIconSize, iconOffsetX: Dp = 0.dp, onClick: () -> Unit) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
     Column(modifier.height(actionHeight).alpha(if (enabled) 1f else 0.55f).background(fill, RoundedCornerShape(radius)).border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 5.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         MdiIcon(icon, if (active) color else muted, iconSize, Modifier.offset(x = iconOffsetX).size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
