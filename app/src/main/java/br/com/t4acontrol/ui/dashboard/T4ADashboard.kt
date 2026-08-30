@@ -132,7 +132,7 @@ private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Co
             }
         }
         Spacer(Modifier.height(7.dp))
-        BatteryIndicator(state.batteryPercent, foreground, muted)
+        BatteryIndicator(state.batteryPercent, state.batteryObservedMin, state.batteryObservedMax, foreground, muted)
     }
 }
 
@@ -191,21 +191,52 @@ private fun AutoLockIcon(locked: Boolean, lockColor: Color, bluetoothColor: Colo
 }
 
 @Composable
-private fun BatteryIndicator(percent: Int, foreground: Color, muted: Color) {
+private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?, foreground: Color, muted: Color) {
     val safePercent = percent.coerceIn(0, 100)
+    val safeMin = observedMin?.coerceIn(0, 100)
+    val safeMax = observedMax?.coerceIn(0, 100)
     Row(verticalAlignment = Alignment.CenterVertically) {
         MdiIcon("cmd-battery-charging", if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red, 32.dp, Modifier.width(38.dp).height(25.dp), 90f)
         Spacer(Modifier.width(8.dp))
-        Row(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            repeat(20) { index ->
-                val threshold = (index + 1) * 5
-                val activeColor = when { index < 4 -> T4ADashboardTokens.Red; index < 10 -> T4ADashboardTokens.Amber; else -> T4ADashboardTokens.Green }
-                Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight).background(if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment, RoundedCornerShape(3.dp)))
+        BoxWithConstraints(Modifier.weight(1f).height(30.dp)) {
+            Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(T4ADashboardTokens.BatteryHeight), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                repeat(20) { index ->
+                    val threshold = (index + 1) * 5
+                    val activeColor = when { index < 4 -> T4ADashboardTokens.Red; index < 10 -> T4ADashboardTokens.Amber; else -> T4ADashboardTokens.Green }
+                    Box(Modifier.weight(1f).height(T4ADashboardTokens.BatteryHeight).background(if (threshold <= safePercent) activeColor else T4ADashboardTokens.EmptySegment, RoundedCornerShape(3.dp)))
+                }
             }
+            safeMin?.let { BatteryRangeMarker(it, true, maxWidth, Modifier.matchParentSize()) }
+            safeMax?.let { BatteryRangeMarker(it, false, maxWidth, Modifier.matchParentSize()) }
         }
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(48.dp))
         Text(stringResource(R.string.percent, safePercent), color = if (safePercent == 0) muted else foreground, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
+}
+
+@Composable
+private fun BatteryRangeMarker(value: Int, minimum: Boolean, barWidth: Dp, modifier: Modifier = Modifier) {
+    val markerX = barWidth * (value.coerceIn(0, 100) / 100f)
+    val labelWidth = 46.dp
+    val labelX = if (minimum) markerX - labelWidth - 5.dp else markerX + 5.dp
+    Canvas(modifier) {
+        val x = size.width * (value.coerceIn(0, 100) / 100f)
+        val circleY = 5.dp.toPx()
+        val radius = 3.dp.toPx()
+        val stroke = 1.25.dp.toPx()
+        drawCircle(Color.Black, radius = radius, center = Offset(x, circleY), style = Stroke(stroke))
+        drawLine(Color.Black, Offset(x, circleY + radius + 1.dp.toPx()), Offset(x, size.height), stroke, StrokeCap.Round)
+    }
+    Text(
+        text = (if (minimum) "MIN " else "MAX ") + value.coerceIn(0, 100) + "%",
+        color = Color.Black,
+        fontSize = 8.sp,
+        fontWeight = FontWeight.Bold,
+        lineHeight = 9.sp,
+        textAlign = if (minimum) TextAlign.End else TextAlign.Start,
+        maxLines = 1,
+        modifier = Modifier.offset(x = labelX, y = 0.dp).width(labelWidth),
+    )
 }
 
 @Composable
@@ -368,5 +399,5 @@ private fun foregroundForInactive(darkMode: Boolean): Color = if (darkMode) T4AD
 @Preview(showBackground = true, widthDp = 412)
 @Composable
 private fun DashboardPreview() {
-    T4ADashboard(T4ADashboardState(connected = true, deviceName = "T4A", rssiDbm = -48, batteryPercent = 76, speed = 23, speedUnit = SpeedUnit.KMH, ridingMode = RidingMode.ECO, locked = false, lightOn = true, initialPushOn = true, cruiseOn = false, autoLockOn = true, odometerLabel = "Odômetro total", odometerValue = "128,4 km", usageTime = "01:42:18", controlsEnabled = true, lightEnabled = true, initialPushEnabled = true, cruiseEnabled = true, modeEnabled = true, lockEnabled = true), NoOpT4ADashboardActions, false, Modifier.padding(16.dp))
+    T4ADashboard(T4ADashboardState(connected = true, deviceName = "T4A", rssiDbm = -48, batteryPercent = 76, batteryObservedMin = 48, batteryObservedMax = 100, speed = 23, speedUnit = SpeedUnit.KMH, ridingMode = RidingMode.ECO, locked = false, lightOn = true, initialPushOn = true, cruiseOn = false, autoLockOn = true, odometerLabel = "Odômetro total", odometerValue = "128,4 km", usageTime = "01:42:18", controlsEnabled = true, lightEnabled = true, initialPushEnabled = true, cruiseEnabled = true, modeEnabled = true, lockEnabled = true), NoOpT4ADashboardActions, false, Modifier.padding(16.dp))
 }
