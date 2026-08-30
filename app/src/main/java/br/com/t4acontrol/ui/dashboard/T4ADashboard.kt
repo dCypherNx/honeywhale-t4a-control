@@ -37,9 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -135,39 +138,81 @@ private fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: Co
 @Composable
 private fun LockStatusIndicator(state: T4ADashboardState) {
     val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
-    val lockIcon = if (state.locked) "cmd-lock" else "cmd-lock-open-variant"
     if (state.autoLockOn) {
         AutoLockIcon(
-            lockIcon = lockIcon,
+            locked = state.locked,
             lockColor = lockColor,
             bluetoothColor = T4ADashboardTokens.Blue,
             lockSize = 27.dp,
             modifier = Modifier.size(33.dp),
             bluetoothSize = 10.5.dp,
-            badgeOffsetY = (-3).dp,
         )
     } else {
-        MdiIcon(lockIcon, lockColor, 18.dp, Modifier.size(22.dp))
+        StableLockIcon(state.locked, lockColor, Modifier.size(33.dp), 27.dp)
+    }
+}
+
+@Composable
+private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = Modifier, lockSize: Dp) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(lockSize)) {
+            val bodyLeft = size.width * 0.20f
+            val bodyTop = size.height * 0.46f
+            val bodyWidth = size.width * 0.60f
+            val bodyHeight = size.height * 0.40f
+            val strokeWidth = size.width * 0.11f
+            val shackleLeft = size.width * 0.31f
+            val shackleTop = size.height * 0.10f
+            val shackleWidth = size.width * 0.38f
+            val shackleHeight = size.height * 0.50f
+
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(bodyLeft, bodyTop),
+                size = Size(bodyWidth, bodyHeight),
+                cornerRadius = CornerRadius(size.width * 0.08f, size.width * 0.08f),
+            )
+            if (locked) {
+                drawArc(
+                    color = color,
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = Offset(shackleLeft, shackleTop),
+                    size = Size(shackleWidth, shackleHeight),
+                    style = Stroke(strokeWidth, cap = StrokeCap.Round),
+                )
+            } else {
+                drawArc(
+                    color = color,
+                    startAngle = 175f,
+                    sweepAngle = 235f,
+                    useCenter = false,
+                    topLeft = Offset(shackleLeft + size.width * 0.06f, shackleTop),
+                    size = Size(shackleWidth, shackleHeight),
+                    style = Stroke(strokeWidth, cap = StrokeCap.Round),
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun AutoLockIcon(
-    lockIcon: String,
+    locked: Boolean,
     lockColor: Color,
     bluetoothColor: Color,
     lockSize: Dp,
     modifier: Modifier = Modifier,
     bluetoothSize: Dp = 13.dp,
-    badgeOffsetY: Dp = (-5).dp,
 ) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        MdiIcon(lockIcon, lockColor, lockSize, Modifier.matchParentSize())
+        StableLockIcon(locked, lockColor, Modifier.matchParentSize(), lockSize)
         Box(
             Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = 1.dp, y = badgeOffsetY)
-                .size(bluetoothSize + 7.dp)
+                .align(Alignment.Center)
+                .offset(x = lockSize * 0.16f, y = lockSize * 0.18f)
+                .size(bluetoothSize + 6.dp)
                 .background(Color.White, CircleShape)
                 .border(1.dp, bluetoothColor, CircleShape),
             contentAlignment = Alignment.Center,
@@ -294,7 +339,6 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
     val enabled = state.controlsEnabled && (state.autoLockOn || state.lockEnabled)
     val color = when { state.autoLockOn -> T4ADashboardTokens.Blue; state.locked -> T4ADashboardTokens.Red; else -> T4ADashboardTokens.Green }
     val lockColor = if (state.locked) T4ADashboardTokens.Red else T4ADashboardTokens.Green
-    val lockIcon = if (state.locked) "cmd-lock" else "cmd-lock-open-variant"
     val stateLabel = when {
         state.autoLockOn -> stringResource(R.string.automatic)
         state.locked -> stringResource(R.string.state_on)
@@ -317,16 +361,15 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
         ) {
             if (state.autoLockOn) {
                 AutoLockIcon(
-                    lockIcon = lockIcon,
+                    locked = state.locked,
                     lockColor = if (enabled) lockColor else muted,
                     bluetoothColor = if (enabled) T4ADashboardTokens.Blue else muted,
                     lockSize = 28.dp,
                     modifier = Modifier.size(40.dp),
                     bluetoothSize = 13.dp,
-                    badgeOffsetY = (-5).dp,
                 )
             } else {
-                MdiIcon(lockIcon, if (enabled) lockColor else muted, 28.dp, Modifier.size(40.dp))
+                StableLockIcon(state.locked, if (enabled) lockColor else muted, Modifier.size(40.dp), 28.dp)
             }
             ControlText(
                 title = stringResource(R.string.lock_control),
