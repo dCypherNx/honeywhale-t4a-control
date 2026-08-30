@@ -67,7 +67,7 @@ object T4ADashboardTokens {
     val ToggleHeight: Dp = 76.dp
     val ActionHeight: Dp = 82.dp
     val SpeedGaugeHeight: Dp = 154.dp
-    val BatteryHeight: Dp = 16.dp
+    val BatteryHeight: Dp = 18.dp
     val SecondRowIconSize: Dp = 31.dp
     val SpeedFontSize = 104.sp
     val SpeedUnitFontSize = 24.sp
