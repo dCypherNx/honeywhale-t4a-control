@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -149,7 +150,17 @@ private fun LockStatusIndicator(state: T4ADashboardState) {
 private fun AutoLockIcon(color: Color, lockSize: Dp, modifier: Modifier = Modifier, bluetoothSize: Dp = 10.dp) {
     Box(modifier, contentAlignment = Alignment.Center) {
         MdiIcon("cmd-lock", color, lockSize, Modifier.matchParentSize())
-        MdiIcon("cmd-bluetooth", color, bluetoothSize, Modifier.align(Alignment.Center).offset(y = 2.dp).size(bluetoothSize + 3.dp))
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 1.dp, y = 1.dp)
+                .size(bluetoothSize + 5.dp)
+                .background(Color.White, CircleShape)
+                .border(1.dp, color, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            MdiIcon("cmd-bluetooth", color, bluetoothSize, Modifier.size(bluetoothSize + 1.dp))
+        }
     }
 }
 
@@ -180,7 +191,7 @@ private fun SpeedCard(state: T4ADashboardState, surface: Color, outline: Color, 
             SpeedSegments(state.speed, state.ridingMode, darkMode, Modifier.matchParentSize())
             if (state.ridingMode != RidingMode.UNKNOWN) {
                 BoxWithConstraints(Modifier.matchParentSize()) {
-                    val centerX = maxWidth * 0.95f
+                    val centerX = maxWidth * 0.975f - 11.dp
                     MdiIcon(
                         modeIcon(state.ridingMode),
                         modeColor(state.ridingMode),
