@@ -156,7 +156,7 @@ private fun StableLockIcon(locked: Boolean, color: Color, modifier: Modifier = M
             val bodyHeight = size.height * 0.55f
             val strokeWidth = size.width * 0.105f
 
-            val pivotX = size.width * 0.62f
+            val pivotX = size.width * 0.68f
             val shackleWidth = size.width * 0.35f
             val shackleTop = size.height * 0.06f
             val arcHeight = size.height * 0.38f
