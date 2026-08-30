@@ -199,12 +199,8 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
         MdiIcon("cmd-battery-charging", if (safePercent > 20) T4ADashboardTokens.Green else T4ADashboardTokens.Red, 32.dp, Modifier.width(38.dp).height(25.dp), 90f)
         Spacer(Modifier.width(8.dp))
         BoxWithConstraints(Modifier.weight(1f).height(32.dp)) {
-            val valueWidth = 48.dp
-            val valueGap = 9.dp
-            val barWidth = (maxWidth - valueWidth - valueGap).coerceAtLeast(1.dp)
-
             Row(
-                Modifier.align(Alignment.BottomStart).width(barWidth).height(T4ADashboardTokens.BatteryHeight),
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(T4ADashboardTokens.BatteryHeight),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 repeat(20) { index ->
@@ -214,32 +210,23 @@ private fun BatteryIndicator(percent: Int, observedMin: Int?, observedMax: Int?,
                 }
             }
 
-            Text(
-                stringResource(R.string.percent, safePercent),
-                color = if (safePercent == 0) muted else foreground,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-                modifier = Modifier.align(Alignment.BottomEnd).width(valueWidth),
-            )
-
-            safeMin?.let { BatteryRangeMarker(it, true, barWidth, maxWidth, Modifier.matchParentSize()) }
-            safeMax?.let { BatteryRangeMarker(it, false, barWidth, maxWidth, Modifier.matchParentSize()) }
+            safeMin?.let { BatteryRangeMarker(it, true, maxWidth, Modifier.matchParentSize()) }
+            safeMax?.let { BatteryRangeMarker(it, false, maxWidth, Modifier.matchParentSize()) }
         }
+        Spacer(Modifier.width(9.dp))
+        Text(stringResource(R.string.percent, safePercent), color = if (safePercent == 0) muted else foreground, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun BatteryRangeMarker(value: Int, minimum: Boolean, barWidth: Dp, availableWidth: Dp, modifier: Modifier = Modifier) {
+private fun BatteryRangeMarker(value: Int, minimum: Boolean, barWidth: Dp, modifier: Modifier = Modifier) {
     val safeValue = value.coerceIn(0, 100)
     val markerX = barWidth * (safeValue / 100f)
     val labelWidth = 50.dp
-    val requestedLabelX = if (minimum) markerX - labelWidth - 5.dp else markerX + 5.dp
-    val labelX = requestedLabelX.coerceIn(0.dp, (availableWidth - labelWidth).coerceAtLeast(0.dp))
+    val labelX = if (minimum) markerX - labelWidth - 5.dp else markerX + 5.dp
 
     Canvas(modifier) {
-        val trackWidthPx = barWidth.toPx().coerceAtMost(size.width)
-        val x = trackWidthPx * (safeValue / 100f)
+        val x = size.width * (safeValue / 100f)
         val circleY = 6.dp.toPx()
         val radius = 3.dp.toPx()
         val stroke = 1.25.dp.toPx()
