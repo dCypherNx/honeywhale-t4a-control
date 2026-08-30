@@ -15,7 +15,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,20 +125,17 @@ class MqttSettingsActivity : ComponentActivity() {
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(52.dp)
-                            .background(surfaceColor(darkMode), RoundedCornerShape(99.dp))
-                            .border(1.dp, BLUE, RoundedCornerShape(99.dp))
-                            .clickable { finish() },
+                        modifier = Modifier.size(40.dp).clickable { finish() },
                         contentAlignment = Alignment.Center,
                     ) {
-                        MdiIcon("cmd-arrow-left", BLUE, 25.dp, Modifier.size(32.dp))
+                        MdiIcon("cmd-arrow-left", BLUE, 28.dp, Modifier.size(32.dp))
                     }
                     Text(
                         getString(R.string.mqtt_title),
                         color = foreground,
-                        fontSize = 28.sp,
+                        fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 14.dp),
+                        modifier = Modifier.padding(start = 8.dp),
                     )
                 }
 
@@ -162,49 +158,20 @@ class MqttSettingsActivity : ComponentActivity() {
                         darkMode = darkMode,
                     ) { index ->
                         val next = TRANSPORT_VALUES[index]
-                        if (port.isBlank() || port == defaultPort(transport).toString()) {
-                            port = defaultPort(next).toString()
-                        }
+                        if (port.isBlank() || port == defaultPort(transport).toString()) port = defaultPort(next).toString()
                         transport = next
                     }
-                    Field(
-                        value = host,
-                        onValueChange = { host = it },
-                        label = getString(R.string.mqtt_host),
-                        hint = getString(R.string.mqtt_host_hint),
-                    )
-                    Field(
-                        value = port,
-                        onValueChange = { port = it.filter(Char::isDigit) },
-                        label = getString(R.string.mqtt_port),
-                        hint = getString(R.string.mqtt_port_hint),
-                        keyboardType = KeyboardType.Number,
-                    )
+                    Field(host, { host = it }, getString(R.string.mqtt_host), getString(R.string.mqtt_host_hint))
+                    Field(port, { port = it.filter(Char::isDigit) }, getString(R.string.mqtt_port), getString(R.string.mqtt_port_hint), KeyboardType.Number)
                     if (transport == "WS" || transport == "WSS") {
-                        Field(
-                            value = websocketPath,
-                            onValueChange = { websocketPath = it },
-                            label = getString(R.string.mqtt_websocket_path),
-                            hint = getString(R.string.mqtt_websocket_path_hint),
-                        )
+                        Field(websocketPath, { websocketPath = it }, getString(R.string.mqtt_websocket_path), getString(R.string.mqtt_websocket_path_hint))
                         Text(getString(R.string.mqtt_websocket_path_note), color = muted, fontSize = 11.sp)
                     }
-                    Field(
-                        value = keepAlive,
-                        onValueChange = { keepAlive = it.filter(Char::isDigit) },
-                        label = getString(R.string.mqtt_keep_alive),
-                        hint = getString(R.string.mqtt_keep_alive_hint),
-                        keyboardType = KeyboardType.Number,
-                    )
+                    Field(keepAlive, { keepAlive = it.filter(Char::isDigit) }, getString(R.string.mqtt_keep_alive), getString(R.string.mqtt_keep_alive_hint), KeyboardType.Number)
                 }
 
                 CollapsibleCard(getString(R.string.mqtt_credentials_section), "credentials", darkMode) {
-                    Field(
-                        value = username,
-                        onValueChange = { username = it },
-                        label = getString(R.string.mqtt_username),
-                        hint = getString(R.string.mqtt_username_hint),
-                    )
+                    Field(username, { username = it }, getString(R.string.mqtt_username), getString(R.string.mqtt_username_hint))
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -223,22 +190,10 @@ class MqttSettingsActivity : ComponentActivity() {
                 }
 
                 CollapsibleCard(getString(R.string.mqtt_identity_section), "identity", darkMode) {
-                    Field(
-                        value = clientId,
-                        onValueChange = { clientId = it },
-                        label = getString(R.string.mqtt_client_id),
-                        hint = getString(R.string.mqtt_client_id_hint),
-                    )
-                    Field(
-                        value = baseTopic,
-                        onValueChange = { baseTopic = it },
-                        label = getString(R.string.mqtt_base_topic),
-                        hint = getString(R.string.mqtt_base_topic_hint),
-                    )
+                    Field(clientId, { clientId = it }, getString(R.string.mqtt_client_id), getString(R.string.mqtt_client_id_hint))
+                    Field(baseTopic, { baseTopic = it }, getString(R.string.mqtt_base_topic), getString(R.string.mqtt_base_topic_hint))
                     Text(getString(R.string.mqtt_topic_note), color = muted, fontSize = 11.sp)
-                    SettingSwitch(getString(R.string.mqtt_discovery_enabled), discoveryEnabled, foreground) {
-                        discoveryEnabled = it
-                    }
+                    SettingSwitch(getString(R.string.mqtt_discovery_enabled), discoveryEnabled, foreground) { discoveryEnabled = it }
                     Text(getString(R.string.mqtt_discovery_note), color = muted, fontSize = 11.sp)
                 }
 
@@ -315,12 +270,7 @@ class MqttSettingsActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun SegmentedChoice(
-        labels: List<String>,
-        selectedIndex: Int,
-        darkMode: Boolean,
-        onSelected: (Int) -> Unit,
-    ) {
+    private fun SegmentedChoice(labels: List<String>, selectedIndex: Int, darkMode: Boolean, onSelected: (Int) -> Unit) {
         val safeSelected = selectedIndex.coerceIn(0, labels.lastIndex)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             labels.forEachIndexed { index, label ->
@@ -351,17 +301,15 @@ class MqttSettingsActivity : ComponentActivity() {
         SettingsCard(darkMode) {
             Row(
                 modifier = Modifier.fillMaxWidth()
-                    .background(headerColor(darkMode), RoundedCornerShape(10.dp))
-                    .border(1.dp, outlineColor(darkMode), RoundedCornerShape(10.dp))
                     .clickable {
                         expanded = !expanded
                         getSharedPreferences("t4a_settings", MODE_PRIVATE).edit().putBoolean("mqtt_section_$key", expanded).apply()
                     }
-                    .padding(start = 7.dp, end = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(title, color = BLUE, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f).padding(vertical = 9.dp))
-                MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(30.dp))
+                Text(title, color = BLUE, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                MdiIcon(if (expanded) "cmd-chevron-up" else "cmd-chevron-down", BLUE, 18.dp, Modifier.size(28.dp))
             }
             AnimatedVisibility(
                 visible = expanded,
@@ -369,8 +317,8 @@ class MqttSettingsActivity : ComponentActivity() {
                 exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) { content() }
             }
         }
@@ -385,8 +333,8 @@ class MqttSettingsActivity : ComponentActivity() {
             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
         ) {
             Column(
-                Modifier.fillMaxWidth().padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) { content() }
         }
     }
@@ -488,7 +436,6 @@ class MqttSettingsActivity : ComponentActivity() {
     }
 
     private fun surfaceColor(darkMode: Boolean) = if (darkMode) Color(0xFF171D26) else Color.White
-    private fun headerColor(darkMode: Boolean) = if (darkMode) Color(0xFF202836) else Color(0xFFF8FAFD)
     private fun outlineColor(darkMode: Boolean) = if (darkMode) Color(0xFF354052) else Color(0xFFE4E8F0)
     private fun foregroundColor(darkMode: Boolean) = if (darkMode) Color(0xFFF1F5F9) else Color(0xFF101820)
 }
