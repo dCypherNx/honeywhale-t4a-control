@@ -57,6 +57,60 @@ public final class T4AState {
   public final Long pendingBatteryRechargeDetectedAt;
   public final String message;
 
+  /** Compatibility constructor for consumers that do not need RSSI calibration details. */
+  public T4AState(
+      boolean authenticated,
+      String account,
+      long homeId,
+      String homeName,
+      Pairing pairing,
+      boolean connected,
+      String deviceName,
+      String mac,
+      int rssi,
+      Map<String, Object> dps,
+      Map<String, DpInfo> schema,
+      Set<String> pendingDps,
+      boolean autoLockEnabled,
+      String autoLockDistance,
+      Integer batteryObservedMin,
+      Integer batteryObservedMax,
+      Long batteryCycleStartedAt,
+      int batteryRechargeMinGapHours,
+      Integer pendingBatteryRechargePercent,
+      Long pendingBatteryRechargeDetectedAt,
+      String message) {
+    this(
+        authenticated,
+        account,
+        homeId,
+        homeName,
+        pairing,
+        connected,
+        deviceName,
+        mac,
+        rssi,
+        dps,
+        schema,
+        pendingDps,
+        autoLockEnabled,
+        autoLockDistance,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        batteryObservedMin,
+        batteryObservedMax,
+        batteryCycleStartedAt,
+        batteryRechargeMinGapHours,
+        pendingBatteryRechargePercent,
+        pendingBatteryRechargeDetectedAt,
+        message);
+  }
+
   public T4AState(
       boolean authenticated,
       String account,
