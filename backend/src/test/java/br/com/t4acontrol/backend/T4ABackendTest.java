@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -119,7 +120,7 @@ public class T4ABackendTest {
     idleMainLooper();
 
     state = listener.latest();
-    assertEquals(false, state.dps.get("1"));
+    assertFalse(state.dps.containsKey("1"));
     assertEquals(123, state.dps.get("2"));
     assertEquals(77, state.dps.get("3"));
     assertEquals(Integer.valueOf(77), state.batteryObservedMin);
@@ -153,27 +154,56 @@ public class T4ABackendTest {
     transport.emitDps(Map.of("1", false));
     idleMainLooper();
     assertEquals(false, listener.latest().dps.get("1"));
+    assertEquals(Boolean.FALSE, stateStore.rememberedLock);
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("Trava confirmada")));
   }
 
-  @Test public void autoLockPublishesAbsoluteLockCommandAtConfiguredThreshold() {
+  @Test public void unsolicitedLockRxNeverChangesRememberedState() {
+    stateStore.rememberedLock = false;
     startConnected(Collections.emptyMap());
+
     transport.emitDps(Map.of("1", true));
     idleMainLooper();
+
+    assertEquals(false, listener.latest().dps.get("1"));
+    assertEquals(Boolean.FALSE, stateStore.rememberedLock);
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("LOCK RX ignored unsolicited")));
+  }
+
+  @Test public void autoLockPublishesAbsoluteLockCommandAtConfiguredThreshold() {
+    stateStore.rememberedLock = true;
+    startConnected(Collections.emptyMap());
     transport.rssi = -70;
 
     backend.setAutoLockEnabled(true);
-    backend.setForeground(true);
-    idleMainLooper();
+    advanceMainLooper(2);
 
     assertEquals(false, transport.lastPublished.get("1"));
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("bloqueando")));
   }
 
-  @Test public void disabledAutoLockNeverPublishesUnlockAcrossReconnectAndNearRssi() {
+  @Test public void longAutoLockRequiresThreeFreshSamplesAtMinusNinety() {
+    stateStore.rememberedLock = true;
+    stateStore.autoLockDistance = "long";
     startConnected(Collections.emptyMap());
-    transport.emitDps(Map.of("1", false));
-    idleMainLooper();
+    backend.setAutoLockEnabled(true);
+    int before = transport.publishCalls;
+    transport.rssi = -90;
+
+    advanceMainLooper(2);
+    assertEquals(before, transport.publishCalls);
+    advanceMainLooper(2);
+    assertEquals(before, transport.publishCalls);
+    advanceMainLooper(2);
+
+    assertEquals(before + 1, transport.publishCalls);
+    assertEquals(false, transport.lastPublished.get("1"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("longGuard sample=3/3")));
+  }
+
+  @Test public void disabledAutoLockNeverPublishesUnlockAcrossReconnectAndNearRssi() {
+    stateStore.rememberedLock = false;
+    startConnected(Collections.emptyMap());
     backend.setAutoLockEnabled(false);
     int before = transport.publishCalls;
 
@@ -190,10 +220,9 @@ public class T4ABackendTest {
     assertFalse(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock")));
   }
 
-  @Test public void firstLockRxAfterReconnectIsLoggedWithoutIssuingCommand() {
+  @Test public void firstLockRxAfterReconnectIsLoggedAndIgnoredWithoutIssuingCommand() {
+    stateStore.rememberedLock = false;
     startConnected(Collections.emptyMap());
-    transport.emitDps(Map.of("1", false));
-    idleMainLooper();
     backend.setAutoLockEnabled(false);
     int before = transport.publishCalls;
 
@@ -204,7 +233,25 @@ public class T4ABackendTest {
     idleMainLooper();
 
     assertEquals(before, transport.publishCalls);
+    assertEquals(false, listener.latest().dps.get("1"));
+    assertEquals(Boolean.FALSE, stateStore.rememberedLock);
     assertTrue(listener.raw.stream().anyMatch(value -> value.contains("firstLockRx=unlocked autoLock=false")));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("LOCK RX ignored unsolicited")));
+  }
+
+  @Test public void recentSpuriousBatteryHundredDoesNotReplaceLiveSubHundredValue() {
+    startConnected(Collections.emptyMap());
+
+    transport.emitDps(Map.of("3", 76));
+    idleMainLooper();
+    transport.emitDps(Map.of("3", 100));
+    idleMainLooper();
+
+    assertEquals(76, listener.latest().dps.get("3"));
+    assertEquals(Integer.valueOf(76), listener.latest().batteryObservedMin);
+    assertEquals(Integer.valueOf(76), listener.latest().batteryObservedMax);
+    assertEquals(Integer.valueOf(76), stateStore.batteryLastLivePercent);
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("BATTERY RX 100 ignored")));
   }
 
   @Test public void batteryObservationTracksLiveMinMaxAndDetectsRechargeCandidate() {
@@ -272,6 +319,10 @@ public class T4ABackendTest {
 
   private static void idleMainLooper() {
     Shadows.shadowOf(Looper.getMainLooper()).idle();
+  }
+
+  private static void advanceMainLooper(long seconds) {
+    Shadows.shadowOf(Looper.getMainLooper()).idleFor(seconds, TimeUnit.SECONDS);
   }
 
   private static final class FakeStateStore implements T4AStateStore {
