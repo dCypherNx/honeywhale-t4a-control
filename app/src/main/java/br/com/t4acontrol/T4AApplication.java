@@ -7,6 +7,7 @@ import br.com.t4acontrol.backend.TuyaT4APlatform;
 import br.com.t4acontrol.backend.mqtt.AndroidMqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
+import br.com.t4acontrol.backend.persistence.AndroidT4AStateStore;
 import br.com.t4acontrol.mqtt.DefaultMqttSettings;
 import br.com.t4acontrol.mqtt.MqttSettings;
 import br.com.t4acontrol.mqtt.PahoMqttTransport;
@@ -23,7 +24,7 @@ public final class T4AApplication extends Application {
    */
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     TuyaT4APlatform platform = new TuyaT4APlatform();
-    return new T4ABackend(this, platform, platform, listener);
+    return new T4ABackend(new AndroidT4AStateStore(this), platform, platform, listener);
   }
 
   /** Returns the UI-facing MQTT settings interface; persistence stays behind the composition root. */
