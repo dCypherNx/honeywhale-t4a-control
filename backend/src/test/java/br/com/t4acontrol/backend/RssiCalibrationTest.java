@@ -24,25 +24,46 @@ public class RssiCalibrationTest {
     assertTrue(mediumWidth > longWidth);
   }
 
-  @Test public void twoConsecutiveSamplesDefineInitialExtrema() {
+  @Test public void eachInitialExtremeNeedsItsOwnTwoConsecutiveReadings() {
     RssiCalibration calibration = new RssiCalibration(null, null);
 
-    assertFalse(calibration.observe(-35));
-    assertTrue(calibration.observe(-72));
+    assertFalse(calibration.observe(-50));
+    assertTrue(calibration.observe(-49));
+    assertFalse(calibration.snapshot().ready);
+
+    assertFalse(calibration.observe(-80));
+    assertTrue(calibration.observe(-82));
 
     RssiCalibration.Snapshot snapshot = calibration.snapshot();
-    assertEquals(Integer.valueOf(-35), snapshot.best);
-    assertEquals(Integer.valueOf(-72), snapshot.worst);
+    assertTrue(snapshot.ready);
+    assertEquals(Integer.valueOf(-49), snapshot.best);
+    assertEquals(Integer.valueOf(-82), snapshot.worst);
   }
 
-  @Test public void twoConsecutiveSamplesCanExpandObservedRange() {
+  @Test public void oneWeakExcursionCannotExpandWorstExtreme() {
+    RssiCalibration calibration = new RssiCalibration(-20, -60);
+
+    assertFalse(calibration.observe(-85));
+    assertFalse(calibration.observe(-55));
+
+    assertEquals(Integer.valueOf(-60), calibration.snapshot().worst);
+  }
+
+  @Test public void twoConsecutiveWeakReadingsExpandWorstExtreme() {
     RssiCalibration calibration = new RssiCalibration(-20, -60);
 
     assertFalse(calibration.observe(-85));
     assertTrue(calibration.observe(-86));
 
-    RssiCalibration.Snapshot snapshot = calibration.snapshot();
-    assertEquals(Integer.valueOf(-20), snapshot.best);
-    assertEquals(Integer.valueOf(-86), snapshot.worst);
+    assertEquals(Integer.valueOf(-86), calibration.snapshot().worst);
+  }
+
+  @Test public void twoConsecutiveStrongReadingsExpandBestExtreme() {
+    RssiCalibration calibration = new RssiCalibration(-40, -90);
+
+    assertFalse(calibration.observe(-25));
+    assertTrue(calibration.observe(-22));
+
+    assertEquals(Integer.valueOf(-22), calibration.snapshot().best);
   }
 }
