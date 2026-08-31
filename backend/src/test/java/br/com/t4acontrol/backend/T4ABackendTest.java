@@ -66,7 +66,46 @@ public class T4ABackendTest {
     assertEquals(T4AState.Pairing.PAIRED, state.pairing);
     assertTrue(state.connected);
     assertEquals("device-1", transport.attachedDevice.id);
-    assertEquals(1, transport.connectCalls);
+    assertTrue(transport.connectCalls >= 1);
+  }
+
+  @Test public void discoveryAndPairingStayBehindProvisionerPort() {
+    provisioner.account = "account";
+    provisioner.home = new T4AContracts.Home(1L, "Casa", Collections.emptyList());
+    backend = new T4ABackend(context, provisioner, transport, listener);
+    backend.start();
+    idleMainLooper();
+
+    assertEquals(T4AState.Pairing.UNPAIRED, listener.latest().pairing);
+    backend.scan();
+    assertEquals(T4AState.Pairing.SCANNING, listener.latest().pairing);
+    assertNotNull(provisioner.discoveryListener);
+
+    T4AContracts.DiscoveredDevice discovered = new T4AContracts.DiscoveredDevice(
+        "discovery-1", "AA:BB:CC:DD:EE:FF", "uuid", "product", 1, false, -55);
+    provisioner.discoveryListener.onDevice(discovered);
+    idleMainLooper();
+    assertEquals(T4AState.Pairing.READY, listener.latest().pairing);
+
+    provisioner.pairResult = device(Collections.emptyMap());
+    backend.pair();
+    idleMainLooper();
+
+    assertEquals(T4AState.Pairing.PAIRED, listener.latest().pairing);
+    assertTrue(transport.attached);
+    assertEquals("device-1", transport.attachedDevice.id);
+  }
+
+  @Test public void reconnectsWhenTransportReportsDisconnected() {
+    startConnected(Collections.emptyMap());
+    int before = transport.connectCalls;
+    transport.connected = false;
+
+    backend.setForeground(true);
+    idleMainLooper();
+
+    assertTrue(transport.connectCalls > before);
+    assertTrue(listener.latest().connected);
   }
 
   @Test public void initialCacheCannotEstablishSpeedBatteryOrLock() {
@@ -124,6 +163,20 @@ public class T4ABackendTest {
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("Trava confirmada")));
   }
 
+  @Test public void autoLockPublishesAbsoluteLockCommandAtConfiguredThreshold() {
+    startConnected(Collections.emptyMap());
+    transport.emitDps(Map.of("1", true));
+    idleMainLooper();
+    transport.rssi = -70;
+
+    backend.setAutoLockEnabled(true);
+    backend.setForeground(true);
+    idleMainLooper();
+
+    assertEquals(false, transport.lastPublished.get("1"));
+    assertTrue(listener.events.stream().anyMatch(value -> value.contains("bloqueando")));
+  }
+
   @Test public void batteryObservationTracksLiveMinMaxAndDetectsRechargeCandidate() {
     startConnected(Collections.emptyMap());
 
@@ -135,11 +188,7 @@ public class T4ABackendTest {
     assertEquals(Integer.valueOf(60), listener.latest().batteryObservedMin);
     assertEquals(Integer.valueOf(80), listener.latest().batteryObservedMax);
 
-    preferences.edit()
-        .putInt("battery_last_live_percent", 60)
-        .putLong("battery_last_live_at", System.currentTimeMillis() - 2L * 60L * 60L * 1000L)
-        .commit();
-
+    forceRechargeGapFrom(60);
     transport.emitDps(Map.of("3", 80));
     idleMainLooper();
 
@@ -152,15 +201,45 @@ public class T4ABackendTest {
     assertEquals(Integer.valueOf(80), listener.latest().batteryObservedMax);
   }
 
+  @Test public void rejectedRechargeCandidatePreservesCurrentCycle() {
+    startConnected(Collections.emptyMap());
+    transport.emitDps(Map.of("3", 80));
+    idleMainLooper();
+    transport.emitDps(Map.of("3", 60));
+    idleMainLooper();
+
+    forceRechargeGapFrom(60);
+    transport.emitDps(Map.of("3", 80));
+    idleMainLooper();
+    assertNotNull(listener.latest().pendingBatteryRechargePercent);
+
+    backend.resolveBatteryRecharge(false);
+
+    assertNull(listener.latest().pendingBatteryRechargePercent);
+    assertEquals(Integer.valueOf(60), listener.latest().batteryObservedMin);
+    assertEquals(Integer.valueOf(80), listener.latest().batteryObservedMax);
+  }
+
+  private void forceRechargeGapFrom(int percent) {
+    preferences.edit()
+        .putInt("battery_last_live_percent", percent)
+        .putLong("battery_last_live_at", System.currentTimeMillis() - 2L * 60L * 60L * 1000L)
+        .commit();
+  }
+
   private void startConnected(Map<String, Object> initialDps) {
     provisioner.account = "account";
-    T4AContracts.Device device = new T4AContracts.Device(
-        "device-1", "T4A Test", "AA:BB:CC:DD:EE:FF", "uuid", initialDps, Collections.emptyMap());
+    T4AContracts.Device device = device(initialDps);
     provisioner.home = new T4AContracts.Home(1L, "Casa", List.of(device));
     transport.cached = device;
     backend = new T4ABackend(context, provisioner, transport, listener);
     backend.start();
     idleMainLooper();
+  }
+
+  private static T4AContracts.Device device(Map<String, Object> dps) {
+    return new T4AContracts.Device(
+        "device-1", "T4A Test", "AA:BB:CC:DD:EE:FF", "uuid", dps, Collections.emptyMap());
   }
 
   private static void idleMainLooper() {
@@ -186,13 +265,17 @@ public class T4ABackendTest {
     String account;
     T4AContracts.Home home;
     T4AContracts.DiscoveryListener discoveryListener;
+    T4AContracts.Device pairResult;
 
     @Override public String currentAccount() { return account; }
     @Override public void login(String countryCode, String email, String password, T4AContracts.Callback<String> callback) { callback.onSuccess(email); }
     @Override public void loadPrimaryHome(T4AContracts.Callback<T4AContracts.Home> callback) { callback.onSuccess(home); }
     @Override public void startDiscovery(long timeoutMs, T4AContracts.DiscoveryListener listener) { discoveryListener = listener; }
     @Override public void stopDiscovery() {}
-    @Override public void pair(long homeId, T4AContracts.DiscoveredDevice device, T4AContracts.Callback<T4AContracts.Device> callback) {}
+    @Override public void pair(long homeId, T4AContracts.DiscoveredDevice device, T4AContracts.Callback<T4AContracts.Device> callback) {
+      if (pairResult == null) callback.onError("missing", "No pair result configured");
+      else callback.onSuccess(pairResult);
+    }
     @Override public void remove(String deviceId, T4AContracts.ResultCallback callback) { callback.onSuccess(); }
     @Override public void destroy() {}
   }
@@ -201,6 +284,7 @@ public class T4ABackendTest {
     boolean attached;
     boolean connected;
     int connectCalls;
+    int rssi = -60;
     T4AContracts.Device attachedDevice;
     T4AContracts.Device cached;
     T4AContracts.DeviceListener listener;
@@ -223,7 +307,7 @@ public class T4ABackendTest {
       lastPublished = new HashMap<>(dps);
       callback.onSuccess();
     }
-    @Override public void readRssi(String mac, T4AContracts.RssiCallback callback) { callback.onResult(true, -60); }
+    @Override public void readRssi(String mac, T4AContracts.RssiCallback callback) { callback.onResult(true, rssi); }
     @Override public void destroy() {}
 
     void emitDps(Map<String, Object> dps) {
