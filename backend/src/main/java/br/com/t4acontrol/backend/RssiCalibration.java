@@ -2,7 +2,7 @@ package br.com.t4acontrol.backend;
 
 /** Learns trustworthy BLE RSSI extrema and derives weighted stable proximity bands. */
 final class RssiCalibration {
-  static final int REQUIRED_SAMPLES = 3;
+  static final int REQUIRED_SAMPLES = 2;
   private static final double WEAK_EDGE_MARGIN = 0.10d;
   private static final double SHORT_BAND_SHARE = 0.50d;
   private static final double MEDIUM_BAND_SHARE = 0.30d;
@@ -56,19 +56,20 @@ final class RssiCalibration {
     if (recentCount < REQUIRED_SAMPLES) recentCount++;
     if (recentCount < REQUIRED_SAMPLES) return false;
 
-    int median = median3(recent[0], recent[1], recent[2]);
+    int pairBest = Math.max(recent[0], recent[1]);
+    int pairWorst = Math.min(recent[0], recent[1]);
     boolean changed = false;
     if (best == null || worst == null) {
-      best = median;
-      worst = median;
+      best = pairBest;
+      worst = pairWorst;
       changed = true;
     } else {
-      if (median > best) {
-        best = median;
+      if (pairBest > best) {
+        best = pairBest;
         changed = true;
       }
-      if (median < worst) {
-        worst = median;
+      if (pairWorst < worst) {
+        worst = pairWorst;
         changed = true;
       }
     }
@@ -108,12 +109,5 @@ final class RssiCalibration {
 
   private static boolean validRssi(int value) {
     return value < 0 && value >= -127;
-  }
-
-  private static int median3(int a, int b, int c) {
-    if (a > b) { int t = a; a = b; b = t; }
-    if (b > c) { int t = b; b = c; c = t; }
-    if (a > b) { int t = a; a = b; b = t; }
-    return b;
   }
 }
