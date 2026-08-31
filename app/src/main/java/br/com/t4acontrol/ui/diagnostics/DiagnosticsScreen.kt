@@ -8,22 +8,31 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
@@ -33,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -106,7 +118,6 @@ internal fun RawLogCard(
     foreground: Color,
     actions: T4AUiActions,
 ) {
-    val horizontal = rememberScrollState()
     val filterScroll = rememberScrollState()
     val vertical = rememberLazyListState()
     val knownOrigins = remember {
@@ -150,9 +161,25 @@ internal fun RawLogCard(
     }
     val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
     val buildSequence = BuildConfig.VERSION_CODE % 100000
+
+    var viewportWidthPx by remember(rawLogFilter) { mutableIntStateOf(0) }
+    var maxObservedLineWidthPx by remember(rawLogFilter) { mutableIntStateOf(0) }
+    var horizontalOffsetPx by remember(rawLogFilter) { mutableFloatStateOf(0f) }
+    val maxHorizontalScrollPx = (maxObservedLineWidthPx - viewportWidthPx).coerceAtLeast(0).toFloat()
+    val horizontalScrollable = rememberScrollableState { delta ->
+        val oldOffset = horizontalOffsetPx
+        val newOffset = (oldOffset - delta).coerceIn(0f, maxHorizontalScrollPx)
+        horizontalOffsetPx = newOffset
+        oldOffset - newOffset
+    }
+
+    LaunchedEffect(maxHorizontalScrollPx) {
+        horizontalOffsetPx = horizontalOffsetPx.coerceIn(0f, maxHorizontalScrollPx)
+    }
     LaunchedEffect(filterOptions) {
         if (rawLogFilter !in filterOptions) actions.setRawLogFilter("ALL")
     }
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -191,11 +218,18 @@ internal fun RawLogCard(
                     .height(300.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                    .padding(8.dp),
+                    .padding(8.dp)
+                    .onSizeChanged { viewportWidthPx = it.width }
+                    .scrollable(
+                        state = horizontalScrollable,
+                        orientation = Orientation.Horizontal,
+                    ),
             ) {
                 LazyColumn(
                     state = vertical,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(end = 7.dp),
                 ) {
                     itemsIndexed(
                         items = visibleEntries,
@@ -207,16 +241,77 @@ internal fun RawLogCard(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 10.sp,
                             softWrap = false,
-                            modifier = Modifier.horizontalScroll(horizontal),
+                            modifier = Modifier
+                                .wrapContentWidth(unbounded = true)
+                                .onSizeChanged { size ->
+                                    if (size.width > maxObservedLineWidthPx) {
+                                        maxObservedLineWidthPx = size.width
+                                    }
+                                }
+                                .graphicsLayer {
+                                    translationX = -horizontalOffsetPx
+                                },
                         )
                     }
                 }
+                LazyVerticalScrollIndicator(
+                    state = vertical,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight(),
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 OutlinedButton(onClick = actions::copyRawLog) { Text(stringResource(R.string.copy)) }
                 OutlinedButton(onClick = actions::saveRawLog) { Text(stringResource(R.string.save)) }
             }
         }
+    }
+}
+
+@Composable
+private fun LazyVerticalScrollIndicator(
+    state: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val layoutInfo = state.layoutInfo
+    val visibleItems = layoutInfo.visibleItemsInfo
+    val totalItems = layoutInfo.totalItemsCount
+    if (totalItems <= visibleItems.size || visibleItems.isEmpty()) return
+
+    val firstVisible = visibleItems.first()
+    val itemProgress = if (firstVisible.size > 0) {
+        state.firstVisibleItemScrollOffset.toFloat() / firstVisible.size.toFloat()
+    } else {
+        0f
+    }
+    val effectiveFirstIndex = state.firstVisibleItemIndex + itemProgress
+    val maxFirstIndex = (totalItems - visibleItems.size).coerceAtLeast(1)
+    val scrollProgress = (effectiveFirstIndex / maxFirstIndex.toFloat()).coerceIn(0f, 1f)
+    val visibleFraction = (visibleItems.size.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
+
+    BoxWithConstraints(modifier = modifier.width(4.dp)) {
+        val thumbHeight = maxOf(24.dp, maxHeight * visibleFraction).coerceAtMost(maxHeight)
+        val travel = maxHeight - thumbHeight
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                    RoundedCornerShape(2.dp),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = travel * scrollProgress)
+                .width(3.dp)
+                .height(thumbHeight)
+                .background(
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    RoundedCornerShape(2.dp),
+                ),
+        )
     }
 }
 
