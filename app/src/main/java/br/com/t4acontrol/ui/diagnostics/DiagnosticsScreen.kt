@@ -33,6 +33,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -107,18 +109,44 @@ internal fun RawLogCard(
     val horizontal = rememberScrollState()
     val filterScroll = rememberScrollState()
     val vertical = rememberLazyListState()
-    val recentEntries = remember(rawHistory.size) { rawHistory.takeLast(RAW_LOG_DISPLAY_LIMIT) }
-    val filterOptions = remember(recentEntries) {
-        listOf("ALL") + recentEntries.asSequence()
-            .map(::rawLogOrigin)
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
-            .toList()
+    val knownOrigins = remember {
+        mutableStateListOf<String>().apply {
+            addAll(
+                rawHistory.asSequence()
+                    .map(::rawLogOrigin)
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+                    .toList()
+            )
+        }
     }
-    val visibleEntries = remember(recentEntries, rawLogFilter) {
-        if (rawLogFilter == "ALL") recentEntries
-        else recentEntries.filter { rawLogOrigin(it) == rawLogFilter }
+    var processedOriginCount by remember { mutableIntStateOf(rawHistory.size) }
+
+    LaunchedEffect(rawHistory.size) {
+        if (rawHistory.size < processedOriginCount) {
+            knownOrigins.clear()
+            knownOrigins.addAll(
+                rawHistory.asSequence()
+                    .map(::rawLogOrigin)
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+                    .toList()
+            )
+            processedOriginCount = rawHistory.size
+        } else if (rawHistory.size > processedOriginCount) {
+            for (index in processedOriginCount until rawHistory.size) {
+                val origin = rawLogOrigin(rawHistory[index])
+                if (origin.isNotBlank() && origin !in knownOrigins) knownOrigins.add(origin)
+            }
+            processedOriginCount = rawHistory.size
+        }
+    }
+
+    val filterOptions = listOf("ALL") + knownOrigins.sorted()
+    val visibleEntries = remember(rawHistory.size, rawLogFilter) {
+        latestMatchingEntries(rawHistory, rawLogFilter, RAW_LOG_DISPLAY_LIMIT)
     }
     val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
     val buildSequence = BuildConfig.VERSION_CODE % 100000
@@ -170,7 +198,7 @@ internal fun RawLogCard(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     itemsIndexed(
-                        items = visibleEntries.asReversed(),
+                        items = visibleEntries,
                         key = { index, entry -> "$index:$entry" },
                     ) { _, entry ->
                         Text(
@@ -190,6 +218,19 @@ internal fun RawLogCard(
             }
         }
     }
+}
+
+private fun latestMatchingEntries(history: List<String>, filter: String, limit: Int): List<String> {
+    if (history.isEmpty() || limit <= 0) return emptyList()
+    val result = ArrayList<String>(minOf(limit, history.size))
+    for (index in history.lastIndex downTo 0) {
+        val entry = history[index]
+        if (filter == "ALL" || rawLogOrigin(entry) == filter) {
+            result.add(entry)
+            if (result.size == limit) break
+        }
+    }
+    return result
 }
 
 private fun rawLogOrigin(entry: String): String {
