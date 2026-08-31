@@ -5,7 +5,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,16 +14,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
@@ -33,20 +32,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.R
@@ -54,8 +49,8 @@ import br.com.t4acontrol.ui.MdiIcon
 import br.com.t4acontrol.ui.T4AUiActions
 import br.com.t4acontrol.ui.T4AUiTokens
 import java.util.Locale
-import kotlin.math.max
-import kotlin.math.roundToInt
+
+private const val RAW_LOG_DISPLAY_LIMIT = 500
 
 @Composable
 internal fun DashboardEvents(entries: List<String>, foreground: Color, actions: T4AUiActions) {
@@ -108,15 +103,25 @@ internal fun RawLogCard(
     foreground: Color,
     actions: T4AUiActions,
 ) {
-    val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
     val filterScroll = rememberScrollState()
-    val origins = rawHistory.asSequence().map(::rawLogOrigin).filter { it.isNotBlank() }.distinct().sorted().toList()
-    val filterOptions = listOf("ALL") + origins
+    val vertical = rememberLazyListState()
+    val recentEntries = remember(rawHistory.size) { rawHistory.takeLast(RAW_LOG_DISPLAY_LIMIT) }
+    val filterOptions = remember(recentEntries) {
+        listOf("ALL") + recentEntries.asSequence()
+            .map(::rawLogOrigin)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+            .toList()
+    }
+    val visibleEntries = remember(recentEntries, rawLogFilter) {
+        if (rawLogFilter == "ALL") recentEntries
+        else recentEntries.filter { rawLogOrigin(it) == rawLogFilter }
+    }
     LaunchedEffect(filterOptions) {
         if (rawLogFilter !in filterOptions) actions.setRawLogFilter("ALL")
     }
-    val visibleEntries = if (rawLogFilter == "ALL") rawHistory else rawHistory.filter { rawLogOrigin(it) == rawLogFilter }
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -149,48 +154,29 @@ internal fun RawLogCard(
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                     .padding(8.dp),
             ) {
-                Column(modifier = Modifier.padding(end = 8.dp).horizontalScroll(horizontal).verticalScroll(vertical)) {
-                    visibleEntries.asReversed().forEach { entry ->
-                        Text(entry, color = foreground, fontFamily = FontFamily.Monospace, fontSize = 10.sp, softWrap = false)
+                LazyColumn(
+                    state = vertical,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    itemsIndexed(
+                        items = visibleEntries.asReversed(),
+                        key = { index, entry -> "$index:$entry" },
+                    ) { _, entry ->
+                        Text(
+                            entry,
+                            color = foreground,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            softWrap = false,
+                            modifier = Modifier.horizontalScroll(horizontal),
+                        )
                     }
                 }
-                VerticalScrollIndicator(scrollState = vertical, modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(3.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 OutlinedButton(onClick = actions::copyRawLog) { Text(stringResource(R.string.copy)) }
                 OutlinedButton(onClick = actions::saveRawLog) { Text(stringResource(R.string.save)) }
             }
-        }
-    }
-}
-
-@Composable
-private fun VerticalScrollIndicator(scrollState: ScrollState, modifier: Modifier = Modifier) {
-    var viewportHeight by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
-    Box(modifier.onSizeChanged { viewportHeight = it.height }) {
-        if (scrollState.maxValue > 0 && viewportHeight > 0) {
-            val viewport = viewportHeight.toFloat()
-            val content = viewport + scrollState.maxValue.toFloat()
-            val minThumb = with(density) { 24.dp.toPx() }
-            val thumb = max(minThumb, viewport * viewport / content).coerceAtMost(viewport)
-            val travel = viewport - thumb
-            val y = travel * scrollState.value.toFloat() / scrollState.maxValue.toFloat()
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .fillMaxHeight()
-                    .width(3.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.28f), RoundedCornerShape(99.dp)),
-            )
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .offset { IntOffset(0, y.roundToInt()) }
-                    .width(3.dp)
-                    .height(with(density) { thumb.toDp() })
-                    .background(T4AUiTokens.Blue.copy(alpha = 0.72f), RoundedCornerShape(99.dp)),
-            )
         }
     }
 }
