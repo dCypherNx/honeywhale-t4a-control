@@ -1,11 +1,14 @@
 package br.com.t4acontrol.ui.dashboard
 
+import androidx.compose.runtime.Immutable
+
 /**
  * Estado exclusivamente visual do painel principal.
  *
  * Nenhum Composable deve interpretar IDs de DP, valores Tuya ou detalhes do transporte.
  * Toda tradução do estado bruto do T4A deve acontecer antes de chegar aqui.
  */
+@Immutable
 data class T4ADashboardState(
     val connected: Boolean = false,
     val deviceName: String = "--",
