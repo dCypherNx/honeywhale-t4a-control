@@ -20,6 +20,8 @@ dependencies {
     implementation 'com.alibaba:fastjson:1.1.67.android'
     implementation 'com.squareup.okhttp3:okhttp-urlconnection:4.12.0'
     implementation 'com.thingclips.smart:thingsmart:7.8.0'
+
+    testImplementation 'junit:junit:4.13.2'
 }
 
 configurations.configureEach {
