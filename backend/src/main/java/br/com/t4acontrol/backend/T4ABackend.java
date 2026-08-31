@@ -1,7 +1,5 @@
 package br.com.t4acontrol.backend;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import com.alibaba.fastjson.JSON;
@@ -30,17 +28,6 @@ public final class T4ABackend {
   private static final int DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS = 1;
   private static final int BATTERY_RECHARGE_MIN_RISE = 5;
   private static final int BATTERY_RECHARGE_MAX_DISTANCE = 1;
-  private static final String PREF_LOCK_KNOWN = "lock_known";
-  private static final String PREF_LOCK_VALUE = "lock_value";
-  private static final String PREF_AUTO_LOCK = "auto_lock_distance";
-  private static final String PREF_AUTO_LOCK_DISTANCE = "auto_lock_distance_level";
-  private static final String PREF_BLE_ADDRESS = "ble_address";
-  private static final String PREF_BATTERY_OBSERVED_MIN = "battery_observed_min";
-  private static final String PREF_BATTERY_OBSERVED_MAX = "battery_observed_max";
-  private static final String PREF_BATTERY_CYCLE_STARTED_AT = "battery_cycle_started_at";
-  private static final String PREF_BATTERY_LAST_LIVE_PERCENT = "battery_last_live_percent";
-  private static final String PREF_BATTERY_LAST_LIVE_AT = "battery_last_live_at";
-  private static final String PREF_BATTERY_RECHARGE_MIN_GAP_HOURS = "battery_recharge_min_gap_hours";
   private static final String DISTANCE_SHORT = "short",
       DISTANCE_MEDIUM = "medium",
       DISTANCE_LONG = "long";
@@ -48,7 +35,7 @@ public final class T4ABackend {
   private final Listener listener;
   private final T4AProvisioner provisioner;
   private final T4ATransport transport;
-  private final SharedPreferences preferences;
+  private final T4AStateStore stateStore;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Map<String, Object> dps = new HashMap<>();
   private final Map<String, T4AState.DpInfo> schema = new HashMap<>();
@@ -91,11 +78,15 @@ public final class T4ABackend {
     }
   };
 
-  public T4ABackend(Context context, T4AProvisioner provisioner, T4ATransport transport, Listener listener) {
+  public T4ABackend(
+      T4AStateStore stateStore,
+      T4AProvisioner provisioner,
+      T4ATransport transport,
+      Listener listener) {
     this.listener = listener;
     this.provisioner = provisioner;
     this.transport = transport;
-    this.preferences = context.getApplicationContext().getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
+    this.stateStore = stateStore;
     restoreBatteryObservation();
   }
 
@@ -158,7 +149,7 @@ public final class T4ABackend {
         handler.post(() -> {
           if (found == null || found.bound || candidate != null) return;
           candidate = found;
-          if (!found.address.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, found.address).apply();
+          if (!found.address.isEmpty()) stateStore.setBleAddress(found.address);
           rssi = found.rssi;
           pairing = T4AState.Pairing.READY;
           provisioner.stopDiscovery();
@@ -194,7 +185,7 @@ public final class T4ABackend {
       pendingLockValue = value;
       pendingLockUntil = System.currentTimeMillis() + LOCK_CONFIRM_TIMEOUT_MS;
       boolean remembered = Boolean.TRUE.equals(value);
-      preferences.edit().putBoolean(PREF_LOCK_KNOWN, true).putBoolean(PREF_LOCK_VALUE, remembered).apply();
+      stateStore.setRememberedLock(remembered);
       dps.put(DP_LOCK, remembered);
     }
     Map<String, Object> command = Collections.singletonMap(dpId, value);
@@ -212,8 +203,8 @@ public final class T4ABackend {
   }
 
   public void setAutoLockEnabled(boolean enabled) {
-    preferences.edit().putBoolean(PREF_AUTO_LOCK, enabled).apply();
-    raw("[APP] AUTO_LOCK enabled=" + enabled + " distance=" + preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM));
+    stateStore.setAutoLockEnabled(enabled);
+    raw("[APP] AUTO_LOCK enabled=" + enabled + " distance=" + autoLockDistance());
     event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
     emitState();
     if (enabled) evaluateAutoLock();
@@ -221,7 +212,7 @@ public final class T4ABackend {
 
   public void setAutoLockDistance(String distance) {
     if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
-    preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
+    stateStore.setAutoLockDistance(distance);
     int lockRssi = autoLockThreshold(distance);
     raw("[APP] AUTO_LOCK distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + (lockRssi + 8) + " dBm");
     emitState();
@@ -230,7 +221,7 @@ public final class T4ABackend {
 
   public void setBatteryRechargeMinGapHours(int hours) {
     if (!validBatteryRechargeGapHours(hours)) return;
-    preferences.edit().putInt(PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, hours).apply();
+    stateStore.setBatteryRechargeMinGapHours(hours);
     event("Detecção de recarga configurada para " + hours + " h");
     emitState();
   }
@@ -294,7 +285,7 @@ public final class T4ABackend {
     transport.detach();
     value = withRememberedBleAddress(value);
     device = value;
-    if (!value.mac.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, value.mac).apply();
+    if (!value.mac.isEmpty()) stateStore.setBleAddress(value.mac);
     pairing = T4AState.Pairing.PAIRED;
     dps.clear();
     schema.clear();
@@ -354,15 +345,15 @@ public final class T4ABackend {
     String address = value.mac;
     if (address.isEmpty() && device != null && device.id.equals(value.id) && !device.mac.isEmpty()) address = device.mac;
     if (address.isEmpty() && candidate != null && !candidate.address.isEmpty()) address = candidate.address;
-    if (address.isEmpty()) address = preferences.getString(PREF_BLE_ADDRESS, "");
-    if (!address.isEmpty()) preferences.edit().putString(PREF_BLE_ADDRESS, address).apply();
+    if (address.isEmpty()) address = stateStore.bleAddress();
+    if (!address.isEmpty()) stateStore.setBleAddress(address);
     if (address.equals(value.mac)) return value;
     return new T4AContracts.Device(value.id, value.name, address, value.uuid, value.dps, value.schema);
   }
 
   private String rssiAddress() {
     if (device != null && !device.mac.isEmpty()) return device.mac;
-    return preferences.getString(PREF_BLE_ADDRESS, "");
+    return stateStore.bleAddress();
   }
 
   private void clearDevice(String reason) {
@@ -372,7 +363,7 @@ public final class T4ABackend {
     connected = false;
     awaitingLockRxAfterConnect = false;
     rssi = 0;
-    preferences.edit().remove(PREF_BLE_ADDRESS).apply();
+    stateStore.clearBleAddress();
     clearPendingLock();
     clearPendingBatteryRecharge();
     dps.clear();
@@ -402,8 +393,8 @@ public final class T4ABackend {
         dps,
         schema,
         pendingDps.keySet(),
-        preferences.getBoolean(PREF_AUTO_LOCK, false),
-        preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM),
+        stateStore.autoLockEnabled(),
+        autoLockDistance(),
         batteryObservedMin,
         batteryObservedMax,
         batteryCycleStartedAt,
@@ -443,7 +434,7 @@ public final class T4ABackend {
     if (confirmsCommand && accepted.containsKey(DP_LOCK)) {
       boolean reported = booleanValue(accepted.get(DP_LOCK));
       accepted.put(DP_LOCK, reported);
-      preferences.edit().putBoolean(PREF_LOCK_KNOWN, true).putBoolean(PREF_LOCK_VALUE, reported).apply();
+      stateStore.setRememberedLock(reported);
     }
     dps.putAll(accepted);
   }
@@ -460,18 +451,20 @@ public final class T4ABackend {
   }
 
   private void restoreBatteryObservation() {
-    int min = preferences.getInt(PREF_BATTERY_OBSERVED_MIN, -1);
-    int max = preferences.getInt(PREF_BATTERY_OBSERVED_MAX, -1);
-    long startedAt = preferences.getLong(PREF_BATTERY_CYCLE_STARTED_AT, 0L);
-    batteryObservedMin = min >= 0 ? min : null;
-    batteryObservedMax = max >= 0 ? max : null;
-    batteryCycleStartedAt = startedAt > 0L ? startedAt : null;
+    Integer min = stateStore.batteryObservedMin();
+    Integer max = stateStore.batteryObservedMax();
+    Long startedAt = stateStore.batteryCycleStartedAt();
+    batteryObservedMin = min != null && min >= 0 ? min : null;
+    batteryObservedMax = max != null && max >= 0 ? max : null;
+    batteryCycleStartedAt = startedAt != null && startedAt > 0L ? startedAt : null;
   }
 
   private void trackLiveBattery(int percent) {
     long now = System.currentTimeMillis();
-    int previousLast = preferences.getInt(PREF_BATTERY_LAST_LIVE_PERCENT, -1);
-    long previousLastAt = preferences.getLong(PREF_BATTERY_LAST_LIVE_AT, 0L);
+    Integer storedLast = stateStore.batteryLastLivePercent();
+    Long storedLastAt = stateStore.batteryLastLiveAt();
+    int previousLast = storedLast == null ? -1 : storedLast;
+    long previousLastAt = storedLastAt == null ? 0L : storedLastAt;
     boolean hasCycle = batteryObservedMin != null && batteryObservedMax != null;
     long rechargeMinGapMs = batteryRechargeMinGapHours() * 60L * 60L * 1000L;
     boolean rechargeEvidence = hasCycle
@@ -505,7 +498,7 @@ public final class T4ABackend {
       if (changed) persistBatteryObservation();
     }
 
-    preferences.edit().putInt(PREF_BATTERY_LAST_LIVE_PERCENT, percent).putLong(PREF_BATTERY_LAST_LIVE_AT, now).apply();
+    stateStore.setBatteryLastLive(percent, now);
   }
 
   private void mergePendingBatteryObservation() {
@@ -515,11 +508,7 @@ public final class T4ABackend {
 
   private void persistBatteryObservation() {
     if (batteryObservedMin == null || batteryObservedMax == null || batteryCycleStartedAt == null) return;
-    preferences.edit()
-        .putInt(PREF_BATTERY_OBSERVED_MIN, batteryObservedMin)
-        .putInt(PREF_BATTERY_OBSERVED_MAX, batteryObservedMax)
-        .putLong(PREF_BATTERY_CYCLE_STARTED_AT, batteryCycleStartedAt)
-        .apply();
+    stateStore.setBatteryObservation(batteryObservedMin, batteryObservedMax, batteryCycleStartedAt);
   }
 
   private void clearPendingBatteryRecharge() {
@@ -530,8 +519,14 @@ public final class T4ABackend {
   }
 
   private int batteryRechargeMinGapHours() {
-    int value = preferences.getInt(PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS);
+    Integer stored = stateStore.batteryRechargeMinGapHours();
+    int value = stored == null ? DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS : stored;
     return validBatteryRechargeGapHours(value) ? value : DEFAULT_BATTERY_RECHARGE_MIN_GAP_HOURS;
+  }
+
+  private String autoLockDistance() {
+    String value = stateStore.autoLockDistance();
+    return value == null ? DISTANCE_MEDIUM : value;
   }
 
   private boolean validBatteryRechargeGapHours(int hours) { return hours == 1 || hours == 2 || hours == 4 || hours == 8; }
@@ -566,19 +561,18 @@ public final class T4ABackend {
 
   private void recordConnectionTransition(boolean online) {
     if (connected == online) return;
-    boolean previous = connected;
     connected = online;
     if (online) {
       awaitingLockRxAfterConnect = true;
       raw("[APP] CONNECTION DISCONNECTED->CONNECTED autoLock="
-          + preferences.getBoolean(PREF_AUTO_LOCK, false)
-          + " rememberedLockKnown=" + preferences.getBoolean(PREF_LOCK_KNOWN, false)
+          + stateStore.autoLockEnabled()
+          + " rememberedLockKnown=" + (stateStore.rememberedLock() != null)
           + " rememberedLock=" + rememberedLockState()
           + " localLock=" + lockState(dps.get(DP_LOCK)));
     } else {
       awaitingLockRxAfterConnect = false;
       raw("[APP] CONNECTION CONNECTED->DISCONNECTED autoLock="
-          + preferences.getBoolean(PREF_AUTO_LOCK, false)
+          + stateStore.autoLockEnabled()
           + " rememberedLock=" + rememberedLockState()
           + " localLock=" + lockState(dps.get(DP_LOCK)));
     }
@@ -589,15 +583,16 @@ public final class T4ABackend {
     Map<String, Object> normalized = canonicalDps(update);
     if (!normalized.containsKey(DP_LOCK)) return;
     raw("[APP] CONNECTION firstLockRx=" + lockState(normalized.get(DP_LOCK))
-        + " autoLock=" + preferences.getBoolean(PREF_AUTO_LOCK, false)
+        + " autoLock=" + stateStore.autoLockEnabled()
         + " rememberedLock=" + rememberedLockState()
         + " localLockBeforeRx=" + lockState(dps.get(DP_LOCK)));
     awaitingLockRxAfterConnect = false;
   }
 
   private String rememberedLockState() {
-    if (!preferences.getBoolean(PREF_LOCK_KNOWN, false)) return "unknown";
-    return preferences.getBoolean(PREF_LOCK_VALUE, true) ? "unlocked" : "locked";
+    Boolean remembered = stateStore.rememberedLock();
+    if (remembered == null) return "unknown";
+    return remembered ? "unlocked" : "locked";
   }
 
   private String lockState(Object value) {
@@ -607,7 +602,8 @@ public final class T4ABackend {
 
   private void clearPendingLock() { pendingLockValue = null; pendingLockUntil = 0L; }
   private void applyRememberedLock() {
-    if (preferences.getBoolean(PREF_LOCK_KNOWN, false)) dps.put(DP_LOCK, preferences.getBoolean(PREF_LOCK_VALUE, true));
+    Boolean remembered = stateStore.rememberedLock();
+    if (remembered != null) dps.put(DP_LOCK, remembered);
   }
 
   private void pollRssi() {
@@ -616,7 +612,7 @@ public final class T4ABackend {
     if (address.isEmpty()) {
       int previousRssi = rssi;
       rssi = 0;
-      if (previousRssi != 0 && preferences.getBoolean(PREF_AUTO_LOCK, false)) raw("[BT] RSSI " + previousRssi + " -> unavailable");
+      if (previousRssi != 0 && stateStore.autoLockEnabled()) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       emitState();
       return;
     }
@@ -629,10 +625,10 @@ public final class T4ABackend {
         if (success && value != 0) {
           rssi = value;
           rssiFailures = 0;
-          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != value) logAutoLockRssi(previousRssi, value);
+          if (stateStore.autoLockEnabled() && previousRssi != value) logAutoLockRssi(previousRssi, value);
         } else {
           rssi = 0;
-          if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
+          if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
           if (++rssiFailures >= 3) recoverRssi();
         }
         evaluateAutoLock();
@@ -644,7 +640,7 @@ public final class T4ABackend {
     } catch (RuntimeException ignored) {
       int previousRssi = rssi;
       rssi = 0;
-      if (preferences.getBoolean(PREF_AUTO_LOCK, false) && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
+      if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       recoverRssi();
       emitState();
     }
@@ -661,7 +657,7 @@ public final class T4ABackend {
   }
 
   private void logAutoLockRssi(int previousRssi, int currentRssi) {
-    String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
+    String distance = autoLockDistance();
     int lockRssi = autoLockThreshold(distance);
     int unlockRssi = lockRssi + 8;
     String lockState = Boolean.TRUE.equals(dps.get(DP_LOCK)) ? "unlocked" : "locked";
@@ -669,9 +665,9 @@ public final class T4ABackend {
   }
 
   private void evaluateAutoLock() {
-    if (!preferences.getBoolean(PREF_AUTO_LOCK, false) || !connected || rssi == 0 || pendingLockValue != null) return;
+    if (!stateStore.autoLockEnabled() || !connected || rssi == 0 || pendingLockValue != null) return;
     boolean unlocked = Boolean.TRUE.equals(dps.get(DP_LOCK));
-    String distance = preferences.getString(PREF_AUTO_LOCK_DISTANCE, DISTANCE_MEDIUM);
+    String distance = autoLockDistance();
     int lockRssi = autoLockThreshold(distance);
     int unlockRssi = lockRssi + 8;
     if (rssi <= lockRssi && unlocked) {

@@ -6,8 +6,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Looper;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,24 +17,20 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 35)
 public class T4ABackendTest {
-  private Context context;
-  private SharedPreferences preferences;
+  private FakeStateStore stateStore;
   private FakeProvisioner provisioner;
   private FakeTransport transport;
   private RecordingListener listener;
   private T4ABackend backend;
 
   @Before public void setUp() {
-    context = RuntimeEnvironment.getApplication();
-    preferences = context.getSharedPreferences("t4a_backend", Context.MODE_PRIVATE);
-    preferences.edit().clear().commit();
+    stateStore = new FakeStateStore();
     provisioner = new FakeProvisioner();
     transport = new FakeTransport();
     listener = new RecordingListener();
@@ -44,12 +38,11 @@ public class T4ABackendTest {
 
   @After public void tearDown() {
     if (backend != null) backend.destroy();
-    preferences.edit().clear().commit();
   }
 
   @Test public void startWithoutRestoredAccountStaysUnauthenticated() {
     provisioner.account = null;
-    backend = new T4ABackend(context, provisioner, transport, listener);
+    backend = new T4ABackend(stateStore, provisioner, transport, listener);
 
     backend.start();
 
@@ -72,7 +65,7 @@ public class T4ABackendTest {
   @Test public void discoveryAndPairingStayBehindProvisionerPort() {
     provisioner.account = "account";
     provisioner.home = new T4AContracts.Home(1L, "Casa", Collections.emptyList());
-    backend = new T4ABackend(context, provisioner, transport, listener);
+    backend = new T4ABackend(stateStore, provisioner, transport, listener);
     backend.start();
     idleMainLooper();
 
@@ -258,10 +251,8 @@ public class T4ABackendTest {
   }
 
   private void forceRechargeGapFrom(int percent) {
-    preferences.edit()
-        .putInt("battery_last_live_percent", percent)
-        .putLong("battery_last_live_at", System.currentTimeMillis() - 2L * 60L * 60L * 1000L)
-        .commit();
+    stateStore.batteryLastLivePercent = percent;
+    stateStore.batteryLastLiveAt = System.currentTimeMillis() - 2L * 60L * 60L * 1000L;
   }
 
   private void startConnected(Map<String, Object> initialDps) {
@@ -269,7 +260,7 @@ public class T4ABackendTest {
     T4AContracts.Device device = device(initialDps);
     provisioner.home = new T4AContracts.Home(1L, "Casa", List.of(device));
     transport.cached = device;
-    backend = new T4ABackend(context, provisioner, transport, listener);
+    backend = new T4ABackend(stateStore, provisioner, transport, listener);
     backend.start();
     idleMainLooper();
   }
@@ -281,6 +272,45 @@ public class T4ABackendTest {
 
   private static void idleMainLooper() {
     Shadows.shadowOf(Looper.getMainLooper()).idle();
+  }
+
+  private static final class FakeStateStore implements T4AStateStore {
+    Boolean rememberedLock;
+    boolean autoLockEnabled;
+    String autoLockDistance;
+    String bleAddress = "";
+    Integer batteryObservedMin;
+    Integer batteryObservedMax;
+    Long batteryCycleStartedAt;
+    Integer batteryLastLivePercent;
+    Long batteryLastLiveAt;
+    Integer batteryRechargeMinGapHours;
+
+    @Override public Boolean rememberedLock() { return rememberedLock; }
+    @Override public void setRememberedLock(boolean value) { rememberedLock = value; }
+    @Override public boolean autoLockEnabled() { return autoLockEnabled; }
+    @Override public void setAutoLockEnabled(boolean enabled) { autoLockEnabled = enabled; }
+    @Override public String autoLockDistance() { return autoLockDistance; }
+    @Override public void setAutoLockDistance(String distance) { autoLockDistance = distance; }
+    @Override public String bleAddress() { return bleAddress; }
+    @Override public void setBleAddress(String address) { bleAddress = address == null ? "" : address; }
+    @Override public void clearBleAddress() { bleAddress = ""; }
+    @Override public Integer batteryObservedMin() { return batteryObservedMin; }
+    @Override public Integer batteryObservedMax() { return batteryObservedMax; }
+    @Override public Long batteryCycleStartedAt() { return batteryCycleStartedAt; }
+    @Override public void setBatteryObservation(int min, int max, long startedAt) {
+      batteryObservedMin = min;
+      batteryObservedMax = max;
+      batteryCycleStartedAt = startedAt;
+    }
+    @Override public Integer batteryLastLivePercent() { return batteryLastLivePercent; }
+    @Override public Long batteryLastLiveAt() { return batteryLastLiveAt; }
+    @Override public void setBatteryLastLive(int percent, long observedAt) {
+      batteryLastLivePercent = percent;
+      batteryLastLiveAt = observedAt;
+    }
+    @Override public Integer batteryRechargeMinGapHours() { return batteryRechargeMinGapHours; }
+    @Override public void setBatteryRechargeMinGapHours(int hours) { batteryRechargeMinGapHours = hours; }
   }
 
   private static final class RecordingListener implements T4ABackend.Listener {
