@@ -187,4 +187,6 @@ jobs:
 
       - name: Run debug unit tests
         shell: bash
-        run: ./gradlew :backend:testDebugUnitTest :app:testDebugUnitTest --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew :backend:testDebugUnitTest :app:testDebugUnitTest --stacktrace
