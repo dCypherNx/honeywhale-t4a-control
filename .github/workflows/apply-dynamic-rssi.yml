@@ -1,0 +1,32 @@
+name: Apply dynamic RSSI calibration
+
+on:
+  push:
+    branches:
+      - feature/dynamic-rssi-calibration
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply source patch
+        run: python3 tools/apply_dynamic_rssi.py
+      - name: Remove temporary patch machinery
+        run: |
+          rm tools/apply_dynamic_rssi.py
+          rm .github/workflows/apply-dynamic-rssi.yml
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: learn dynamic RSSI proximity bands"
+          git push origin HEAD:feature/dynamic-rssi-calibration
