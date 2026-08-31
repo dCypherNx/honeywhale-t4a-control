@@ -158,3 +158,33 @@ jobs:
           }
 
           Write-Output 'Provisioning/transport/session/MQTT/UI contracts are committed and architecture boundaries are clean.'
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out committed tree
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Provide non-production Tuya placeholders
+        shell: bash
+        run: |
+          cat > tuya.properties <<'EOF'
+          TUYA_APP_KEY=ci-placeholder
+          TUYA_APP_SECRET=ci-placeholder
+          EOF
+
+      - name: Run debug unit tests
+        shell: bash
+        run: ./gradlew :backend:testDebugUnitTest :app:testDebugUnitTest --stacktrace
