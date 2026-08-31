@@ -41,6 +41,7 @@ public final class T4ABackend {
   private final T4AProvisioner provisioner;
   private final T4ATransport transport;
   private final T4AStateStore stateStore;
+  private final RssiCalibration rssiCalibration;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Map<String, Object> dps = new HashMap<>();
   private final Map<String, T4AState.DpInfo> schema = new HashMap<>();
@@ -93,6 +94,7 @@ public final class T4ABackend {
     this.provisioner = provisioner;
     this.transport = transport;
     this.stateStore = stateStore;
+    this.rssiCalibration = new RssiCalibration(stateStore.rssiObservedBest(), stateStore.rssiObservedWorst());
     restoreBatteryObservation();
   }
 
@@ -389,6 +391,7 @@ public final class T4ABackend {
   private void emitState() {
     String name = device == null ? "" : device.name;
     String mac = device == null ? "" : device.mac;
+    RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
     listener.onState(new T4AState(
         authenticated,
         account,
@@ -404,6 +407,13 @@ public final class T4ABackend {
         pendingDps.keySet(),
         stateStore.autoLockEnabled(),
         autoLockDistance(),
+        calibration.best,
+        calibration.worst,
+        calibration.stableWorst,
+        calibration.shortMin,
+        calibration.mediumMin,
+        calibration.longMin,
+        calibration.ready,
         batteryObservedMin,
         batteryObservedMax,
         batteryCycleStartedAt,
@@ -604,6 +614,7 @@ public final class T4ABackend {
     } else {
       awaitingLockRxAfterConnect = false;
       resetLongRangeWeakSamples();
+      rssiCalibration.resetWindow();
       raw("[APP] CONNECTION CONNECTED->DISCONNECTED autoLock="
           + stateStore.autoLockEnabled()
           + " rememberedLock=" + rememberedLockState()
@@ -646,6 +657,7 @@ public final class T4ABackend {
       int previousRssi = rssi;
       rssi = 0;
       resetLongRangeWeakSamples();
+      rssiCalibration.resetWindow();
       if (previousRssi != 0 && stateStore.autoLockEnabled()) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       emitState();
       return;
@@ -659,10 +671,12 @@ public final class T4ABackend {
         if (success && value != 0) {
           rssi = value;
           rssiFailures = 0;
+          observeRssi(value);
           if (stateStore.autoLockEnabled() && previousRssi != value) logAutoLockRssi(previousRssi, value);
         } else {
           rssi = 0;
           resetLongRangeWeakSamples();
+          rssiCalibration.resetWindow();
           if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
           if (++rssiFailures >= 3) recoverRssi();
         }
@@ -676,6 +690,7 @@ public final class T4ABackend {
       int previousRssi = rssi;
       rssi = 0;
       resetLongRangeWeakSamples();
+      rssiCalibration.resetWindow();
       if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       recoverRssi();
       emitState();
@@ -689,13 +704,41 @@ public final class T4ABackend {
   }
 
   private int autoLockThreshold(String distance) {
+    RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
+    if (calibration.ready) return dynamicBandMinimum(calibration, distance) - AUTO_UNLOCK_HYSTERESIS_DB;
     if (DISTANCE_SHORT.equals(distance)) return AUTO_LOCK_SHORT_THRESHOLD_DBM;
     if (DISTANCE_LONG.equals(distance)) return AUTO_LOCK_LONG_THRESHOLD_DBM;
     return AUTO_LOCK_MEDIUM_THRESHOLD_DBM;
   }
 
   private int autoUnlockThreshold(String distance) {
+    RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
+    if (calibration.ready) return dynamicBandMinimum(calibration, distance);
     return autoLockThreshold(distance) + AUTO_UNLOCK_HYSTERESIS_DB;
+  }
+
+  private int dynamicBandMinimum(RssiCalibration.Snapshot calibration, String distance) {
+    if (DISTANCE_SHORT.equals(distance)) return calibration.shortMin;
+    if (DISTANCE_LONG.equals(distance)) return calibration.longMin;
+    return calibration.mediumMin;
+  }
+
+  private void observeRssi(int value) {
+    if (!rssiCalibration.observe(value)) return;
+    RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
+    if (calibration.best != null && calibration.worst != null) {
+      stateStore.setRssiObservation(calibration.best, calibration.worst);
+    }
+    if (calibration.ready) {
+      raw("[APP] RSSI CALIBRATION best=" + calibration.best
+          + " worst=" + calibration.worst
+          + " stableWorst=" + calibration.stableWorst
+          + " bands={short:" + calibration.best + ".." + calibration.shortMin
+          + ",medium:" + (calibration.shortMin - 1) + ".." + calibration.mediumMin
+          + ",long:" + (calibration.mediumMin - 1) + ".." + calibration.longMin + "}");
+    } else {
+      raw("[APP] RSSI CALIBRATION learning best=" + calibration.best + " worst=" + calibration.worst);
+    }
   }
 
   private void logAutoLockRssi(int previousRssi, int currentRssi) {

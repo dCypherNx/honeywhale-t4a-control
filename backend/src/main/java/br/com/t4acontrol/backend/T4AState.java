@@ -42,6 +42,13 @@ public final class T4AState {
   public final Set<String> pendingDps;
   public final boolean autoLockEnabled;
   public final String autoLockDistance;
+  public final Integer rssiObservedBest;
+  public final Integer rssiObservedWorst;
+  public final Integer rssiStableWorst;
+  public final Integer rssiShortMin;
+  public final Integer rssiMediumMin;
+  public final Integer rssiLongMin;
+  public final boolean rssiCalibrationReady;
   public final Integer batteryObservedMin;
   public final Integer batteryObservedMax;
   public final Long batteryCycleStartedAt;
@@ -50,6 +57,7 @@ public final class T4AState {
   public final Long pendingBatteryRechargeDetectedAt;
   public final String message;
 
+  /** Compatibility constructor for consumers that do not need RSSI calibration details. */
   public T4AState(
       boolean authenticated,
       String account,
@@ -72,6 +80,66 @@ public final class T4AState {
       Integer pendingBatteryRechargePercent,
       Long pendingBatteryRechargeDetectedAt,
       String message) {
+    this(
+        authenticated,
+        account,
+        homeId,
+        homeName,
+        pairing,
+        connected,
+        deviceName,
+        mac,
+        rssi,
+        dps,
+        schema,
+        pendingDps,
+        autoLockEnabled,
+        autoLockDistance,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        false,
+        batteryObservedMin,
+        batteryObservedMax,
+        batteryCycleStartedAt,
+        batteryRechargeMinGapHours,
+        pendingBatteryRechargePercent,
+        pendingBatteryRechargeDetectedAt,
+        message);
+  }
+
+  public T4AState(
+      boolean authenticated,
+      String account,
+      long homeId,
+      String homeName,
+      Pairing pairing,
+      boolean connected,
+      String deviceName,
+      String mac,
+      int rssi,
+      Map<String, Object> dps,
+      Map<String, DpInfo> schema,
+      Set<String> pendingDps,
+      boolean autoLockEnabled,
+      String autoLockDistance,
+      Integer rssiObservedBest,
+      Integer rssiObservedWorst,
+      Integer rssiStableWorst,
+      Integer rssiShortMin,
+      Integer rssiMediumMin,
+      Integer rssiLongMin,
+      boolean rssiCalibrationReady,
+      Integer batteryObservedMin,
+      Integer batteryObservedMax,
+      Long batteryCycleStartedAt,
+      int batteryRechargeMinGapHours,
+      Integer pendingBatteryRechargePercent,
+      Long pendingBatteryRechargeDetectedAt,
+      String message) {
     this.authenticated = authenticated;
     this.account = account;
     this.homeId = homeId;
@@ -86,6 +154,13 @@ public final class T4AState {
     this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
     this.autoLockEnabled = autoLockEnabled;
     this.autoLockDistance = autoLockDistance;
+    this.rssiObservedBest = rssiObservedBest;
+    this.rssiObservedWorst = rssiObservedWorst;
+    this.rssiStableWorst = rssiStableWorst;
+    this.rssiShortMin = rssiShortMin;
+    this.rssiMediumMin = rssiMediumMin;
+    this.rssiLongMin = rssiLongMin;
+    this.rssiCalibrationReady = rssiCalibrationReady;
     this.batteryObservedMin = batteryObservedMin;
     this.batteryObservedMax = batteryObservedMax;
     this.batteryCycleStartedAt = batteryCycleStartedAt;

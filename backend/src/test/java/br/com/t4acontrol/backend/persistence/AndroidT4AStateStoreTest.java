@@ -38,6 +38,8 @@ public class AndroidT4AStateStoreTest {
         .putBoolean("lock_value", false)
         .putBoolean("auto_lock_distance", true)
         .putString("auto_lock_distance_level", "long")
+        .putInt("rssi_observed_best", -18)
+        .putInt("rssi_observed_worst", -91)
         .putString("ble_address", "AA:BB:CC:DD:EE:FF")
         .putInt("battery_observed_min", 22)
         .putInt("battery_observed_max", 91)
@@ -52,6 +54,8 @@ public class AndroidT4AStateStoreTest {
     assertEquals(Boolean.FALSE, store.rememberedLock());
     assertTrue(store.autoLockEnabled());
     assertEquals("long", store.autoLockDistance());
+    assertEquals(Integer.valueOf(-18), store.rssiObservedBest());
+    assertEquals(Integer.valueOf(-91), store.rssiObservedWorst());
     assertEquals("AA:BB:CC:DD:EE:FF", store.bleAddress());
     assertEquals(Integer.valueOf(22), store.batteryObservedMin());
     assertEquals(Integer.valueOf(91), store.batteryObservedMax());
@@ -67,6 +71,7 @@ public class AndroidT4AStateStoreTest {
     store.setRememberedLock(true);
     store.setAutoLockEnabled(false);
     store.setAutoLockDistance("short");
+    store.setRssiObservation(-16, -88);
     store.setBleAddress("11:22:33:44:55:66");
     store.setBatteryObservation(15, 88, 111222333L);
     store.setBatteryLastLive(37, 444555666L);
@@ -76,6 +81,8 @@ public class AndroidT4AStateStoreTest {
     assertTrue(preferences.getBoolean("lock_value", false));
     assertFalse(preferences.getBoolean("auto_lock_distance", true));
     assertEquals("short", preferences.getString("auto_lock_distance_level", null));
+    assertEquals(-16, preferences.getInt("rssi_observed_best", 0));
+    assertEquals(-88, preferences.getInt("rssi_observed_worst", 0));
     assertEquals("11:22:33:44:55:66", preferences.getString("ble_address", null));
     assertEquals(15, preferences.getInt("battery_observed_min", -1));
     assertEquals(88, preferences.getInt("battery_observed_max", -1));
@@ -94,6 +101,8 @@ public class AndroidT4AStateStoreTest {
     assertNull(store.rememberedLock());
     assertFalse(store.autoLockEnabled());
     assertNull(store.autoLockDistance());
+    assertNull(store.rssiObservedBest());
+    assertNull(store.rssiObservedWorst());
     assertEquals("", store.bleAddress());
     assertNull(store.batteryObservedMin());
     assertNull(store.batteryObservedMax());

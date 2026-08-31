@@ -92,11 +92,31 @@ internal fun SettingsScreen(
 
     SettingsSection(stringResource(R.string.automatic_lock), "auto_lock", actions = actions) {
         SettingSwitch(stringResource(R.string.state_active), current.autoLockEnabled, foreground, actions::setAutoLockFromSettings)
-        Text(stringResource(R.string.auto_lock_distance), color = foreground)
         val distanceValues = listOf("short", "medium", "long")
         val selectedDistanceIndex = distanceValues.indexOf(current.autoLockDistance).takeIf { it >= 0 } ?: 1
+        val dynamicLabels = if (current.rssiCalibrationReady) {
+            listOf(
+                stringResource(R.string.distance_dynamic, stringResource(R.string.distance_short_name), current.rssiObservedBest, current.rssiShortMin),
+                stringResource(R.string.distance_dynamic, stringResource(R.string.distance_medium_name), current.rssiShortMin!! - 1, current.rssiMediumMin),
+                stringResource(R.string.distance_dynamic, stringResource(R.string.distance_long_name), current.rssiMediumMin!! - 1, current.rssiLongMin),
+            )
+        } else {
+            listOf(
+                stringResource(R.string.distance_short_name),
+                stringResource(R.string.distance_medium_name),
+                stringResource(R.string.distance_long_name),
+            )
+        }
+        Text(
+            if (current.rssiCalibrationReady) {
+                stringResource(R.string.auto_lock_calibrated_range, current.rssiObservedBest, current.rssiObservedWorst, current.rssiStableWorst)
+            } else {
+                stringResource(R.string.auto_lock_calibrating)
+            },
+            color = foreground,
+        )
         SegmentedChoice(
-            labels = listOf(stringResource(R.string.distance_short), stringResource(R.string.distance_medium), stringResource(R.string.distance_long)),
+            labels = dynamicLabels,
             selectedIndex = selectedDistanceIndex,
         ) { index -> actions.setAutoLockDistanceFromSettings(distanceValues[index]) }
     }
