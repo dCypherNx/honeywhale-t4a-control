@@ -194,10 +194,10 @@ public class T4ABackendTest {
 
     assertEquals(before + 1, transport.publishCalls);
     assertEquals(true, transport.lastPublished.get("1"));
-    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-38 threshold=-39")));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-38 threshold=-40")));
   }
 
-  @Test public void longAutoLockRequiresThreeFreshSamplesAtMinusNinety() {
+  @Test public void longAutoLockUsesOneFreshSampleAtMinusNinety() {
     stateStore.rememberedLock = true;
     stateStore.autoLockDistance = "long";
     startConnected(Collections.emptyMap());
@@ -206,14 +206,10 @@ public class T4ABackendTest {
     transport.rssi = -90;
 
     pollRssiNow();
-    assertEquals(before, transport.publishCalls);
-    pollRssiNow();
-    assertEquals(before, transport.publishCalls);
-    pollRssiNow();
 
     assertEquals(before + 1, transport.publishCalls);
     assertEquals(false, transport.lastPublished.get("1"));
-    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("longGuard sample=3/3")));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK stability side=far sample=1/1")));
   }
 
   @Test public void disabledAutoLockNeverPublishesUnlockAcrossReconnectAndNearRssi() {
@@ -322,18 +318,18 @@ public class T4ABackendTest {
     T4AState state = listener.latest();
     assertTrue(state.rssiCalibrationReady);
     assertEquals(Integer.valueOf(-82), state.rssiStableWorst);
-    assertEquals(Integer.valueOf(-37), state.rssiShortMin);
-    assertEquals(Integer.valueOf(-60), state.rssiMediumMin);
+    assertEquals(Integer.valueOf(-48), state.rssiShortMin);
+    assertEquals(Integer.valueOf(-68), state.rssiMediumMin);
     assertEquals(Integer.valueOf(-82), state.rssiLongMin);
 
     backend.setAutoLockEnabled(true);
     int before = transport.publishCalls;
-    transport.rssi = -37;
+    transport.rssi = -48;
     pollRssiNow();
 
     assertEquals(before + 1, transport.publishCalls);
     assertEquals(true, transport.lastPublished.get("1"));
-    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-37 threshold=-37")));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-48 threshold=-48")));
   }
 
   @Test public void seededDynamicMediumLocksBelowLearnedBand() {
@@ -344,13 +340,13 @@ public class T4ABackendTest {
     startConnected(Collections.emptyMap());
     backend.setAutoLockEnabled(true);
     int before = transport.publishCalls;
-    transport.rssi = -61;
+    transport.rssi = -69;
 
     pollRssiNow();
 
     assertEquals(before + 1, transport.publishCalls);
     assertEquals(false, transport.lastPublished.get("1"));
-    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=lock rssi=-61 threshold=-61")));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=lock rssi=-69 threshold=-68")));
   }
 
   private void forceRechargeGapFrom(int percent) {
