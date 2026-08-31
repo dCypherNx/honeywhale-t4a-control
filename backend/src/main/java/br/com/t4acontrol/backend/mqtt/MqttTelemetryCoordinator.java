@@ -18,7 +18,6 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   }
 
   private static final long MAINTENANCE_MS = 5000L;
-  private static final long HEARTBEAT_MS = 30000L;
 
   private final MqttConfigurationStore configurationStore;
   private final MqttTransport transport;
@@ -32,7 +31,6 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
   private T4AState lastState;
   private LocationSnapshot lastLocation;
   private String lastTelemetrySignature = "";
-  private long lastTelemetryPublishAt;
   private String lastLocationSignature = "";
   private String lastDiscoveryTopic = "";
   private String lastDiscoveryPayload = "";
@@ -242,17 +240,14 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
 
     Map<String, Object> telemetry = telemetry(lastState, lastLocation);
     String signature = JSON.toJSONString(telemetry);
-    long now = System.currentTimeMillis();
-    if (!force
-        && signature.equals(lastTelemetrySignature)
-        && now - lastTelemetryPublishAt < HEARTBEAT_MS) return;
+    if (!force && signature.equals(lastTelemetrySignature)) return;
 
+    long now = System.currentTimeMillis();
     telemetry.put("timestamp_ms", now);
     String payload = JSON.toJSONString(telemetry);
     raw("TX " + telemetryTopic(configuration) + " " + payload);
     transport.publish(telemetryTopic(configuration), payload, 1, true);
     lastTelemetrySignature = signature;
-    lastTelemetryPublishAt = now;
   }
 
   private Map<String, Object> telemetry(T4AState state, LocationSnapshot location) {
