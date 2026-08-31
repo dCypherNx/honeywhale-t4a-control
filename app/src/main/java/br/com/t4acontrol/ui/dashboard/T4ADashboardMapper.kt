@@ -33,7 +33,7 @@ object T4ADashboardMapper {
             connected = state.connected,
             deviceName = state.deviceName.ifBlank { "--" },
             rssiDbm = state.rssi.takeUnless { it == 0 },
-            batteryPercent = integer(state.dps[DP_BATTERY]).coerceIn(0, 100),
+            batteryPercent = integerOrNull(state.dps[DP_BATTERY])?.coerceIn(0, 100),
             batteryObservedMin = state.batteryObservedMin?.coerceIn(0, 100),
             batteryObservedMax = state.batteryObservedMax?.coerceIn(0, 100),
             speed = displayedSpeed.roundToInt().coerceAtLeast(0),
@@ -67,7 +67,9 @@ object T4ADashboardMapper {
     private fun truth(value: Any?): Boolean =
         value == true || value?.toString()?.equals("true", ignoreCase = true) == true || value?.toString() == "1"
 
-    private fun integer(value: Any?): Int = value?.toString()?.toIntOrNull() ?: 0
+    private fun integer(value: Any?): Int = integerOrNull(value) ?: 0
+
+    private fun integerOrNull(value: Any?): Int? = value?.toString()?.toIntOrNull()
 
     private fun scaled(value: Any?, divisor: Double): Double =
         (value?.toString()?.toDoubleOrNull() ?: 0.0) / divisor

@@ -13,7 +13,7 @@ data class T4ADashboardState(
     val connected: Boolean = false,
     val deviceName: String = "--",
     val rssiDbm: Int? = null,
-    val batteryPercent: Int = 0,
+    val batteryPercent: Int? = null,
     val batteryObservedMin: Int? = null,
     val batteryObservedMax: Int? = null,
     val speed: Int = 0,

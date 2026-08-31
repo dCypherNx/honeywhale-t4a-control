@@ -79,20 +79,30 @@ class T4ADashboardMapperTest {
     }
 
     @Test
-    fun missingAndInvalidValuesMapToSafeDefaults() {
+    fun missingValuesRemainUnknownInsteadOfFabricatingBatteryZero() {
         val mapped = T4ADashboardMapper.map(
-            state(connected = false, deviceName = "", rssi = 0, dps = mapOf("3" to 999, "6" to -5, "14" to "invalid")),
+            state(connected = false, deviceName = "", rssi = 0, dps = mapOf("6" to -5, "14" to "invalid")),
             showTotalOdometer = true,
         )
 
         assertEquals("--", mapped.deviceName)
         assertNull(mapped.rssiDbm)
-        assertEquals(100, mapped.batteryPercent)
+        assertNull(mapped.batteryPercent)
         assertEquals(0, mapped.speed)
         assertEquals(RidingMode.UNKNOWN, mapped.ridingMode)
         assertEquals("00:00:00", mapped.usageTime)
         assertFalse(mapped.controlsEnabled)
         assertFalse(mapped.lightEnabled)
+    }
+
+    @Test
+    fun presentBatteryValueIsClampedForDisplaySafety() {
+        val mapped = T4ADashboardMapper.map(
+            state(connected = true, dps = mapOf("3" to 999)),
+            showTotalOdometer = true,
+        )
+
+        assertEquals(100, mapped.batteryPercent)
     }
 
     private fun state(
