@@ -2,7 +2,7 @@ package br.com.t4acontrol.backend;
 
 /** Learns trustworthy BLE RSSI extrema and derives weighted stable proximity bands. */
 final class RssiCalibration {
-  static final int REQUIRED_SAMPLES = 2;
+  static final int REQUIRED_EXTREME_SAMPLES = 2;
   private static final double WEAK_EDGE_MARGIN = 0.10d;
   private static final double SHORT_BAND_SHARE = 0.50d;
   private static final double MEDIUM_BAND_SHARE = 0.30d;
@@ -34,11 +34,14 @@ final class RssiCalibration {
     }
   }
 
-  private final int[] recent = new int[REQUIRED_SAMPLES];
-  private int recentCount;
-  private int recentIndex;
   private Integer best;
   private Integer worst;
+  private boolean bestConfirmed;
+  private boolean worstConfirmed;
+  private int bestCandidateCount;
+  private int worstCandidateCount;
+  private Integer bestCandidate;
+  private Integer worstCandidate;
 
   RssiCalibration(Integer persistedBest, Integer persistedWorst) {
     if (validRssi(persistedBest)
@@ -46,43 +49,76 @@ final class RssiCalibration {
         && persistedBest >= persistedWorst) {
       best = persistedBest;
       worst = persistedWorst;
+      bestConfirmed = true;
+      worstConfirmed = true;
     }
   }
 
   boolean observe(int rssi) {
     if (!validRssi(rssi)) return false;
-    recent[recentIndex] = rssi;
-    recentIndex = (recentIndex + 1) % REQUIRED_SAMPLES;
-    if (recentCount < REQUIRED_SAMPLES) recentCount++;
-    if (recentCount < REQUIRED_SAMPLES) return false;
 
-    int pairBest = Math.max(recent[0], recent[1]);
-    int pairWorst = Math.min(recent[0], recent[1]);
-    boolean changed = false;
     if (best == null || worst == null) {
-      best = pairBest;
-      worst = pairWorst;
-      changed = true;
-    } else {
-      if (pairBest > best) {
-        best = pairBest;
-        changed = true;
-      }
-      if (pairWorst < worst) {
-        worst = pairWorst;
-        changed = true;
-      }
+      best = rssi;
+      worst = rssi;
+      bestCandidate = rssi;
+      worstCandidate = rssi;
+      bestCandidateCount = 1;
+      worstCandidateCount = 1;
+      return false;
     }
+
+    boolean changed = false;
+
+    boolean supportsBest = bestConfirmed ? rssi > best : rssi >= best;
+    if (supportsBest) {
+      bestCandidate = bestCandidate == null ? rssi : Math.max(bestCandidate, rssi);
+      bestCandidateCount++;
+      if (bestCandidateCount >= REQUIRED_EXTREME_SAMPLES) {
+        int confirmed = bestCandidate;
+        if (!bestConfirmed || confirmed > best) {
+          best = confirmed;
+          changed = true;
+        }
+        bestConfirmed = true;
+        bestCandidate = null;
+        bestCandidateCount = 0;
+      }
+    } else {
+      bestCandidate = null;
+      bestCandidateCount = 0;
+    }
+
+    boolean supportsWorst = worstConfirmed ? rssi < worst : rssi <= worst;
+    if (supportsWorst) {
+      worstCandidate = worstCandidate == null ? rssi : Math.min(worstCandidate, rssi);
+      worstCandidateCount++;
+      if (worstCandidateCount >= REQUIRED_EXTREME_SAMPLES) {
+        int confirmed = worstCandidate;
+        if (!worstConfirmed || confirmed < worst) {
+          worst = confirmed;
+          changed = true;
+        }
+        worstConfirmed = true;
+        worstCandidate = null;
+        worstCandidateCount = 0;
+      }
+    } else {
+      worstCandidate = null;
+      worstCandidateCount = 0;
+    }
+
     return changed;
   }
 
   void resetWindow() {
-    recentCount = 0;
-    recentIndex = 0;
+    bestCandidate = null;
+    worstCandidate = null;
+    bestCandidateCount = 0;
+    worstCandidateCount = 0;
   }
 
   Snapshot snapshot() {
-    if (best == null || worst == null) {
+    if (best == null || worst == null || !bestConfirmed || !worstConfirmed) {
       return new Snapshot(best, worst, null, null, null, null, false);
     }
 
