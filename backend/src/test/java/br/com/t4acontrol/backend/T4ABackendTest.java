@@ -177,6 +177,43 @@ public class T4ABackendTest {
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("bloqueando")));
   }
 
+  @Test public void disabledAutoLockNeverPublishesUnlockAcrossReconnectAndNearRssi() {
+    startConnected(Collections.emptyMap());
+    transport.emitDps(Map.of("1", false));
+    idleMainLooper();
+    backend.setAutoLockEnabled(false);
+    int before = transport.publishCalls;
+
+    transport.connected = false;
+    transport.rssi = -20;
+    backend.setForeground(true);
+    idleMainLooper();
+    backend.setForeground(true);
+    idleMainLooper();
+
+    assertEquals(before, transport.publishCalls);
+    assertEquals(false, listener.latest().dps.get("1"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("DISCONNECTED->CONNECTED autoLock=false")));
+    assertFalse(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock")));
+  }
+
+  @Test public void firstLockRxAfterReconnectIsLoggedWithoutIssuingCommand() {
+    startConnected(Collections.emptyMap());
+    transport.emitDps(Map.of("1", false));
+    idleMainLooper();
+    backend.setAutoLockEnabled(false);
+    int before = transport.publishCalls;
+
+    transport.connected = false;
+    backend.setForeground(true);
+    idleMainLooper();
+    transport.emitDps(Map.of("1", true));
+    idleMainLooper();
+
+    assertEquals(before, transport.publishCalls);
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("firstLockRx=unlocked autoLock=false")));
+  }
+
   @Test public void batteryObservationTracksLiveMinMaxAndDetectsRechargeCandidate() {
     startConnected(Collections.emptyMap());
 
@@ -284,6 +321,7 @@ public class T4ABackendTest {
     boolean attached;
     boolean connected;
     int connectCalls;
+    int publishCalls;
     int rssi = -60;
     T4AContracts.Device attachedDevice;
     T4AContracts.Device cached;
@@ -304,6 +342,7 @@ public class T4ABackendTest {
     @Override public boolean isConnected(String deviceId) { return connected; }
     @Override public T4AContracts.Device cachedDevice(String deviceId) { return cached; }
     @Override public void publish(String deviceId, Map<String, Object> dps, T4AContracts.ResultCallback callback) {
+      publishCalls++;
       lastPublished = new HashMap<>(dps);
       callback.onSuccess();
     }
