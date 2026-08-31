@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.R
 
 @Composable
@@ -130,8 +131,8 @@ private fun RowScope.ModeTile(mode: RidingMode, active: Boolean, enabled: Boolea
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             MdiIcon(modeIcon(mode), if (active) color else color.copy(alpha = 0.68f), iconSize, Modifier.size(36.dp))
         }
-        Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold, lineHeight = 12.dp.value.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = T4ADashboardTokens.ModeSpeedFontSize, lineHeight = 11.dp.value.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(modeLabelRes(mode)), color = if (active) color else color.copy(alpha = 0.68f), fontSize = T4ADashboardTokens.ModeFontSize, fontWeight = FontWeight.Bold, lineHeight = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.speed_limit, "", mode.limitKmh).substringAfter('\n'), color = if (active) color else muted, fontSize = T4ADashboardTokens.ModeSpeedFontSize, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -182,6 +183,6 @@ private fun ToggleTile(
 @Composable
 private fun ControlText(title: String, state: String, color: Color, bold: Boolean, fontSize: androidx.compose.ui.unit.TextUnit = T4ADashboardTokens.ControlFontSize) {
     val weight = if (bold) FontWeight.Bold else FontWeight.Normal
-    Text(title, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.dp.value.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    Text(state, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.dp.value.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Text(title, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Text(state, color = color, fontSize = fontSize, fontWeight = weight, lineHeight = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
 }
