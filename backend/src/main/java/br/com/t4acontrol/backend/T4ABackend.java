@@ -31,8 +31,7 @@ public final class T4ABackend {
   private static final int AUTO_LOCK_SHORT_THRESHOLD_DBM = -40;
   private static final int AUTO_LOCK_MEDIUM_THRESHOLD_DBM = -65;
   private static final int AUTO_LOCK_LONG_THRESHOLD_DBM = -90;
-  private static final int AUTO_UNLOCK_HYSTERESIS_DB = 1;
-  private static final int AUTO_LOCK_LONG_REQUIRED_SAMPLES = 3;
+  private static final int AUTO_LOCK_REQUIRED_SAMPLES = 3;
   private static final String DISTANCE_SHORT = "short",
       DISTANCE_MEDIUM = "medium",
       DISTANCE_LONG = "long";
@@ -63,7 +62,8 @@ public final class T4ABackend {
   private long lastRssiRead;
   private long lastRssiResponse;
   private int rssiFailures;
-  private int longRangeWeakSamples;
+  private int proximityTransitionSamples;
+  private Boolean proximitySampleNear;
   private Object pendingLockValue;
   private long pendingLockUntil;
   private Integer batteryObservedMin;
@@ -212,21 +212,19 @@ public final class T4ABackend {
 
   public void setAutoLockEnabled(boolean enabled) {
     stateStore.setAutoLockEnabled(enabled);
-    if (!enabled) resetLongRangeWeakSamples();
+    resetAutoLockSamples();
     raw("[APP] AUTO_LOCK enabled=" + enabled + " distance=" + autoLockDistance());
     event(enabled ? "Bloqueio automático por distância ativado" : "Bloqueio automático por distância desativado");
     emitState();
-    if (enabled) evaluateAutoLock(false);
   }
 
   public void setAutoLockDistance(String distance) {
     if (!DISTANCE_SHORT.equals(distance) && !DISTANCE_MEDIUM.equals(distance) && !DISTANCE_LONG.equals(distance)) return;
     stateStore.setAutoLockDistance(distance);
-    resetLongRangeWeakSamples();
-    int lockRssi = autoLockThreshold(distance);
-    raw("[APP] AUTO_LOCK distance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + autoUnlockThreshold(distance) + " dBm");
+    resetAutoLockSamples();
+    int threshold = autoLockThreshold(distance);
+    raw("[APP] AUTO_LOCK distance=" + distance + " threshold=" + threshold + " dBm");
     emitState();
-    evaluateAutoLock(false);
   }
 
   public void setBatteryRechargeMinGapHours(int hours) {
@@ -373,7 +371,7 @@ public final class T4ABackend {
     connected = false;
     awaitingLockRxAfterConnect = false;
     rssi = 0;
-    resetLongRangeWeakSamples();
+    resetAutoLockSamples();
     stateStore.clearBleAddress();
     clearPendingLock();
     clearPendingBatteryRecharge();
@@ -606,6 +604,7 @@ public final class T4ABackend {
     connected = online;
     if (online) {
       awaitingLockRxAfterConnect = true;
+      resetAutoLockSamples();
       raw("[APP] CONNECTION DISCONNECTED->CONNECTED autoLock="
           + stateStore.autoLockEnabled()
           + " rememberedLockKnown=" + (stateStore.rememberedLock() != null)
@@ -613,7 +612,7 @@ public final class T4ABackend {
           + " localLock=" + lockState(dps.get(DP_LOCK)));
     } else {
       awaitingLockRxAfterConnect = false;
-      resetLongRangeWeakSamples();
+      resetAutoLockSamples();
       rssiCalibration.resetWindow();
       raw("[APP] CONNECTION CONNECTED->DISCONNECTED autoLock="
           + stateStore.autoLockEnabled()
@@ -656,7 +655,7 @@ public final class T4ABackend {
     if (address.isEmpty()) {
       int previousRssi = rssi;
       rssi = 0;
-      resetLongRangeWeakSamples();
+      resetAutoLockSamples();
       rssiCalibration.resetWindow();
       if (previousRssi != 0 && stateStore.autoLockEnabled()) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       emitState();
@@ -675,7 +674,7 @@ public final class T4ABackend {
           if (stateStore.autoLockEnabled() && previousRssi != value) logAutoLockRssi(previousRssi, value);
         } else {
           rssi = 0;
-          resetLongRangeWeakSamples();
+          resetAutoLockSamples();
           rssiCalibration.resetWindow();
           if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
           if (++rssiFailures >= 3) recoverRssi();
@@ -689,7 +688,7 @@ public final class T4ABackend {
     } catch (RuntimeException ignored) {
       int previousRssi = rssi;
       rssi = 0;
-      resetLongRangeWeakSamples();
+      resetAutoLockSamples();
       rssiCalibration.resetWindow();
       if (stateStore.autoLockEnabled() && previousRssi != 0) raw("[BT] RSSI " + previousRssi + " -> unavailable");
       recoverRssi();
@@ -705,16 +704,10 @@ public final class T4ABackend {
 
   private int autoLockThreshold(String distance) {
     RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
-    if (calibration.ready) return dynamicBandMinimum(calibration, distance) - AUTO_UNLOCK_HYSTERESIS_DB;
+    if (calibration.ready) return dynamicBandMinimum(calibration, distance);
     if (DISTANCE_SHORT.equals(distance)) return AUTO_LOCK_SHORT_THRESHOLD_DBM;
     if (DISTANCE_LONG.equals(distance)) return AUTO_LOCK_LONG_THRESHOLD_DBM;
     return AUTO_LOCK_MEDIUM_THRESHOLD_DBM;
-  }
-
-  private int autoUnlockThreshold(String distance) {
-    RssiCalibration.Snapshot calibration = rssiCalibration.snapshot();
-    if (calibration.ready) return dynamicBandMinimum(calibration, distance);
-    return autoLockThreshold(distance) + AUTO_UNLOCK_HYSTERESIS_DB;
   }
 
   private int dynamicBandMinimum(RssiCalibration.Snapshot calibration, String distance) {
@@ -743,46 +736,57 @@ public final class T4ABackend {
 
   private void logAutoLockRssi(int previousRssi, int currentRssi) {
     String distance = autoLockDistance();
-    int lockRssi = autoLockThreshold(distance);
-    int unlockRssi = autoUnlockThreshold(distance);
+    int threshold = autoLockThreshold(distance);
     String lockState = Boolean.TRUE.equals(dps.get(DP_LOCK)) ? "unlocked" : "locked";
-    raw("[BT] RSSI " + (previousRssi == 0 ? "initial" : previousRssi) + " -> " + currentRssi + " dBm autoLockDistance=" + distance + " lockAt=" + lockRssi + " unlockAt=" + unlockRssi + " state=" + lockState);
+    raw("[BT] RSSI " + (previousRssi == 0 ? "initial" : previousRssi) + " -> " + currentRssi
+        + " dBm autoLockDistance=" + distance + " threshold=" + threshold + " state=" + lockState);
   }
 
   private void evaluateAutoLock(boolean freshRssiSample) {
     if (!stateStore.autoLockEnabled() || !connected || rssi == 0 || pendingLockValue != null) {
-      if (!stateStore.autoLockEnabled() || !connected || rssi == 0) resetLongRangeWeakSamples();
+      if (!stateStore.autoLockEnabled() || !connected || rssi == 0) resetAutoLockSamples();
       return;
     }
+
     boolean unlocked = Boolean.TRUE.equals(dps.get(DP_LOCK));
     String distance = autoLockDistance();
-    int lockRssi = autoLockThreshold(distance);
-    int unlockRssi = autoUnlockThreshold(distance);
+    int threshold = autoLockThreshold(distance);
+    boolean near = rssi >= threshold;
 
-    if (rssi <= lockRssi && unlocked) {
-      if (DISTANCE_LONG.equals(distance)) {
-        if (!freshRssiSample) return;
-        longRangeWeakSamples++;
-        raw("[APP] AUTO_LOCK longGuard sample=" + longRangeWeakSamples + "/" + AUTO_LOCK_LONG_REQUIRED_SAMPLES
-            + " rssi=" + rssi + " threshold=" + lockRssi + " dBm");
-        if (longRangeWeakSamples < AUTO_LOCK_LONG_REQUIRED_SAMPLES) return;
-      }
-      resetLongRangeWeakSamples();
-      raw("[APP] AUTO_LOCK action=lock rssi=" + rssi + " threshold=" + lockRssi + " dBm");
-      event("Sinal distante (" + rssi + " dBm): bloqueando");
-      publish(DP_LOCK, false);
+    if ((near && unlocked) || (!near && !unlocked)) {
+      resetAutoLockSamples();
       return;
     }
+    if (!freshRssiSample) return;
+    if (!confirmAutoLockSide(near, threshold)) return;
 
-    resetLongRangeWeakSamples();
-    if (rssi >= unlockRssi && !unlocked) {
-      raw("[APP] AUTO_LOCK action=unlock rssi=" + rssi + " threshold=" + unlockRssi + " dBm");
+    resetAutoLockSamples();
+    if (near) {
+      raw("[APP] AUTO_LOCK action=unlock rssi=" + rssi + " threshold=" + threshold + " dBm");
       event("Sinal próximo (" + rssi + " dBm): desbloqueando");
       publish(DP_LOCK, true);
+    } else {
+      raw("[APP] AUTO_LOCK action=lock rssi=" + rssi + " threshold=" + threshold + " dBm");
+      event("Sinal distante (" + rssi + " dBm): bloqueando");
+      publish(DP_LOCK, false);
     }
   }
 
-  private void resetLongRangeWeakSamples() {
-    longRangeWeakSamples = 0;
+  private boolean confirmAutoLockSide(boolean near, int threshold) {
+    if (proximitySampleNear == null || proximitySampleNear.booleanValue() != near) {
+      proximitySampleNear = near;
+      proximityTransitionSamples = 1;
+    } else {
+      proximityTransitionSamples++;
+    }
+    raw("[APP] AUTO_LOCK stability side=" + (near ? "near" : "far")
+        + " sample=" + proximityTransitionSamples + "/" + AUTO_LOCK_REQUIRED_SAMPLES
+        + " rssi=" + rssi + " threshold=" + threshold + " dBm");
+    return proximityTransitionSamples >= AUTO_LOCK_REQUIRED_SAMPLES;
+  }
+
+  private void resetAutoLockSamples() {
+    proximityTransitionSamples = 0;
+    proximitySampleNear = null;
   }
 }

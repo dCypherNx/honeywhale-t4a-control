@@ -1,9 +1,11 @@
 package br.com.t4acontrol.backend;
 
-/** Learns trustworthy BLE RSSI extrema and derives three equal stable proximity bands. */
+/** Learns trustworthy BLE RSSI extrema and derives weighted stable proximity bands. */
 final class RssiCalibration {
   static final int REQUIRED_SAMPLES = 3;
   private static final double WEAK_EDGE_MARGIN = 0.10d;
+  private static final double SHORT_BAND_SHARE = 0.50d;
+  private static final double MEDIUM_BAND_SHARE = 0.30d;
 
   static final class Snapshot {
     final Integer best;
@@ -87,8 +89,11 @@ final class RssiCalibration {
     double stableWorstRaw = worst + observedSpan * WEAK_EDGE_MARGIN;
     double stableSpan = best - stableWorstRaw;
     int stableWorst = (int) Math.ceil(stableWorstRaw);
-    int shortMin = (int) Math.ceil(best - stableSpan / 3.0d);
-    int mediumMin = (int) Math.ceil(best - (2.0d * stableSpan / 3.0d));
+
+    // RSSI is logarithmic: equal dBm slices do not represent equal distance slices.
+    // Keep the near band widest, then medium, with the far band narrowest.
+    int shortMin = (int) Math.ceil(best - stableSpan * SHORT_BAND_SHARE);
+    int mediumMin = (int) Math.ceil(best - stableSpan * (SHORT_BAND_SHARE + MEDIUM_BAND_SHARE));
     int longMin = stableWorst;
     boolean ready = observedSpan > 0.0d
         && best > shortMin
