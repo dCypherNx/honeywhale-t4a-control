@@ -58,6 +58,7 @@ public final class T4ABackend {
   private String account = "";
   private T4AState.Pairing pairing = T4AState.Pairing.UNPAIRED;
   private boolean connected;
+  private boolean awaitingLockRxAfterConnect;
   private String message = "";
   private long homeId;
   private String homeName = "";
@@ -312,15 +313,16 @@ public final class T4ABackend {
     transport.attach(attached, new T4AContracts.DeviceListener() {
       @Override public void onDpUpdate(String id, Map<String, Object> update) {
         handler.post(() -> {
+          recordConnectionTransition(transport.isConnected(attached.id));
           raw("[SDK] RX " + JSON.toJSONString(update));
+          logFirstLockRxAfterConnect(update);
           mergeDps(update, true);
-          connected = transport.isConnected(attached.id);
           emitState();
         });
       }
       @Override public void onRemoved(String id) { handler.post(() -> clearDevice("T4A removido")); }
       @Override public void onConnectionChanged(String id, boolean online) {
-        handler.post(() -> { connected = online; emitState(); });
+        handler.post(() -> { recordConnectionTransition(online); emitState(); });
       }
       @Override public void onDeviceInfoChanged(String id) { handler.post(T4ABackend.this::queryHomes); }
     });
@@ -342,7 +344,7 @@ public final class T4ABackend {
       device = withRememberedBleAddress(latest);
       mergeDps(latest.dps, false);
     }
-    connected = transport.isConnected(device.id);
+    recordConnectionTransition(transport.isConnected(device.id));
     message = connected ? "T4A conectado" : "T4A pareado · aguardando aproximação";
     emitState();
   }
@@ -368,6 +370,7 @@ public final class T4ABackend {
     device = null;
     candidate = null;
     connected = false;
+    awaitingLockRxAfterConnect = false;
     rssi = 0;
     preferences.edit().remove(PREF_BLE_ADDRESS).apply();
     clearPendingLock();
@@ -559,6 +562,47 @@ public final class T4ABackend {
       normalized.put(id, entry.getValue());
     }
     return normalized;
+  }
+
+  private void recordConnectionTransition(boolean online) {
+    if (connected == online) return;
+    boolean previous = connected;
+    connected = online;
+    if (online) {
+      awaitingLockRxAfterConnect = true;
+      raw("[APP] CONNECTION DISCONNECTED->CONNECTED autoLock="
+          + preferences.getBoolean(PREF_AUTO_LOCK, false)
+          + " rememberedLockKnown=" + preferences.getBoolean(PREF_LOCK_KNOWN, false)
+          + " rememberedLock=" + rememberedLockState()
+          + " localLock=" + lockState(dps.get(DP_LOCK)));
+    } else {
+      awaitingLockRxAfterConnect = false;
+      raw("[APP] CONNECTION CONNECTED->DISCONNECTED autoLock="
+          + preferences.getBoolean(PREF_AUTO_LOCK, false)
+          + " rememberedLock=" + rememberedLockState()
+          + " localLock=" + lockState(dps.get(DP_LOCK)));
+    }
+  }
+
+  private void logFirstLockRxAfterConnect(Map<String, Object> update) {
+    if (!awaitingLockRxAfterConnect || update == null) return;
+    Map<String, Object> normalized = canonicalDps(update);
+    if (!normalized.containsKey(DP_LOCK)) return;
+    raw("[APP] CONNECTION firstLockRx=" + lockState(normalized.get(DP_LOCK))
+        + " autoLock=" + preferences.getBoolean(PREF_AUTO_LOCK, false)
+        + " rememberedLock=" + rememberedLockState()
+        + " localLockBeforeRx=" + lockState(dps.get(DP_LOCK)));
+    awaitingLockRxAfterConnect = false;
+  }
+
+  private String rememberedLockState() {
+    if (!preferences.getBoolean(PREF_LOCK_KNOWN, false)) return "unknown";
+    return preferences.getBoolean(PREF_LOCK_VALUE, true) ? "unlocked" : "locked";
+  }
+
+  private String lockState(Object value) {
+    if (value == null) return "unknown";
+    return booleanValue(value) ? "unlocked" : "locked";
   }
 
   private void clearPendingLock() { pendingLockValue = null; pendingLockUntil = 0L; }
