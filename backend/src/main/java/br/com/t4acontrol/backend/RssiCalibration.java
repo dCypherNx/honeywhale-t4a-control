@@ -2,7 +2,7 @@ package br.com.t4acontrol.backend;
 
 /** Learns trustworthy BLE RSSI extrema and derives weighted stable proximity bands. */
 final class RssiCalibration {
-  static final int REQUIRED_SAMPLES = 3;
+  static final int REQUIRED_EXTREME_SAMPLES = 2;
   private static final double WEAK_EDGE_MARGIN = 0.10d;
   private static final double SHORT_BAND_SHARE = 0.50d;
   private static final double MEDIUM_BAND_SHARE = 0.30d;
@@ -34,11 +34,14 @@ final class RssiCalibration {
     }
   }
 
-  private final int[] recent = new int[REQUIRED_SAMPLES];
-  private int recentCount;
-  private int recentIndex;
   private Integer best;
   private Integer worst;
+  private boolean bestConfirmed;
+  private boolean worstConfirmed;
+  private int bestCandidateCount;
+  private int worstCandidateCount;
+  private Integer bestCandidate;
+  private Integer worstCandidate;
 
   RssiCalibration(Integer persistedBest, Integer persistedWorst) {
     if (validRssi(persistedBest)
@@ -46,60 +49,96 @@ final class RssiCalibration {
         && persistedBest >= persistedWorst) {
       best = persistedBest;
       worst = persistedWorst;
+      bestConfirmed = true;
+      worstConfirmed = true;
     }
   }
 
   boolean observe(int rssi) {
     if (!validRssi(rssi)) return false;
-    recent[recentIndex] = rssi;
-    recentIndex = (recentIndex + 1) % REQUIRED_SAMPLES;
-    if (recentCount < REQUIRED_SAMPLES) recentCount++;
-    if (recentCount < REQUIRED_SAMPLES) return false;
 
-    int median = median3(recent[0], recent[1], recent[2]);
-    boolean changed = false;
     if (best == null || worst == null) {
-      best = median;
-      worst = median;
-      changed = true;
-    } else {
-      if (median > best) {
-        best = median;
-        changed = true;
-      }
-      if (median < worst) {
-        worst = median;
-        changed = true;
-      }
+      best = rssi;
+      worst = rssi;
+      bestCandidate = rssi;
+      worstCandidate = rssi;
+      bestCandidateCount = 1;
+      worstCandidateCount = 1;
+      return false;
     }
+
+    boolean changed = false;
+
+    boolean supportsBest = bestConfirmed ? rssi > best : rssi >= best;
+    if (supportsBest) {
+      bestCandidate = bestCandidate == null ? rssi : Math.max(bestCandidate, rssi);
+      bestCandidateCount++;
+      if (bestCandidateCount >= REQUIRED_EXTREME_SAMPLES) {
+        int confirmed = bestCandidate;
+        if (!bestConfirmed || confirmed > best) {
+          best = confirmed;
+          changed = true;
+        }
+        bestConfirmed = true;
+        bestCandidate = null;
+        bestCandidateCount = 0;
+      }
+    } else {
+      bestCandidate = null;
+      bestCandidateCount = 0;
+    }
+
+    boolean supportsWorst = worstConfirmed ? rssi < worst : rssi <= worst;
+    if (supportsWorst) {
+      worstCandidate = worstCandidate == null ? rssi : Math.min(worstCandidate, rssi);
+      worstCandidateCount++;
+      if (worstCandidateCount >= REQUIRED_EXTREME_SAMPLES) {
+        int confirmed = worstCandidate;
+        if (!worstConfirmed || confirmed < worst) {
+          worst = confirmed;
+          changed = true;
+        }
+        worstConfirmed = true;
+        worstCandidate = null;
+        worstCandidateCount = 0;
+      }
+    } else {
+      worstCandidate = null;
+      worstCandidateCount = 0;
+    }
+
     return changed;
   }
 
   void resetWindow() {
-    recentCount = 0;
-    recentIndex = 0;
+    bestCandidate = null;
+    worstCandidate = null;
+    bestCandidateCount = 0;
+    worstCandidateCount = 0;
   }
 
   Snapshot snapshot() {
-    if (best == null || worst == null) {
-      return new Snapshot(best, worst, null, null, null, null, false);
+    Integer confirmedBest = bestConfirmed ? best : null;
+    Integer confirmedWorst = worstConfirmed ? worst : null;
+    if (confirmedBest == null || confirmedWorst == null) {
+      return new Snapshot(confirmedBest, confirmedWorst, null, null, null, null, false);
     }
 
-    double observedSpan = best - worst;
-    double stableWorstRaw = worst + observedSpan * WEAK_EDGE_MARGIN;
-    double stableSpan = best - stableWorstRaw;
+    double observedSpan = confirmedBest - confirmedWorst;
+    double stableWorstRaw = confirmedWorst + observedSpan * WEAK_EDGE_MARGIN;
+    double stableSpan = confirmedBest - stableWorstRaw;
     int stableWorst = (int) Math.ceil(stableWorstRaw);
 
     // RSSI is logarithmic: equal dBm slices do not represent equal distance slices.
     // Keep the near band widest, then medium, with the far band narrowest.
-    int shortMin = (int) Math.ceil(best - stableSpan * SHORT_BAND_SHARE);
-    int mediumMin = (int) Math.ceil(best - stableSpan * (SHORT_BAND_SHARE + MEDIUM_BAND_SHARE));
+    int shortMin = (int) Math.ceil(confirmedBest - stableSpan * SHORT_BAND_SHARE);
+    int mediumMin = (int) Math.ceil(confirmedBest - stableSpan * (SHORT_BAND_SHARE + MEDIUM_BAND_SHARE));
     int longMin = stableWorst;
     boolean ready = observedSpan > 0.0d
-        && best > shortMin
+        && confirmedBest > shortMin
         && shortMin > mediumMin
         && mediumMin > longMin;
-    return new Snapshot(best, worst, stableWorst, shortMin, mediumMin, longMin, ready);
+    return new Snapshot(confirmedBest, confirmedWorst, stableWorst, shortMin, mediumMin, longMin, ready);
   }
 
   private static boolean validRssi(Integer value) {
@@ -108,12 +147,5 @@ final class RssiCalibration {
 
   private static boolean validRssi(int value) {
     return value < 0 && value >= -127;
-  }
-
-  private static int median3(int a, int b, int c) {
-    if (a > b) { int t = a; a = b; b = t; }
-    if (b > c) { int t = b; b = c; c = t; }
-    if (a > b) { int t = a; a = b; b = t; }
-    return b;
   }
 }

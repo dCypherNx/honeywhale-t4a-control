@@ -43,7 +43,7 @@ internal fun ConnectionCard(state: T4ADashboardState, surface: Color, outline: C
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LockStatusIndicator(state)
                 Spacer(Modifier.width(8.dp))
-                MdiIcon(signalIcon(state.rssiDbm), signalColor(state.rssiDbm, muted), 18.dp, Modifier.size(22.dp))
+                RssiSignalIndicator(state, muted, Modifier.size(22.dp))
                 Spacer(Modifier.width(5.dp))
                 Text(state.rssiDbm?.let { stringResource(R.string.dbm, it) } ?: "--", color = foreground, fontSize = 12.sp)
             }

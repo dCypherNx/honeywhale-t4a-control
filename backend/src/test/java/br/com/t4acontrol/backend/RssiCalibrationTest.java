@@ -1,6 +1,7 @@
 package br.com.t4acontrol.backend;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -23,25 +24,46 @@ public class RssiCalibrationTest {
     assertTrue(mediumWidth > longWidth);
   }
 
-  @Test public void singleOutlierCannotRedefineExtreme() {
-    RssiCalibration calibration = new RssiCalibration(-20, -60);
+  @Test public void eachInitialExtremeNeedsItsOwnTwoConsecutiveReadings() {
+    RssiCalibration calibration = new RssiCalibration(null, null);
 
-    calibration.observe(-50);
-    calibration.observe(-50);
-    calibration.observe(-100);
+    assertFalse(calibration.observe(-50));
+    assertTrue(calibration.observe(-49));
+    assertFalse(calibration.snapshot().ready);
+
+    assertFalse(calibration.observe(-80));
+    assertTrue(calibration.observe(-82));
 
     RssiCalibration.Snapshot snapshot = calibration.snapshot();
-    assertEquals(Integer.valueOf(-20), snapshot.best);
-    assertEquals(Integer.valueOf(-60), snapshot.worst);
+    assertTrue(snapshot.ready);
+    assertEquals(Integer.valueOf(-49), snapshot.best);
+    assertEquals(Integer.valueOf(-82), snapshot.worst);
   }
 
-  @Test public void medianOfThreeConsecutiveSamplesCanExpandObservedRange() {
+  @Test public void oneWeakExcursionCannotExpandWorstExtreme() {
     RssiCalibration calibration = new RssiCalibration(-20, -60);
 
-    calibration.observe(-85);
-    calibration.observe(-86);
-    assertTrue(calibration.observe(-84));
-    RssiCalibration.Snapshot snapshot = calibration.snapshot();
-    assertEquals(Integer.valueOf(-85), snapshot.worst);
+    assertFalse(calibration.observe(-85));
+    assertFalse(calibration.observe(-55));
+
+    assertEquals(Integer.valueOf(-60), calibration.snapshot().worst);
+  }
+
+  @Test public void twoConsecutiveWeakReadingsExpandWorstExtreme() {
+    RssiCalibration calibration = new RssiCalibration(-20, -60);
+
+    assertFalse(calibration.observe(-85));
+    assertTrue(calibration.observe(-86));
+
+    assertEquals(Integer.valueOf(-86), calibration.snapshot().worst);
+  }
+
+  @Test public void twoConsecutiveStrongReadingsExpandBestExtreme() {
+    RssiCalibration calibration = new RssiCalibration(-40, -90);
+
+    assertFalse(calibration.observe(-25));
+    assertTrue(calibration.observe(-22));
+
+    assertEquals(Integer.valueOf(-22), calibration.snapshot().best);
   }
 }

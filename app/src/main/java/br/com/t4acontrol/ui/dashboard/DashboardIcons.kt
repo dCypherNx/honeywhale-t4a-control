@@ -82,18 +82,52 @@ internal fun MdiIcon(name: String, color: Color, iconSize: Dp, modifier: Modifie
     })
 }
 
-internal fun signalIcon(rssi: Int?): String = when {
-    rssi == null -> "cmd-signal-cellular-outline"
-    rssi >= -40 -> "cmd-signal-cellular-3"
-    rssi >= -60 -> "cmd-signal-cellular-2"
-    else -> "cmd-signal-cellular-1"
+private enum class RssiVisualBand(val filledBars: Int, val color: Color) {
+    SHORT(3, T4ADashboardTokens.Green),
+    MEDIUM(2, T4ADashboardTokens.Amber),
+    LONG(1, T4ADashboardTokens.Red),
 }
 
-internal fun signalColor(rssi: Int?, muted: Color): Color = when {
-    rssi == null -> muted
-    rssi >= -40 -> T4ADashboardTokens.Green
-    rssi >= -60 -> T4ADashboardTokens.Orange
-    else -> T4ADashboardTokens.Red
+@Composable
+internal fun RssiSignalIndicator(state: T4ADashboardState, muted: Color, modifier: Modifier = Modifier) {
+    val band = calibratedRssiBand(state)
+    val color = band?.color ?: muted
+    val filledBars = band?.filledBars ?: 0
+
+    Canvas(modifier.size(22.dp)) {
+        val barWidth = size.width * 0.21f
+        val gap = size.width * 0.12f
+        val heights = floatArrayOf(size.height * 0.40f, size.height * 0.68f, size.height * 0.96f)
+        val corner = CornerRadius(barWidth * 0.22f, barWidth * 0.22f)
+        val strokeWidth = 1.4.dp.toPx()
+
+        repeat(3) { index ->
+            val height = heights[index]
+            val left = index * (barWidth + gap)
+            val top = size.height - height
+            val style = if (index < filledBars) androidx.compose.ui.graphics.drawscope.Fill else Stroke(strokeWidth)
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(left, top),
+                size = Size(barWidth, height),
+                cornerRadius = corner,
+                style = style,
+            )
+        }
+    }
+}
+
+private fun calibratedRssiBand(state: T4ADashboardState): RssiVisualBand? {
+    val rssi = state.rssiDbm ?: return null
+    val shortMin = state.rssiShortMin ?: return null
+    val mediumMin = state.rssiMediumMin ?: return null
+    if (!state.rssiCalibrationReady) return null
+
+    return when {
+        rssi >= shortMin -> RssiVisualBand.SHORT
+        rssi >= mediumMin -> RssiVisualBand.MEDIUM
+        else -> RssiVisualBand.LONG
+    }
 }
 
 internal fun modeIcon(mode: RidingMode): String = when (mode) {
