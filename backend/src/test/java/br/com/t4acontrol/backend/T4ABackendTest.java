@@ -30,7 +30,7 @@ public class T4ABackendTest {
     provisioner = new FakeProvisioner();
     transport = new FakeTransport();
     listener = new RecordingListener();
-    clock = new TestClock(1_000_000L);
+    clock = new TestClock(1_700_000_000_000L);
     scheduler = new ImmediateScheduler();
   }
 
