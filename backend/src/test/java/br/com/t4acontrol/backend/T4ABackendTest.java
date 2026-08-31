@@ -323,6 +323,7 @@ public class T4ABackendTest {
 
   private static void advanceMainLooper(long seconds) {
     Shadows.shadowOf(Looper.getMainLooper()).idleFor(seconds, TimeUnit.SECONDS);
+    Shadows.shadowOf(Looper.getMainLooper()).idle();
   }
 
   private static final class FakeStateStore implements T4AStateStore {
