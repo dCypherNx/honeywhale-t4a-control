@@ -177,13 +177,39 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Provide non-production Tuya placeholders
-        shell: bash
+      - name: Restore private Tuya test inputs
+        shell: pwsh
+        env:
+          TUYA_APP_KEY: ${{ secrets.TUYA_APP_KEY }}
+          TUYA_APP_SECRET: ${{ secrets.TUYA_APP_SECRET }}
+          TUYA_BUILD_FILES_PASSWORD: ${{ secrets.TUYA_BUILD_FILES_PASSWORD }}
         run: |
-          cat > tuya.properties <<'EOF'
-          TUYA_APP_KEY=ci-placeholder
-          TUYA_APP_SECRET=ci-placeholder
-          EOF
+          $ErrorActionPreference = 'Stop'
+
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_KEY)) {
+            throw 'Missing required GitHub Secret: TUYA_APP_KEY'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_SECRET)) {
+            throw 'Missing required GitHub Secret: TUYA_APP_SECRET'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_BUILD_FILES_PASSWORD)) {
+            throw 'Missing required GitHub Secret: TUYA_BUILD_FILES_PASSWORD'
+          }
+          if (-not (Test-Path -LiteralPath 'ci/tuya-build-inputs.enc' -PathType Leaf)) {
+            throw 'Missing encrypted Tuya build bundle: ci/tuya-build-inputs.enc'
+          }
+
+          @"
+          TUYA_APP_KEY=$env:TUYA_APP_KEY
+          TUYA_APP_SECRET=$env:TUYA_APP_SECRET
+          TUYA_SDK_VERSION=7.8.0
+          "@ | Set-Content -LiteralPath 'tuya.properties' -Encoding utf8NoBOM
+
+          ./scripts/TuyaBuildBundle.ps1 -Decrypt
+
+          if (-not (Test-Path -LiteralPath 'app/libs/security-algorithm-1.0.0-beta.aar' -PathType Leaf)) {
+            throw 'Tuya security AAR was not restored.'
+          }
 
       - name: Run debug unit tests
         shell: bash
