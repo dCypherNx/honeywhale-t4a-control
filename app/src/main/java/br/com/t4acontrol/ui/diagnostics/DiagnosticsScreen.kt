@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
@@ -219,6 +220,7 @@ internal fun RawLogCard(
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                     .padding(8.dp)
+                    .clipToBounds()
                     .onSizeChanged { viewportWidthPx = it.width }
                     .scrollable(
                         state = horizontalScrollable,
@@ -229,7 +231,7 @@ internal fun RawLogCard(
                     state = vertical,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(end = 7.dp),
+                        .padding(end = 9.dp),
                 ) {
                     itemsIndexed(
                         items = visibleEntries,
@@ -290,26 +292,26 @@ private fun LazyVerticalScrollIndicator(
     val scrollProgress = (effectiveFirstIndex / maxFirstIndex.toFloat()).coerceIn(0f, 1f)
     val visibleFraction = (visibleItems.size.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f)
 
-    BoxWithConstraints(modifier = modifier.width(4.dp)) {
-        val thumbHeight = maxOf(24.dp, maxHeight * visibleFraction).coerceAtMost(maxHeight)
+    BoxWithConstraints(modifier = modifier.width(6.dp)) {
+        val thumbHeight = maxOf(28.dp, maxHeight * visibleFraction).coerceAtMost(maxHeight)
         val travel = maxHeight - thumbHeight
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                    RoundedCornerShape(2.dp),
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    RoundedCornerShape(3.dp),
                 ),
         )
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = travel * scrollProgress)
-                .width(3.dp)
+                .width(4.dp)
                 .height(thumbHeight)
                 .background(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                    RoundedCornerShape(2.dp),
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.95f),
+                    RoundedCornerShape(3.dp),
                 ),
         )
     }
