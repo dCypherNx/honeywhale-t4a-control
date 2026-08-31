@@ -32,9 +32,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.t4acontrol.BuildConfig
 import br.com.t4acontrol.R
 import br.com.t4acontrol.ui.MdiIcon
 import br.com.t4acontrol.ui.T4AUiActions
@@ -119,6 +120,7 @@ internal fun RawLogCard(
         if (rawLogFilter == "ALL") recentEntries
         else recentEntries.filter { rawLogOrigin(it) == rawLogFilter }
     }
+    val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
     LaunchedEffect(filterOptions) {
         if (rawLogFilter !in filterOptions) actions.setRawLogFilter("ALL")
     }
@@ -134,6 +136,14 @@ internal fun RawLogCard(
                 Spacer(Modifier.size(8.dp))
                 Text(stringResource(R.string.raw_log), color = T4AUiTokens.Blue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
+            Text(
+                text = "T4A ${BuildConfig.VERSION_NAME} · $buildType · code ${BuildConfig.VERSION_CODE}",
+                color = foreground,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 3.dp),
+            )
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(filterScroll).padding(vertical = 5.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
