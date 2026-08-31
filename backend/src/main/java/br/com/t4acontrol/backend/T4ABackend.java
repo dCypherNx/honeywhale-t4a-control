@@ -31,7 +31,7 @@ public final class T4ABackend {
   private static final int AUTO_LOCK_SHORT_THRESHOLD_DBM = -40;
   private static final int AUTO_LOCK_MEDIUM_THRESHOLD_DBM = -65;
   private static final int AUTO_LOCK_LONG_THRESHOLD_DBM = -90;
-  private static final int AUTO_UNLOCK_HYSTERESIS_DB = 8;
+  private static final int AUTO_UNLOCK_HYSTERESIS_DB = 1;
   private static final int AUTO_LOCK_LONG_REQUIRED_SAMPLES = 3;
   private static final String DISTANCE_SHORT = "short",
       DISTANCE_MEDIUM = "medium",
