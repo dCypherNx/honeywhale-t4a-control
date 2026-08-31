@@ -1,6 +1,7 @@
 package br.com.t4acontrol.backend;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -23,25 +24,25 @@ public class RssiCalibrationTest {
     assertTrue(mediumWidth > longWidth);
   }
 
-  @Test public void singleOutlierCannotRedefineExtreme() {
+  @Test public void twoConsecutiveSamplesDefineInitialExtrema() {
+    RssiCalibration calibration = new RssiCalibration(null, null);
+
+    assertFalse(calibration.observe(-35));
+    assertTrue(calibration.observe(-72));
+
+    RssiCalibration.Snapshot snapshot = calibration.snapshot();
+    assertEquals(Integer.valueOf(-35), snapshot.best);
+    assertEquals(Integer.valueOf(-72), snapshot.worst);
+  }
+
+  @Test public void twoConsecutiveSamplesCanExpandObservedRange() {
     RssiCalibration calibration = new RssiCalibration(-20, -60);
 
-    calibration.observe(-50);
-    calibration.observe(-50);
-    calibration.observe(-100);
+    assertFalse(calibration.observe(-85));
+    assertTrue(calibration.observe(-86));
 
     RssiCalibration.Snapshot snapshot = calibration.snapshot();
     assertEquals(Integer.valueOf(-20), snapshot.best);
-    assertEquals(Integer.valueOf(-60), snapshot.worst);
-  }
-
-  @Test public void medianOfThreeConsecutiveSamplesCanExpandObservedRange() {
-    RssiCalibration calibration = new RssiCalibration(-20, -60);
-
-    calibration.observe(-85);
-    calibration.observe(-86);
-    assertTrue(calibration.observe(-84));
-    RssiCalibration.Snapshot snapshot = calibration.snapshot();
-    assertEquals(Integer.valueOf(-85), snapshot.worst);
+    assertEquals(Integer.valueOf(-86), snapshot.worst);
   }
 }
