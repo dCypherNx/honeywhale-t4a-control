@@ -312,6 +312,47 @@ public class T4ABackendTest {
     assertEquals(Integer.valueOf(80), listener.latest().batteryObservedMax);
   }
 
+  @Test public void seededDynamicCalibrationUsesTenPercentWeakEdgeMargin() {
+    stateStore.rememberedLock = false;
+    stateStore.autoLockDistance = "short";
+    stateStore.rssiObservedBest = -15;
+    stateStore.rssiObservedWorst = -90;
+    startConnected(Collections.emptyMap());
+
+    T4AState state = listener.latest();
+    assertTrue(state.rssiCalibrationReady);
+    assertEquals(Integer.valueOf(-82), state.rssiStableWorst);
+    assertEquals(Integer.valueOf(-37), state.rssiShortMin);
+    assertEquals(Integer.valueOf(-60), state.rssiMediumMin);
+    assertEquals(Integer.valueOf(-82), state.rssiLongMin);
+
+    backend.setAutoLockEnabled(true);
+    int before = transport.publishCalls;
+    transport.rssi = -37;
+    pollRssiNow();
+
+    assertEquals(before + 1, transport.publishCalls);
+    assertEquals(true, transport.lastPublished.get("1"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-37 threshold=-37")));
+  }
+
+  @Test public void seededDynamicMediumLocksBelowLearnedBand() {
+    stateStore.rememberedLock = true;
+    stateStore.autoLockDistance = "medium";
+    stateStore.rssiObservedBest = -15;
+    stateStore.rssiObservedWorst = -90;
+    startConnected(Collections.emptyMap());
+    backend.setAutoLockEnabled(true);
+    int before = transport.publishCalls;
+    transport.rssi = -61;
+
+    pollRssiNow();
+
+    assertEquals(before + 1, transport.publishCalls);
+    assertEquals(false, transport.lastPublished.get("1"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=lock rssi=-61 threshold=-61")));
+  }
+
   private void forceRechargeGapFrom(int percent) {
     stateStore.batteryLastLivePercent = percent;
     stateStore.batteryLastLiveAt = System.currentTimeMillis() - 2L * 60L * 60L * 1000L;
@@ -352,6 +393,8 @@ public class T4ABackendTest {
     Boolean rememberedLock;
     boolean autoLockEnabled;
     String autoLockDistance;
+    Integer rssiObservedBest;
+    Integer rssiObservedWorst;
     String bleAddress = "";
     Integer batteryObservedMin;
     Integer batteryObservedMax;
@@ -366,6 +409,9 @@ public class T4ABackendTest {
     @Override public void setAutoLockEnabled(boolean enabled) { autoLockEnabled = enabled; }
     @Override public String autoLockDistance() { return autoLockDistance; }
     @Override public void setAutoLockDistance(String distance) { autoLockDistance = distance; }
+    @Override public Integer rssiObservedBest() { return rssiObservedBest; }
+    @Override public Integer rssiObservedWorst() { return rssiObservedWorst; }
+    @Override public void setRssiObservation(int best, int worst) { rssiObservedBest = best; rssiObservedWorst = worst; }
     @Override public String bleAddress() { return bleAddress; }
     @Override public void setBleAddress(String address) { bleAddress = address == null ? "" : address; }
     @Override public void clearBleAddress() { bleAddress = ""; }

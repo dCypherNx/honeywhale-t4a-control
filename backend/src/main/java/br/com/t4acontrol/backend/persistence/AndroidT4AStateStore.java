@@ -12,6 +12,8 @@ public final class AndroidT4AStateStore implements T4AStateStore {
   static final String PREF_LOCK_VALUE = "lock_value";
   static final String PREF_AUTO_LOCK = "auto_lock_distance";
   static final String PREF_AUTO_LOCK_DISTANCE = "auto_lock_distance_level";
+  static final String PREF_RSSI_OBSERVED_BEST = "rssi_observed_best";
+  static final String PREF_RSSI_OBSERVED_WORST = "rssi_observed_worst";
   static final String PREF_BLE_ADDRESS = "ble_address";
   static final String PREF_BATTERY_OBSERVED_MIN = "battery_observed_min";
   static final String PREF_BATTERY_OBSERVED_MAX = "battery_observed_max";
@@ -55,6 +57,25 @@ public final class AndroidT4AStateStore implements T4AStateStore {
 
   @Override public void setAutoLockDistance(String distance) {
     preferences.edit().putString(PREF_AUTO_LOCK_DISTANCE, distance).apply();
+  }
+
+  @Override public Integer rssiObservedBest() {
+    return preferences.contains(PREF_RSSI_OBSERVED_BEST)
+        ? preferences.getInt(PREF_RSSI_OBSERVED_BEST, 0)
+        : null;
+  }
+
+  @Override public Integer rssiObservedWorst() {
+    return preferences.contains(PREF_RSSI_OBSERVED_WORST)
+        ? preferences.getInt(PREF_RSSI_OBSERVED_WORST, 0)
+        : null;
+  }
+
+  @Override public void setRssiObservation(int best, int worst) {
+    preferences.edit()
+        .putInt(PREF_RSSI_OBSERVED_BEST, best)
+        .putInt(PREF_RSSI_OBSERVED_WORST, worst)
+        .apply();
   }
 
   @Override public String bleAddress() {

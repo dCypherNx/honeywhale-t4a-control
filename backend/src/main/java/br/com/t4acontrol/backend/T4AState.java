@@ -42,6 +42,13 @@ public final class T4AState {
   public final Set<String> pendingDps;
   public final boolean autoLockEnabled;
   public final String autoLockDistance;
+  public final Integer rssiObservedBest;
+  public final Integer rssiObservedWorst;
+  public final Integer rssiStableWorst;
+  public final Integer rssiShortMin;
+  public final Integer rssiMediumMin;
+  public final Integer rssiLongMin;
+  public final boolean rssiCalibrationReady;
   public final Integer batteryObservedMin;
   public final Integer batteryObservedMax;
   public final Long batteryCycleStartedAt;
@@ -65,6 +72,13 @@ public final class T4AState {
       Set<String> pendingDps,
       boolean autoLockEnabled,
       String autoLockDistance,
+      Integer rssiObservedBest,
+      Integer rssiObservedWorst,
+      Integer rssiStableWorst,
+      Integer rssiShortMin,
+      Integer rssiMediumMin,
+      Integer rssiLongMin,
+      boolean rssiCalibrationReady,
       Integer batteryObservedMin,
       Integer batteryObservedMax,
       Long batteryCycleStartedAt,
@@ -86,6 +100,13 @@ public final class T4AState {
     this.pendingDps = Collections.unmodifiableSet(new java.util.HashSet<>(pendingDps));
     this.autoLockEnabled = autoLockEnabled;
     this.autoLockDistance = autoLockDistance;
+    this.rssiObservedBest = rssiObservedBest;
+    this.rssiObservedWorst = rssiObservedWorst;
+    this.rssiStableWorst = rssiStableWorst;
+    this.rssiShortMin = rssiShortMin;
+    this.rssiMediumMin = rssiMediumMin;
+    this.rssiLongMin = rssiLongMin;
+    this.rssiCalibrationReady = rssiCalibrationReady;
     this.batteryObservedMin = batteryObservedMin;
     this.batteryObservedMax = batteryObservedMax;
     this.batteryCycleStartedAt = batteryCycleStartedAt;

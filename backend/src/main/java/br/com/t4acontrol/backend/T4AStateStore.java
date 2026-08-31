@@ -16,6 +16,12 @@ public interface T4AStateStore {
 
   void setAutoLockDistance(String distance);
 
+  Integer rssiObservedBest();
+
+  Integer rssiObservedWorst();
+
+  void setRssiObservation(int best, int worst);
+
   String bleAddress();
 
   void setBleAddress(String address);
