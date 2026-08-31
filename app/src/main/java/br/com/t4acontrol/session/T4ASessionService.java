@@ -369,7 +369,7 @@ public final class T4ASessionService extends Service
 
     return new Notification.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.stat_notify_sync)
-        .setContentTitle("T4A Control")
+        .setContentTitle("RideDash")
         .setContentText(text)
         .setContentIntent(open)
         .setOngoing(true)

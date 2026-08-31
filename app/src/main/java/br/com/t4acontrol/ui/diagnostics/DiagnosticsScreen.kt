@@ -194,7 +194,7 @@ internal fun RawLogCard(
                 Text(stringResource(R.string.raw_log), color = T4AUiTokens.Blue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Text(
-                text = "T4A ${BuildConfig.VERSION_NAME} · f$buildSequence · $buildType · code ${BuildConfig.VERSION_CODE}",
+                text = "RideDash ${BuildConfig.VERSION_NAME} · f$buildSequence · $buildType · code ${BuildConfig.VERSION_CODE}",
                 color = foreground,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,

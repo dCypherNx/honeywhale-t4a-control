@@ -253,7 +253,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private fun rawLogText(): String = buildString {
         val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
         val buildSequence = BuildConfig.VERSION_CODE % 100000
-        append("T4A ${BuildConfig.VERSION_NAME} (f$buildSequence, $buildType, versionCode ${BuildConfig.VERSION_CODE})\n")
+        append("RideDash ${BuildConfig.VERSION_NAME} (f$buildSequence, $buildType, versionCode ${BuildConfig.VERSION_CODE})\n")
         rawHistory.forEach { append(it).append('\n') }
     }
 
@@ -264,13 +264,13 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     private fun saveRawLog() {
-        val fileName = "t4a-raw-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())}.log"
+        val fileName = "ridedash-raw-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())}.log"
         var uri: android.net.Uri? = null
         try {
             val values = android.content.ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/T4A")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/RideDash")
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
             uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)

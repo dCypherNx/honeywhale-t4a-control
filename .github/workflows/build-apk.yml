@@ -257,13 +257,13 @@ jobs:
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -s "${APK}"
           mkdir -p dist release
-          cp "${APK}" "dist/T4A-Control-${T4A_VERSION_NAME}-debug-${GITHUB_SHA::7}.apk"
-          cp "${APK}" "release/T4A-Control-debug.apk"
+          cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}-debug-${GITHUB_SHA::7}.apk"
+          cp "${APK}" "release/RideDash-debug.apk"
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: t4a-control-${{ steps.version.outputs.version_name }}-${{ github.sha }}
+          name: ridedash-${{ steps.version.outputs.version_name }}-${{ github.sha }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
@@ -301,7 +301,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release delete latest-debug --cleanup-tag --yes || true
-          gh release create latest-debug release/T4A-Control-debug.apk \
+          gh release create latest-debug release/RideDash-debug.apk \
             --target "${GITHUB_SHA}" \
-            --title "T4A Control ${T4A_VERSION_NAME} (debug)" \
+            --title "RideDash ${T4A_VERSION_NAME} (debug)" \
             --notes "Automated ${T4A_BUILD_KIND} build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), bump ${T4A_VERSION_BUMP}, source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, Tuya-registered package br.com.t4acontrol, commit ${GITHUB_SHA}."
