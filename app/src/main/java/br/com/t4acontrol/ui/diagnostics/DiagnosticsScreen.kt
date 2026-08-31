@@ -121,6 +121,7 @@ internal fun RawLogCard(
         else recentEntries.filter { rawLogOrigin(it) == rawLogFilter }
     }
     val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
+    val buildSequence = BuildConfig.VERSION_CODE % 100000
     LaunchedEffect(filterOptions) {
         if (rawLogFilter !in filterOptions) actions.setRawLogFilter("ALL")
     }
@@ -137,7 +138,7 @@ internal fun RawLogCard(
                 Text(stringResource(R.string.raw_log), color = T4AUiTokens.Blue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Text(
-                text = "T4A ${BuildConfig.VERSION_NAME} · $buildType · code ${BuildConfig.VERSION_CODE}",
+                text = "T4A ${BuildConfig.VERSION_NAME} · f$buildSequence · $buildType · code ${BuildConfig.VERSION_CODE}",
                 color = foreground,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
