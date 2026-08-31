@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">T4A Control</string>
+    <string name="app_name">RideDash</string>
     <string name="checking_account">Verificando conta…</string>
     <string name="session_initializing">Inicializando sessão T4A…</string>
     <string name="authentication">Autenticação</string>
@@ -18,7 +18,7 @@
     <string name="copy">Copiar</string>
     <string name="save">Salvar</string>
     <string name="raw_log_copied">Log copiado para a área de transferência</string>
-    <string name="raw_log_saved">Log salvo em Downloads/T4A: %1$s</string>
+    <string name="raw_log_saved">Log salvo em Downloads/RideDash: %1$s</string>
     <string name="raw_log_save_failed">Não foi possível salvar o log raw.</string>
     <string name="account">Conta: %1$s</string>
     <string name="account_unauthenticated">Conta não autenticada</string>
