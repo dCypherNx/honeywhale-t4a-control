@@ -244,7 +244,7 @@ internal fun RawLogCard(
                             fontSize = 10.sp,
                             softWrap = false,
                             modifier = Modifier
-                                .wrapContentWidth(unbounded = true)
+                                .wrapContentWidth(align = Alignment.Start, unbounded = true)
                                 .onSizeChanged { size ->
                                     if (size.width > maxObservedLineWidthPx) {
                                         maxObservedLineWidthPx = size.width
