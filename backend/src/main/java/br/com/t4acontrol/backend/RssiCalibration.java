@@ -118,25 +118,27 @@ final class RssiCalibration {
   }
 
   Snapshot snapshot() {
-    if (best == null || worst == null || !bestConfirmed || !worstConfirmed) {
-      return new Snapshot(best, worst, null, null, null, null, false);
+    Integer confirmedBest = bestConfirmed ? best : null;
+    Integer confirmedWorst = worstConfirmed ? worst : null;
+    if (confirmedBest == null || confirmedWorst == null) {
+      return new Snapshot(confirmedBest, confirmedWorst, null, null, null, null, false);
     }
 
-    double observedSpan = best - worst;
-    double stableWorstRaw = worst + observedSpan * WEAK_EDGE_MARGIN;
-    double stableSpan = best - stableWorstRaw;
+    double observedSpan = confirmedBest - confirmedWorst;
+    double stableWorstRaw = confirmedWorst + observedSpan * WEAK_EDGE_MARGIN;
+    double stableSpan = confirmedBest - stableWorstRaw;
     int stableWorst = (int) Math.ceil(stableWorstRaw);
 
     // RSSI is logarithmic: equal dBm slices do not represent equal distance slices.
     // Keep the near band widest, then medium, with the far band narrowest.
-    int shortMin = (int) Math.ceil(best - stableSpan * SHORT_BAND_SHARE);
-    int mediumMin = (int) Math.ceil(best - stableSpan * (SHORT_BAND_SHARE + MEDIUM_BAND_SHARE));
+    int shortMin = (int) Math.ceil(confirmedBest - stableSpan * SHORT_BAND_SHARE);
+    int mediumMin = (int) Math.ceil(confirmedBest - stableSpan * (SHORT_BAND_SHARE + MEDIUM_BAND_SHARE));
     int longMin = stableWorst;
     boolean ready = observedSpan > 0.0d
-        && best > shortMin
+        && confirmedBest > shortMin
         && shortMin > mediumMin
         && mediumMin > longMin;
-    return new Snapshot(best, worst, stableWorst, shortMin, mediumMin, longMin, ready);
+    return new Snapshot(confirmedBest, confirmedWorst, stableWorst, shortMin, mediumMin, longMin, ready);
   }
 
   private static boolean validRssi(Integer value) {
