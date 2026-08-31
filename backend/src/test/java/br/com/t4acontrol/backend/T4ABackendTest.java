@@ -151,7 +151,7 @@ public class T4ABackendTest {
     startConnected(Collections.emptyMap());
 
     backend.publish("1", false);
-    assertEquals(false, listener.latest().dps.get("1"));
+    assertEquals(false, transport.lastPublished.get("1"));
 
     transport.emitDps(Map.of("1", true));
     idleMainLooper();
