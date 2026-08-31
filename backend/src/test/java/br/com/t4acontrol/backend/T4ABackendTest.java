@@ -7,12 +7,12 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.Looper;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -176,7 +176,7 @@ public class T4ABackendTest {
     transport.rssi = -70;
 
     backend.setAutoLockEnabled(true);
-    advanceMainLooper(2);
+    pollRssiNow();
 
     assertEquals(false, transport.lastPublished.get("1"));
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("bloqueando")));
@@ -190,11 +190,11 @@ public class T4ABackendTest {
     int before = transport.publishCalls;
     transport.rssi = -90;
 
-    advanceMainLooper(2);
+    pollRssiNow();
     assertEquals(before, transport.publishCalls);
-    advanceMainLooper(2);
+    pollRssiNow();
     assertEquals(before, transport.publishCalls);
-    advanceMainLooper(2);
+    pollRssiNow();
 
     assertEquals(before + 1, transport.publishCalls);
     assertEquals(false, transport.lastPublished.get("1"));
@@ -321,9 +321,16 @@ public class T4ABackendTest {
     Shadows.shadowOf(Looper.getMainLooper()).idle();
   }
 
-  private static void advanceMainLooper(long seconds) {
-    Shadows.shadowOf(Looper.getMainLooper()).idleFor(seconds, TimeUnit.SECONDS);
-    Shadows.shadowOf(Looper.getMainLooper()).idle();
+  private void pollRssiNow() {
+    try {
+      Field lastRssiRead = T4ABackend.class.getDeclaredField("lastRssiRead");
+      lastRssiRead.setAccessible(true);
+      lastRssiRead.setLong(backend, 0L);
+    } catch (ReflectiveOperationException error) {
+      throw new AssertionError(error);
+    }
+    backend.setForeground(true);
+    idleMainLooper();
   }
 
   private static final class FakeStateStore implements T4AStateStore {
