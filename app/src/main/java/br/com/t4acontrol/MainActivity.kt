@@ -251,7 +251,9 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     private fun rawLogText(): String = buildString {
-        append("T4A ${BuildConfig.VERSION_NAME} (versionCode ${BuildConfig.VERSION_CODE})\n")
+        val buildType = if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"
+        val buildSequence = BuildConfig.VERSION_CODE % 100000
+        append("T4A ${BuildConfig.VERSION_NAME} (f$buildSequence, $buildType, versionCode ${BuildConfig.VERSION_CODE})\n")
         rawHistory.forEach { append(it).append('\n') }
     }
 
