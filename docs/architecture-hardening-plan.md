@@ -74,6 +74,10 @@ Congelar o comportamento atual como referência antes de qualquer refatoração 
 
 O baseline deve estar reproduzível e permitir comparação objetiva caso uma etapa posterior introduza regressão.
 
+## Estado de execução
+
+**Concluída no repositório.** O baseline formal está registrado em `docs/baseline-2026-08-30.md`. Instalação in-place, validação no T4A físico e log raw continuam como evidência de campo e não são simulados pelo CI.
+
 ---
 
 # Fase 1 — Fundação de testes automatizados
@@ -153,9 +157,17 @@ Cobrir explicitamente as regras já observadas em campo:
 - rejeição manual do novo ciclo;
 - persistência de mínimo/máximo observado.
 
+### Nota de execução sobre `RX=100`
+
+O tratamento específico de um `RX=100` potencialmente espúrio não será implementado como heurística nova nesta fase. O backend atual não possui uma fonte temporal injetável capaz de distinguir de forma determinística uma leitura espúria de uma leitura legítima após carga. Criar uma regra apenas pelo valor poderia rejeitar um `100%` real. A cobertura definitiva desse caso fica vinculada à introdução de `Clock`/`Scheduler` na Fase 4 e aos logs de campo.
+
 ## Critério de aceite
 
 A suíte deve rodar automaticamente no build/CI e proteger as regras críticas antes das próximas fases.
+
+## Estado de execução
+
+**Concluída como fundação de testes.** A implementação e os resultados estão registrados em `docs/phase-1-test-foundation.md`. O CI executa os testes dos módulos `backend` e `app`, além de preservar a verificação da fronteira Tuya.
 
 ---
 
@@ -321,7 +333,8 @@ Testes devem conseguir avançar artificialmente tempo para validar:
 - RSSI timeout;
 - reconnect foreground/background;
 - manutenção periódica;
-- gap mínimo de detecção de recarga.
+- gap mínimo de detecção de recarga;
+- classificação segura de leituras suspeitas de bateria, incluindo `RX=100`, sem depender do relógio real.
 
 ---
 
@@ -494,11 +507,11 @@ Preferir branches curtas e temáticas.
 Sugestão:
 
 ```text
-refactor/test-foundation
-refactor/ui-decomposition
-refactor/backend-state-store
-refactor/backend-scheduler
-refactor/transport-boundary
+feature/test-foundation
+feature/ui-decomposition
+feature/backend-state-store
+feature/backend-scheduler
+feature/transport-boundary
 feature/navigation-domain
 feature/route-persistence
 feature/navigation-ui
@@ -510,54 +523,18 @@ Cada branch deve:
 - manter build verde;
 - evitar alteração funcional não relacionada;
 - atualizar testes junto com alterações de regra;
-- permitir comparação simples com o baseline.
+- permitir comparação simples com o baseline;
+- obedecer à classificação SemVer exigida pelo CI.
 
 ---
 
-# Critérios globais de conclusão do endurecimento
+# Regras para evolução do plano
 
-As fases 0 a 5 estarão concluídas quando:
+Este documento é vivo. Descobertas obtidas durante testes físicos, análise BLE ou implementação podem alterar fases futuras.
 
-- houver suíte automatizada cobrindo regras críticas;
-- `MainActivity` estiver concentrada no papel de Activity;
-- o dashboard estiver dividido em componentes de responsabilidade clara;
-- `T4ABackend` não acessar diretamente `SharedPreferences`;
-- regras temporais críticas forem testáveis deterministicamente;
-- Tuya permanecer confinada aos adaptadores/bootstrap permitidos;
-- `T4ATransport` puder ser substituído por fake em testes e, futuramente, por BLE próprio;
-- o comportamento físico atualmente validado permanecer intacto.
+Mudanças no plano devem:
 
----
-
-# Fora do escopo deste plano
-
-Não fazem parte deste endurecimento:
-
-- remoção imediata do SDK Tuya;
-- implementação do protocolo BLE próprio;
-- alteração visual extensa do dashboard;
-- mudança das regras de controle do T4A;
-- cálculo definitivo de SOC;
-- autonomia estimada;
-- OTA;
-- limite próprio de velocidade;
-- controle do T4A por MQTT;
-- reescrita Java -> Kotlin em massa;
-- adoção de arquitetura Clean completa apenas por convenção;
-- retorno da UI para XML.
-
-Esses itens devem possuir trabalhos próprios quando houver necessidade concreta.
-
----
-
-# Primeiro trabalho a executar
-
-Ao iniciar este plano, executar somente:
-
-**Fase 0 — Baseline e proteção contra regressão**
-
-e depois abrir:
-
-**Fase 1 — Fundação de testes automatizados**.
-
-Nenhuma decomposição estrutural deve começar antes que exista uma primeira rede de testes cobrindo o estado atual.
+- registrar o motivo técnico;
+- não apagar decisões anteriores sem justificativa;
+- preservar os princípios obrigatórios;
+- evitar transformar o projeto em uma arquitetura mais complexa do que o problema exige.
