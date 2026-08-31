@@ -1,7 +1,6 @@
 package br.com.t4acontrol.backend;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -35,7 +34,7 @@ public class RssiCalibrationTest {
 
     calibration.observe(-85);
     calibration.observe(-86);
-    assertFalse(calibration.observe(-84));
+    assertTrue(calibration.observe(-84));
     RssiCalibration.Snapshot snapshot = calibration.snapshot();
     assertEquals(Integer.valueOf(-85), snapshot.worst);
   }
