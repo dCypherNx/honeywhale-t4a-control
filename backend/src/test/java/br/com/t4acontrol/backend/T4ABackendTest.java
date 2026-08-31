@@ -6,7 +6,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import android.os.Looper;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,18 +15,14 @@ import java.util.Map;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.Shadows;
-import org.robolectric.annotation.Config;
 
-@RunWith(RobolectricTestRunner.class)
-@Config(sdk = 35)
 public class T4ABackendTest {
   private FakeStateStore stateStore;
   private FakeProvisioner provisioner;
   private FakeTransport transport;
   private RecordingListener listener;
+  private TestClock clock;
+  private ImmediateScheduler scheduler;
   private T4ABackend backend;
 
   @Before public void setUp() {
@@ -35,6 +30,8 @@ public class T4ABackendTest {
     provisioner = new FakeProvisioner();
     transport = new FakeTransport();
     listener = new RecordingListener();
+    clock = new TestClock(1_000_000L);
+    scheduler = new ImmediateScheduler();
   }
 
   @After public void tearDown() {
@@ -43,7 +40,7 @@ public class T4ABackendTest {
 
   @Test public void startWithoutRestoredAccountStaysUnauthenticated() {
     provisioner.account = null;
-    backend = new T4ABackend(stateStore, provisioner, transport, listener);
+    backend = createBackend();
     backend.start();
     assertFalse(listener.latest().authenticated);
     assertEquals("Entre para acessar o T4A", listener.latest().message);
@@ -63,9 +60,8 @@ public class T4ABackendTest {
   @Test public void discoveryAndPairingStayBehindProvisionerPort() {
     provisioner.account = "account";
     provisioner.home = new T4AContracts.Home(1L, "Casa", Collections.emptyList());
-    backend = new T4ABackend(stateStore, provisioner, transport, listener);
+    backend = createBackend();
     backend.start();
-    idleMainLooper();
     assertEquals(T4AState.Pairing.UNPAIRED, listener.latest().pairing);
     backend.scan();
     assertEquals(T4AState.Pairing.SCANNING, listener.latest().pairing);
@@ -73,11 +69,9 @@ public class T4ABackendTest {
     T4AContracts.DiscoveredDevice discovered = new T4AContracts.DiscoveredDevice(
         "discovery-1", "AA:BB:CC:DD:EE:FF", "uuid", "product", 1, false, -55);
     provisioner.discoveryListener.onDevice(discovered);
-    idleMainLooper();
     assertEquals(T4AState.Pairing.READY, listener.latest().pairing);
     provisioner.pairResult = device(Collections.emptyMap());
     backend.pair();
-    idleMainLooper();
     assertEquals(T4AState.Pairing.PAIRED, listener.latest().pairing);
     assertTrue(transport.attached);
     assertEquals("device-1", transport.attachedDevice.id);
@@ -88,7 +82,6 @@ public class T4ABackendTest {
     int before = transport.connectCalls;
     transport.connected = false;
     backend.setForeground(true);
-    idleMainLooper();
     assertTrue(transport.connectCalls > before);
     assertTrue(listener.latest().connected);
   }
@@ -106,7 +99,6 @@ public class T4ABackendTest {
     assertFalse(state.dps.containsKey("3"));
     assertEquals(true, state.dps.get("8"));
     transport.emitDps(Map.of("1", false, "2", 123, "3", 77));
-    idleMainLooper();
     state = listener.latest();
     assertFalse(state.dps.containsKey("1"));
     assertEquals(123, state.dps.get("2"));
@@ -121,7 +113,6 @@ public class T4ABackendTest {
     assertTrue(listener.latest().pendingDps.contains("8"));
     assertEquals(true, transport.lastPublished.get("8"));
     transport.emitDps(Map.of("8", true));
-    idleMainLooper();
     assertFalse(listener.latest().pendingDps.contains("8"));
     assertEquals(true, listener.latest().dps.get("8"));
   }
@@ -131,20 +122,25 @@ public class T4ABackendTest {
     backend.publish("1", false);
     assertEquals(false, transport.lastPublished.get("1"));
     transport.emitDps(Map.of("1", true));
-    idleMainLooper();
     assertEquals(false, listener.latest().dps.get("1"));
     transport.emitDps(Map.of("1", false));
-    idleMainLooper();
     assertEquals(false, listener.latest().dps.get("1"));
     assertEquals(Boolean.FALSE, stateStore.rememberedLock);
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("Trava confirmada")));
+  }
+
+  @Test public void lockConfirmationTimeoutUsesInjectedClock() {
+    startConnected(Collections.emptyMap());
+    backend.publish("1", false);
+    clock.advance(5_001L);
+    transport.emitDps(Map.of("1", true));
+    assertTrue(listener.events.stream().anyMatch(value -> value.contains("Trava não confirmou")));
   }
 
   @Test public void unsolicitedLockRxNeverChangesRememberedState() {
     stateStore.rememberedLock = false;
     startConnected(Collections.emptyMap());
     transport.emitDps(Map.of("1", true));
-    idleMainLooper();
     assertEquals(false, listener.latest().dps.get("1"));
     assertEquals(Boolean.FALSE, stateStore.rememberedLock);
     assertTrue(listener.raw.stream().anyMatch(value -> value.contains("LOCK RX ignored unsolicited")));
@@ -194,9 +190,7 @@ public class T4ABackendTest {
     transport.connected = false;
     transport.rssi = -20;
     backend.setForeground(true);
-    idleMainLooper();
     backend.setForeground(true);
-    idleMainLooper();
     assertEquals(before, transport.publishCalls);
     assertEquals(false, listener.latest().dps.get("1"));
     assertTrue(listener.raw.stream().anyMatch(value -> value.contains("DISCONNECTED->CONNECTED autoLock=false")));
@@ -210,9 +204,7 @@ public class T4ABackendTest {
     int before = transport.publishCalls;
     transport.connected = false;
     backend.setForeground(true);
-    idleMainLooper();
     transport.emitDps(Map.of("1", true));
-    idleMainLooper();
     assertEquals(before, transport.publishCalls);
     assertEquals(false, listener.latest().dps.get("1"));
     assertEquals(Boolean.FALSE, stateStore.rememberedLock);
@@ -223,9 +215,7 @@ public class T4ABackendTest {
   @Test public void recentSpuriousBatteryHundredDoesNotReplaceLiveSubHundredValue() {
     startConnected(Collections.emptyMap());
     transport.emitDps(Map.of("3", 76));
-    idleMainLooper();
     transport.emitDps(Map.of("3", 100));
-    idleMainLooper();
     assertEquals(76, listener.latest().dps.get("3"));
     assertEquals(Integer.valueOf(76), listener.latest().batteryObservedMin);
     assertEquals(Integer.valueOf(76), listener.latest().batteryObservedMax);
@@ -236,14 +226,11 @@ public class T4ABackendTest {
   @Test public void batteryObservationTracksLiveMinMaxAndDetectsRechargeCandidate() {
     startConnected(Collections.emptyMap());
     transport.emitDps(Map.of("3", 80));
-    idleMainLooper();
     transport.emitDps(Map.of("3", 60));
-    idleMainLooper();
     assertEquals(Integer.valueOf(60), listener.latest().batteryObservedMin);
     assertEquals(Integer.valueOf(80), listener.latest().batteryObservedMax);
     forceRechargeGapFrom(60);
     transport.emitDps(Map.of("3", 80));
-    idleMainLooper();
     assertEquals(Integer.valueOf(80), listener.latest().pendingBatteryRechargePercent);
     assertNotNull(listener.latest().pendingBatteryRechargeDetectedAt);
     backend.resolveBatteryRecharge(true);
@@ -255,12 +242,9 @@ public class T4ABackendTest {
   @Test public void rejectedRechargeCandidatePreservesCurrentCycle() {
     startConnected(Collections.emptyMap());
     transport.emitDps(Map.of("3", 80));
-    idleMainLooper();
     transport.emitDps(Map.of("3", 60));
-    idleMainLooper();
     forceRechargeGapFrom(60);
     transport.emitDps(Map.of("3", 80));
-    idleMainLooper();
     assertNotNull(listener.latest().pendingBatteryRechargePercent);
     backend.resolveBatteryRecharge(false);
     assertNull(listener.latest().pendingBatteryRechargePercent);
@@ -304,9 +288,13 @@ public class T4ABackendTest {
     assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=lock rssi=-70 threshold=-69")));
   }
 
+  private T4ABackend createBackend() {
+    return new T4ABackend(stateStore, provisioner, transport, listener, clock, scheduler);
+  }
+
   private void forceRechargeGapFrom(int percent) {
     stateStore.batteryLastLivePercent = percent;
-    stateStore.batteryLastLiveAt = System.currentTimeMillis() - 2L * 60L * 60L * 1000L;
+    stateStore.batteryLastLiveAt = clock.nowMillis() - 2L * 60L * 60L * 1000L;
   }
 
   private void startConnected(Map<String, Object> initialDps) {
@@ -314,17 +302,14 @@ public class T4ABackendTest {
     T4AContracts.Device device = device(initialDps);
     provisioner.home = new T4AContracts.Home(1L, "Casa", List.of(device));
     transport.cached = device;
-    backend = new T4ABackend(stateStore, provisioner, transport, listener);
+    backend = createBackend();
     backend.start();
-    idleMainLooper();
   }
 
   private static T4AContracts.Device device(Map<String, Object> dps) {
     return new T4AContracts.Device(
         "device-1", "T4A Test", "AA:BB:CC:DD:EE:FF", "uuid", dps, Collections.emptyMap());
   }
-
-  private static void idleMainLooper() { Shadows.shadowOf(Looper.getMainLooper()).idle(); }
 
   private void pollRssiNow() {
     try {
@@ -335,7 +320,20 @@ public class T4ABackendTest {
       throw new AssertionError(error);
     }
     backend.setForeground(true);
-    idleMainLooper();
+  }
+
+  private static final class TestClock implements Clock {
+    private long now;
+    TestClock(long now) { this.now = now; }
+    @Override public long nowMillis() { return now; }
+    void advance(long millis) { now += millis; }
+  }
+
+  private static final class ImmediateScheduler implements Scheduler {
+    @Override public void post(Runnable task) { task.run(); }
+    @Override public void postDelayed(Runnable task, long delayMillis) {}
+    @Override public void cancel(Runnable task) {}
+    @Override public void cancelAll() {}
   }
 
   private static final class FakeStateStore implements T4AStateStore {
