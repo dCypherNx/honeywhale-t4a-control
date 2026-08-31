@@ -1,7 +1,5 @@
 package br.com.t4acontrol.backend;
 
-import android.os.Handler;
-import android.os.Looper;
 import com.alibaba.fastjson.JSON;
 import java.util.Collections;
 import java.util.HashMap;
@@ -41,7 +39,8 @@ public final class T4ABackend {
   private final T4ATransport transport;
   private final T4AStateStore stateStore;
   private final RssiCalibration rssiCalibration;
-  private final Handler handler = new Handler(Looper.getMainLooper());
+  private final Clock clock;
+  private final Scheduler scheduler;
   private final Map<String, Object> dps = new HashMap<>();
   private final Map<String, T4AState.DpInfo> schema = new HashMap<>();
   private final Map<String, Object> pendingDps = new HashMap<>();
@@ -79,9 +78,9 @@ public final class T4ABackend {
       if (!running) return;
       refreshFromCache();
       if (device != null && !transport.isConnected(device.id)) connectPairedDevice();
-      if (connected && System.currentTimeMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
+      if (connected && clock.nowMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
       long delay = connected ? STATE_REFRESH_MS : (foreground ? FOREGROUND_RECONNECT_MS : BACKGROUND_RECONNECT_MS);
-      handler.postDelayed(this, delay);
+      scheduler.postDelayed(this, delay);
     }
   };
 
@@ -89,11 +88,15 @@ public final class T4ABackend {
       T4AStateStore stateStore,
       T4AProvisioner provisioner,
       T4ATransport transport,
-      Listener listener) {
+      Listener listener,
+      Clock clock,
+      Scheduler scheduler) {
     this.listener = listener;
     this.provisioner = provisioner;
     this.transport = transport;
     this.stateStore = stateStore;
+    this.clock = clock;
+    this.scheduler = scheduler;
     this.rssiCalibration = new RssiCalibration(stateStore.rssiObservedBest(), stateStore.rssiObservedWorst());
     restoreBatteryObservation();
   }
@@ -110,21 +113,21 @@ public final class T4ABackend {
     authenticated = true;
     account = restoredAccount;
     queryHomes();
-    handler.removeCallbacks(maintenance);
-    handler.post(maintenance);
+    scheduler.cancel(maintenance);
+    scheduler.post(maintenance);
   }
 
   public void setForeground(boolean value) {
     foreground = value;
     if (running) {
-      handler.removeCallbacks(maintenance);
-      handler.post(maintenance);
+      scheduler.cancel(maintenance);
+      scheduler.post(maintenance);
     }
   }
 
   public void destroy() {
     running = false;
-    handler.removeCallbacksAndMessages(null);
+    scheduler.cancelAll();
     try { transport.destroy(); }
     finally { if (provisioner != (Object) transport) provisioner.destroy(); }
   }
@@ -134,7 +137,7 @@ public final class T4ABackend {
     emitState();
     provisioner.login("55", email, password, new T4AContracts.Callback<String>() {
       @Override public void onSuccess(String restoredAccount) {
-        handler.post(() -> {
+        scheduler.post(() -> {
           authenticated = true;
           account = restoredAccount.isEmpty() ? email : restoredAccount;
           event("Conta autenticada");
@@ -142,7 +145,7 @@ public final class T4ABackend {
         });
       }
       @Override public void onError(String code, String error) {
-        handler.post(() -> emit("Falha no login: " + error));
+        scheduler.post(() -> emit("Falha no login: " + error));
       }
     });
   }
@@ -154,7 +157,7 @@ public final class T4ABackend {
     emit("Procurando T4A…");
     provisioner.startDiscovery(15000, new T4AContracts.DiscoveryListener() {
       @Override public void onDevice(T4AContracts.DiscoveredDevice found) {
-        handler.post(() -> {
+        scheduler.post(() -> {
           if (found == null || found.bound || candidate != null) return;
           candidate = found;
           if (!found.address.isEmpty()) stateStore.setBleAddress(found.address);
@@ -165,7 +168,7 @@ public final class T4ABackend {
         });
       }
       @Override public void onError(String code, String error) {
-        handler.post(() -> emit("Falha ao procurar T4A: " + code));
+        scheduler.post(() -> emit("Falha ao procurar T4A: " + code));
       }
     });
   }
@@ -175,9 +178,9 @@ public final class T4ABackend {
     pairing = T4AState.Pairing.PAIRING;
     emit("Pareando…");
     provisioner.pair(homeId, candidate, new T4AContracts.Callback<T4AContracts.Device>() {
-      @Override public void onSuccess(T4AContracts.Device result) { handler.post(() -> attach(withRememberedBleAddress(result))); }
+      @Override public void onSuccess(T4AContracts.Device result) { scheduler.post(() -> attach(withRememberedBleAddress(result))); }
       @Override public void onError(String code, String error) {
-        handler.post(() -> {
+        scheduler.post(() -> {
           pairing = T4AState.Pairing.READY;
           emit("Pareamento falhou: " + code);
         });
@@ -191,7 +194,7 @@ public final class T4ABackend {
     emitState();
     if (DP_LOCK.equals(dpId)) {
       pendingLockValue = value;
-      pendingLockUntil = System.currentTimeMillis() + LOCK_CONFIRM_TIMEOUT_MS;
+      pendingLockUntil = clock.nowMillis() + LOCK_CONFIRM_TIMEOUT_MS;
       boolean remembered = Boolean.TRUE.equals(value);
       stateStore.setRememberedLock(remembered);
       dps.put(DP_LOCK, remembered);
@@ -258,7 +261,7 @@ public final class T4ABackend {
     pairing = T4AState.Pairing.REMOVING;
     emit("Removendo pareamento…");
     provisioner.remove(device.id, new T4AContracts.ResultCallback() {
-      @Override public void onSuccess() { handler.post(() -> clearDevice("T4A liberado para outro aplicativo")); }
+      @Override public void onSuccess() { scheduler.post(() -> clearDevice("T4A liberado para outro aplicativo")); }
       @Override public void onError(String code, String error) {
         pairing = T4AState.Pairing.PAIRED;
         emit("Falha ao remover pareamento: " + code);
@@ -269,7 +272,7 @@ public final class T4ABackend {
   private void queryHomes() {
     provisioner.loadPrimaryHome(new T4AContracts.Callback<T4AContracts.Home>() {
       @Override public void onSuccess(T4AContracts.Home home) {
-        handler.post(() -> {
+        scheduler.post(() -> {
           if (home == null || home.id == 0) {
             homeId = 0L;
             homeName = "";
@@ -284,7 +287,7 @@ public final class T4ABackend {
         });
       }
       @Override public void onError(String code, String error) {
-        handler.post(() -> emit("Falha ao carregar T4A: " + code));
+        scheduler.post(() -> emit("Falha ao carregar T4A: " + code));
       }
     });
   }
@@ -311,7 +314,7 @@ public final class T4ABackend {
     final T4AContracts.Device attached = value;
     transport.attach(attached, new T4AContracts.DeviceListener() {
       @Override public void onDpUpdate(String id, Map<String, Object> update) {
-        handler.post(() -> {
+        scheduler.post(() -> {
           recordConnectionTransition(transport.isConnected(attached.id));
           raw("[SDK] RX " + JSON.toJSONString(update));
           logFirstLockRxAfterConnect(update);
@@ -319,11 +322,11 @@ public final class T4ABackend {
           emitState();
         });
       }
-      @Override public void onRemoved(String id) { handler.post(() -> clearDevice("T4A removido")); }
+      @Override public void onRemoved(String id) { scheduler.post(() -> clearDevice("T4A removido")); }
       @Override public void onConnectionChanged(String id, boolean online) {
-        handler.post(() -> { recordConnectionTransition(online); emitState(); });
+        scheduler.post(() -> { recordConnectionTransition(online); emitState(); });
       }
-      @Override public void onDeviceInfoChanged(String id) { handler.post(T4ABackend.this::queryHomes); }
+      @Override public void onDeviceInfoChanged(String id) { scheduler.post(T4ABackend.this::queryHomes); }
     });
     connectPairedDevice();
     emit("T4A pareado");
@@ -455,7 +458,7 @@ public final class T4ABackend {
     if (confirmed) {
       clearPendingLock();
       event("Trava confirmada pelo T4A");
-    } else if (System.currentTimeMillis() < pendingLockUntil) {
+    } else if (clock.nowMillis() < pendingLockUntil) {
       event("Estado antigo da trava ignorado enquanto aguarda confirmação");
     } else {
       clearPendingLock();
@@ -487,7 +490,7 @@ public final class T4ABackend {
     Long previousAt = stateStore.batteryLastLiveAt();
     if (previous == null || previous >= 100 || previousAt == null || previousAt <= 0L) return false;
     long rechargeMinGapMs = batteryRechargeMinGapHours() * 60L * 60L * 1000L;
-    return System.currentTimeMillis() - previousAt < rechargeMinGapMs;
+    return clock.nowMillis() - previousAt < rechargeMinGapMs;
   }
 
   private void restoreBatteryObservation() {
@@ -500,7 +503,7 @@ public final class T4ABackend {
   }
 
   private void trackLiveBattery(int percent) {
-    long now = System.currentTimeMillis();
+    long now = clock.nowMillis();
     Integer storedLast = stateStore.batteryLastLivePercent();
     Long storedLastAt = stateStore.batteryLastLiveAt();
     int previousLast = storedLast == null ? -1 : storedLast;
@@ -661,11 +664,11 @@ public final class T4ABackend {
       emitState();
       return;
     }
-    long requestStarted = System.currentTimeMillis();
+    long requestStarted = clock.nowMillis();
     lastRssiRead = requestStarted;
     try {
-      transport.readRssi(address, (success, value) -> handler.post(() -> {
-        lastRssiResponse = System.currentTimeMillis();
+      transport.readRssi(address, (success, value) -> scheduler.post(() -> {
+        lastRssiResponse = clock.nowMillis();
         int previousRssi = rssi;
         if (success && value != 0) {
           rssi = value;
@@ -682,7 +685,7 @@ public final class T4ABackend {
         evaluateAutoLock(true);
         emitState();
       }));
-      handler.postDelayed(() -> {
+      scheduler.postDelayed(() -> {
         if (running && connected && lastRssiResponse < requestStarted) recoverRssi();
       }, RSSI_RESPONSE_TIMEOUT_MS);
     } catch (RuntimeException ignored) {
@@ -698,7 +701,7 @@ public final class T4ABackend {
 
   private void recoverRssi() {
     rssiFailures = 0;
-    lastRssiResponse = System.currentTimeMillis();
+    lastRssiResponse = clock.nowMillis();
     connectPairedDevice();
   }
 
