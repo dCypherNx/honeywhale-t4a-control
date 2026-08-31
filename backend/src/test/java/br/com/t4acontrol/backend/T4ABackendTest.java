@@ -182,6 +182,21 @@ public class T4ABackendTest {
     assertTrue(listener.events.stream().anyMatch(value -> value.contains("bloqueando")));
   }
 
+  @Test public void shortAutoUnlocksInsideDisplayedBandAtMinusThirtyEight() {
+    stateStore.rememberedLock = false;
+    stateStore.autoLockDistance = "short";
+    startConnected(Collections.emptyMap());
+    backend.setAutoLockEnabled(true);
+    int before = transport.publishCalls;
+    transport.rssi = -38;
+
+    pollRssiNow();
+
+    assertEquals(before + 1, transport.publishCalls);
+    assertEquals(true, transport.lastPublished.get("1"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("AUTO_LOCK action=unlock rssi=-38 threshold=-39")));
+  }
+
   @Test public void longAutoLockRequiresThreeFreshSamplesAtMinusNinety() {
     stateStore.rememberedLock = true;
     stateStore.autoLockDistance = "long";
