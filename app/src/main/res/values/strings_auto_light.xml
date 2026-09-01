@@ -7,6 +7,10 @@
     <string name="ambient_light_min">Mínimo</string>
     <string name="ambient_light_max">Máximo</string>
     <string name="auto_light_threshold">Acender abaixo de</string>
+    <string name="auto_light_turn_on">Ligar</string>
+    <string name="auto_light_turn_off">Desligar</string>
+    <string name="auto_light_enable_automatic">Ativar automático</string>
+    <string name="auto_light_disable_automatic">Desativar automático</string>
     <string name="auto_light_calibrating">Calibrando faixa de luminosidade com a tela ligada…</string>
     <string name="auto_light_note">A luminosidade só é observada com a tela ligada. Para ligar automaticamente, a leitura abaixo do limite deve persistir por pelo menos 5 segundos.</string>
 </resources>
