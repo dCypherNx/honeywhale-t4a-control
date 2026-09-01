@@ -7,7 +7,7 @@ package br.com.t4acontrol.backend;
  * neutral lux samples and an interactive-screen flag, learns trustworthy extrema, and decides when a
  * headlight command is allowed.
  */
-public final class AutoLightController {
+public final class AutoLightController implements AutoCloseable {
   public static final long DARK_HOLD_MS = 5000L;
 
   public interface Listener {
@@ -73,7 +73,6 @@ public final class AutoLightController {
   public void setControlAvailable(boolean available) {
     controlAvailable = available;
     if (!available) cancelDarkHold();
-    else evaluate();
   }
 
   public void onLux(float lux) {
@@ -157,6 +156,12 @@ public final class AutoLightController {
         learned.maxLux,
         thresholdLux(),
         learned.ready);
+  }
+
+  @Override
+  public void close() {
+    cancelDarkHold();
+    scheduler.cancelAll();
   }
 
   private void evaluate() {
