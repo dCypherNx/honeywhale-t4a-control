@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,7 +50,19 @@ internal fun RidingControls(state: T4ADashboardState, surface: Color, outline: C
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ToggleTile(stringResource(R.string.light), stringResource(if (state.lightOn) R.string.state_on else R.string.state_off), "cmd-car-light-dimmed", state.lightOn, T4ADashboardTokens.Orange, state.lightEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setLight(!state.lightOn) }
+            ToggleTile(
+                stringResource(R.string.light),
+                stringResource(if (state.lightOn) R.string.state_on else R.string.state_off),
+                "cmd-car-light-dimmed",
+                state.lightOn,
+                T4ADashboardTokens.Orange,
+                state.lightEnabled,
+                surface,
+                muted,
+                darkMode,
+                Modifier.weight(1f),
+                automaticBadge = state.autoLightOn,
+            ) { actions.setLight(!state.lightOn) }
             ToggleTile(stringResource(R.string.start_mode), stringResource(if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
             ToggleTile(stringResource(R.string.cruise), stringResource(if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f), iconOffsetX = (-3).dp) { actions.setCruise(!state.cruiseOn) }
             ConsolidatedLockControl(state, surface, muted, darkMode, actions, Modifier.weight(1f))
@@ -161,22 +175,37 @@ private fun ToggleTile(
     radius: Dp = T4ADashboardTokens.ToggleRadius,
     iconSize: Dp = T4ADashboardTokens.SecondRowIconSize,
     iconOffsetX: Dp = 0.dp,
+    automaticBadge: Boolean = false,
     onClick: () -> Unit,
 ) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
-    Column(
-        modifier
-            .height(actionHeight)
-            .alpha(if (enabled) 1f else 0.55f)
-            .background(fill, RoundedCornerShape(radius))
-            .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 5.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        MdiIcon(icon, if (active) color else muted, iconSize, Modifier.offset(x = iconOffsetX).size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
-        ControlText(title, stateLabel, if (active) color else foregroundForInactive(darkMode), active, if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize)
+    Box(modifier.height(actionHeight)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .alpha(if (enabled) 1f else 0.55f)
+                .background(fill, RoundedCornerShape(radius))
+                .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 5.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            MdiIcon(icon, if (active) color else muted, iconSize, Modifier.offset(x = iconOffsetX).size(if (actionHeight == T4ADashboardTokens.ActionHeight) 34.dp else 40.dp))
+            ControlText(title, stateLabel, if (active) color else foregroundForInactive(darkMode), active, if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize)
+        }
+        if (automaticBadge) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-4).dp, y = 4.dp)
+                    .size(16.dp)
+                    .background(T4ADashboardTokens.Blue, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("A", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, lineHeight = 9.sp)
+            }
+        }
     }
 }
 
