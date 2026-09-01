@@ -393,13 +393,9 @@ public final class T4ASessionService extends Service
   private void stopNetworkDiagnostics() {
     if (connectivityManager == null || networkCallback == null) return;
     try {
-      connectivityManager.unregisterDefaultNetworkCallback(networkCallback);
+      connectivityManager.unregisterNetworkCallback(networkCallback);
     } catch (RuntimeException ignored) {
-      try {
-        connectivityManager.unregisterNetworkCallback(networkCallback);
-      } catch (RuntimeException ignoredAgain) {
-        // Callback may already have been removed by the framework.
-      }
+      // Callback may already have been removed by the framework.
     }
     networkCallback = null;
     connectivityManager = null;
