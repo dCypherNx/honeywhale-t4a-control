@@ -393,9 +393,13 @@ public final class T4ASessionService extends Service
   private void stopNetworkDiagnostics() {
     if (connectivityManager == null || networkCallback == null) return;
     try {
-      connectivityManager.unregisterNetworkCallback(networkCallback);
+      connectivityManager.unregisterDefaultNetworkCallback(networkCallback);
     } catch (RuntimeException ignored) {
-      // Callback may already have been removed by the framework.
+      try {
+        connectivityManager.unregisterNetworkCallback(networkCallback);
+      } catch (RuntimeException ignoredAgain) {
+        // Callback may already have been removed by the framework.
+      }
     }
     networkCallback = null;
     connectivityManager = null;
@@ -520,7 +524,7 @@ public final class T4ASessionService extends Service
   }
 
   private boolean dpBoolean(Object value) {
-    return value == true
+    return Boolean.TRUE.equals(value)
         || (value != null && "true".equalsIgnoreCase(String.valueOf(value)))
         || (value != null && "1".equals(String.valueOf(value)));
   }
