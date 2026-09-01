@@ -24,6 +24,8 @@ public final class AutoLightController implements AutoCloseable {
   private boolean controlAvailable;
   private Float currentLux;
   private boolean currentLightOn;
+  private boolean lightStateKnown;
+  private Boolean automaticCommandPendingState;
   private Boolean manualOverrideDarkSide;
   private boolean manualOverridePendingSide;
   private boolean darkHoldScheduled;
@@ -39,10 +41,11 @@ public final class AutoLightController implements AutoCloseable {
           || threshold == null
           || currentLux > threshold
           || currentLightOn
+          || automaticCommandPendingState != null
           || isManualOverrideFor(true)) {
         return;
       }
-      currentLightOn = true;
+      automaticCommandPendingState = true;
       listener.onRawLog("[APP] AUTO_LIGHT action=on lux=" + formatLux(currentLux)
           + " threshold=" + formatLux(threshold) + " holdMs=" + DARK_HOLD_MS);
       listener.onAutomaticCommand(true, currentLux, threshold);
@@ -71,8 +74,13 @@ public final class AutoLightController implements AutoCloseable {
   }
 
   public void setControlAvailable(boolean available) {
+    if (controlAvailable == available) return;
     controlAvailable = available;
-    if (!available) cancelDarkHold();
+    if (!available) {
+      cancelDarkHold();
+      lightStateKnown = false;
+      automaticCommandPendingState = null;
+    }
   }
 
   public void onLux(float lux) {
@@ -102,32 +110,52 @@ public final class AutoLightController implements AutoCloseable {
   }
 
   public void setLightState(boolean enabled) {
+    if (!lightStateKnown) {
+      currentLightOn = enabled;
+      lightStateKnown = true;
+      if (automaticCommandPendingState != null
+          && automaticCommandPendingState.booleanValue() == enabled) {
+        automaticCommandPendingState = null;
+      }
+      return;
+    }
+
+    if (automaticCommandPendingState != null) {
+      boolean expected = automaticCommandPendingState;
+      automaticCommandPendingState = null;
+      if (enabled == expected || enabled == currentLightOn) {
+        currentLightOn = enabled;
+        return;
+      }
+    }
+
+    if (enabled != currentLightOn && controlAvailable && stateStore.autoLightEnabled()) {
+      currentLightOn = enabled;
+      applyManualOverride(enabled, "t4a");
+      return;
+    }
     currentLightOn = enabled;
   }
 
   public void onManualLightChanged(boolean enabled) {
+    automaticCommandPendingState = null;
     currentLightOn = enabled;
+    lightStateKnown = true;
     cancelDarkHold();
     if (!stateStore.autoLightEnabled()) {
       clearManualOverride();
       return;
     }
-    Boolean dark = currentDarkSide();
-    if (dark == null) {
-      manualOverrideDarkSide = null;
-      manualOverridePendingSide = true;
-    } else {
-      manualOverrideDarkSide = dark;
-      manualOverridePendingSide = false;
-    }
-    listener.onRawLog("[APP] AUTO_LIGHT manual=" + (enabled ? "on" : "off")
-        + " overrideSide=" + (dark == null ? "pending" : (dark ? "dark" : "bright")));
+    applyManualOverride(enabled, "app");
   }
 
   public void setEnabled(boolean enabled) {
     stateStore.setAutoLightEnabled(enabled);
     cancelDarkHold();
-    if (!enabled) clearManualOverride();
+    if (!enabled) {
+      clearManualOverride();
+      automaticCommandPendingState = null;
+    }
     listener.onRawLog("[APP] AUTO_LIGHT enabled=" + enabled
         + " threshold=" + nullableLux(thresholdLux()));
     if (enabled) evaluate();
@@ -167,6 +195,7 @@ public final class AutoLightController implements AutoCloseable {
   @Override
   public void close() {
     cancelDarkHold();
+    automaticCommandPendingState = null;
     scheduler.cancelAll();
   }
 
@@ -177,6 +206,11 @@ public final class AutoLightController implements AutoCloseable {
         || !stateStore.autoLightEnabled()
         || currentLux == null
         || threshold == null) {
+      cancelDarkHold();
+      return;
+    }
+
+    if (automaticCommandPendingState != null) {
       cancelDarkHold();
       return;
     }
@@ -198,11 +232,26 @@ public final class AutoLightController implements AutoCloseable {
 
     cancelDarkHold();
     if (stateStore.autoLightAutoOffEnabled() && currentLightOn) {
-      currentLightOn = false;
+      automaticCommandPendingState = false;
       listener.onRawLog("[APP] AUTO_LIGHT action=off lux=" + formatLux(currentLux)
           + " threshold=" + formatLux(threshold));
       listener.onAutomaticCommand(false, currentLux, threshold);
     }
+  }
+
+  private void applyManualOverride(boolean enabled, String source) {
+    cancelDarkHold();
+    Boolean dark = currentDarkSide();
+    if (dark == null) {
+      manualOverrideDarkSide = null;
+      manualOverridePendingSide = true;
+    } else {
+      manualOverrideDarkSide = dark;
+      manualOverridePendingSide = false;
+    }
+    listener.onRawLog("[APP] AUTO_LIGHT manual=" + (enabled ? "on" : "off")
+        + " source=" + source
+        + " overrideSide=" + (dark == null ? "pending" : (dark ? "dark" : "bright")));
   }
 
   private Boolean currentDarkSide() {
