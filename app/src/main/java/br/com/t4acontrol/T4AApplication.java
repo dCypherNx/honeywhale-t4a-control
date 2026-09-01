@@ -1,6 +1,7 @@
 package br.com.t4acontrol;
 
 import android.app.Application;
+import br.com.t4acontrol.backend.AutoLightController;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AProvisioner;
 import br.com.t4acontrol.backend.T4ASdk;
@@ -37,6 +38,14 @@ public final class T4AApplication extends Application {
         listener,
         new AndroidClock(),
         new AndroidScheduler());
+  }
+
+  /** Creates the neutral automatic-headlight policy while keeping Android adapters out of backend. */
+  public AutoLightController createAutoLightController(AutoLightController.Listener listener) {
+    return new AutoLightController(
+        new AndroidT4AStateStore(this),
+        new AndroidScheduler(),
+        listener);
   }
 
   /** Returns the UI-facing MQTT settings interface; persistence stays behind the composition root. */

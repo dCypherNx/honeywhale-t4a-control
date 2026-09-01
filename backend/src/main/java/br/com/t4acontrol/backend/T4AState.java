@@ -28,6 +28,41 @@ public final class T4AState {
     }
   }
 
+  /** Neutral automatic-headlight snapshot. Android sensor APIs never cross this boundary. */
+  public static final class AutoLightState {
+    public final boolean enabled;
+    public final boolean autoOffEnabled;
+    public final boolean screenInteractive;
+    public final Float currentLux;
+    public final Float observedMinLux;
+    public final Float observedMaxLux;
+    public final Float thresholdLux;
+    public final boolean calibrationReady;
+
+    public AutoLightState(
+        boolean enabled,
+        boolean autoOffEnabled,
+        boolean screenInteractive,
+        Float currentLux,
+        Float observedMinLux,
+        Float observedMaxLux,
+        Float thresholdLux,
+        boolean calibrationReady) {
+      this.enabled = enabled;
+      this.autoOffEnabled = autoOffEnabled;
+      this.screenInteractive = screenInteractive;
+      this.currentLux = currentLux;
+      this.observedMinLux = observedMinLux;
+      this.observedMaxLux = observedMaxLux;
+      this.thresholdLux = thresholdLux;
+      this.calibrationReady = calibrationReady;
+    }
+
+    public static AutoLightState empty() {
+      return new AutoLightState(false, false, false, null, null, null, null, false);
+    }
+  }
+
   public final boolean authenticated;
   public final String account;
   public final long homeId;
@@ -56,6 +91,7 @@ public final class T4AState {
   public final Integer pendingBatteryRechargePercent;
   public final Long pendingBatteryRechargeDetectedAt;
   public final String message;
+  public final AutoLightState autoLight;
 
   /** Compatibility constructor for consumers that do not need RSSI calibration details. */
   public T4AState(
@@ -108,7 +144,70 @@ public final class T4AState {
         batteryRechargeMinGapHours,
         pendingBatteryRechargePercent,
         pendingBatteryRechargeDetectedAt,
-        message);
+        message,
+        AutoLightState.empty());
+  }
+
+  /** Compatibility constructor preserving the pre-auto-light full snapshot signature. */
+  public T4AState(
+      boolean authenticated,
+      String account,
+      long homeId,
+      String homeName,
+      Pairing pairing,
+      boolean connected,
+      String deviceName,
+      String mac,
+      int rssi,
+      Map<String, Object> dps,
+      Map<String, DpInfo> schema,
+      Set<String> pendingDps,
+      boolean autoLockEnabled,
+      String autoLockDistance,
+      Integer rssiObservedBest,
+      Integer rssiObservedWorst,
+      Integer rssiStableWorst,
+      Integer rssiShortMin,
+      Integer rssiMediumMin,
+      Integer rssiLongMin,
+      boolean rssiCalibrationReady,
+      Integer batteryObservedMin,
+      Integer batteryObservedMax,
+      Long batteryCycleStartedAt,
+      int batteryRechargeMinGapHours,
+      Integer pendingBatteryRechargePercent,
+      Long pendingBatteryRechargeDetectedAt,
+      String message) {
+    this(
+        authenticated,
+        account,
+        homeId,
+        homeName,
+        pairing,
+        connected,
+        deviceName,
+        mac,
+        rssi,
+        dps,
+        schema,
+        pendingDps,
+        autoLockEnabled,
+        autoLockDistance,
+        rssiObservedBest,
+        rssiObservedWorst,
+        rssiStableWorst,
+        rssiShortMin,
+        rssiMediumMin,
+        rssiLongMin,
+        rssiCalibrationReady,
+        batteryObservedMin,
+        batteryObservedMax,
+        batteryCycleStartedAt,
+        batteryRechargeMinGapHours,
+        pendingBatteryRechargePercent,
+        pendingBatteryRechargeDetectedAt,
+        message,
+        AutoLightState.empty());
   }
 
   public T4AState(
@@ -139,7 +238,8 @@ public final class T4AState {
       int batteryRechargeMinGapHours,
       Integer pendingBatteryRechargePercent,
       Long pendingBatteryRechargeDetectedAt,
-      String message) {
+      String message,
+      AutoLightState autoLight) {
     this.authenticated = authenticated;
     this.account = account;
     this.homeId = homeId;
@@ -168,5 +268,6 @@ public final class T4AState {
     this.pendingBatteryRechargePercent = pendingBatteryRechargePercent;
     this.pendingBatteryRechargeDetectedAt = pendingBatteryRechargeDetectedAt;
     this.message = message;
+    this.autoLight = autoLight == null ? AutoLightState.empty() : autoLight;
   }
 }

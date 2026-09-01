@@ -45,6 +45,7 @@ object T4ADashboardMapper {
             ridingMode = ridingMode(state.dps[DP_LEVEL]),
             locked = !truth(state.dps[DP_LOCK]),
             lightOn = truth(state.dps[DP_LIGHT]),
+            autoLightOn = state.autoLight.enabled,
             initialPushOn = state.dps[DP_START]?.toString() == "not_zero_start",
             cruiseOn = truth(state.dps[DP_CRUISE]),
             autoLockOn = state.autoLockEnabled,

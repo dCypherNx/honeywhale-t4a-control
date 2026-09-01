@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
             session.publish(T4ADashboardMapper.DP_LEVEL, value)
         }
 
-        override fun setLight(enabled: Boolean) = session.publish(T4ADashboardMapper.DP_LIGHT, enabled)
+        override fun setLight(enabled: Boolean) = session.setLight(enabled)
 
         override fun setInitialPush(enabled: Boolean) =
             session.publish(T4ADashboardMapper.DP_START, if (enabled) "not_zero_start" else "zero_start")
@@ -139,6 +139,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         override fun setAutoLockDistanceFromSettings(distance: String) {
             session.setAutoLockDistance(distance)
         }
+
+        override fun setAutoLightEnabled(enabled: Boolean) = session.setAutoLightEnabled(enabled)
+
+        override fun setAutoLightAutoOffEnabled(enabled: Boolean) = session.setAutoLightAutoOffEnabled(enabled)
+
+        override fun setAutoLightThresholdLux(lux: Float) = session.setAutoLightThresholdLux(lux)
 
         override fun setUnit(unit: String) = session.publish(T4ADashboardMapper.DP_UNIT, unit)
 

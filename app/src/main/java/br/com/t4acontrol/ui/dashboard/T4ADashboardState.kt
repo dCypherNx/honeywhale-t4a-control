@@ -25,6 +25,7 @@ data class T4ADashboardState(
     val ridingMode: RidingMode = RidingMode.UNKNOWN,
     val locked: Boolean = false,
     val lightOn: Boolean = false,
+    val autoLightOn: Boolean = false,
     val initialPushOn: Boolean = false,
     val cruiseOn: Boolean = false,
     val autoLockOn: Boolean = false,
