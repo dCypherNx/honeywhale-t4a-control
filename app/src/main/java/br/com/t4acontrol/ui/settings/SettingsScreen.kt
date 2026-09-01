@@ -21,19 +21,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.R
@@ -43,6 +47,10 @@ import br.com.t4acontrol.ui.T4AUiActions
 import br.com.t4acontrol.ui.T4AUiTokens
 import br.com.t4acontrol.ui.dashboard.T4ADashboardMapper
 import br.com.t4acontrol.ui.pairing.pairingLabel
+import java.text.NumberFormat
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.roundToInt
 
 private val BATTERY_RECHARGE_GAP_HOURS = intArrayOf(1, 2, 4, 8)
 
@@ -91,7 +99,7 @@ internal fun SettingsScreen(
     }
 
     SettingsSection(stringResource(R.string.automatic_lock), "auto_lock", actions = actions) {
-        SettingSwitch(stringResource(R.string.state_active), current.autoLockEnabled, foreground, actions::setAutoLockFromSettings)
+        SettingSwitch(stringResource(R.string.state_active), current.autoLockEnabled, foreground, onChange = actions::setAutoLockFromSettings)
         val distanceValues = listOf("short", "medium", "long")
         val selectedDistanceIndex = distanceValues.indexOf(current.autoLockDistance).takeIf { it >= 0 } ?: 1
         val dynamicLabels = if (current.rssiCalibrationReady) {
@@ -119,6 +127,59 @@ internal fun SettingsScreen(
             labels = dynamicLabels,
             selectedIndex = selectedDistanceIndex,
         ) { index -> actions.setAutoLockDistanceFromSettings(distanceValues[index]) }
+    }
+
+    SettingsSection(stringResource(R.string.auto_light_section), "auto_light", actions = actions) {
+        val light = current.autoLight
+        SettingSwitch(
+            stringResource(R.string.auto_light_enabled),
+            light.enabled,
+            foreground,
+            onChange = actions::setAutoLightEnabled,
+        )
+        SettingSwitch(
+            stringResource(R.string.auto_light_auto_off),
+            light.autoOffEnabled,
+            foreground,
+            enabled = light.enabled,
+            onChange = actions::setAutoLightAutoOffEnabled,
+        )
+        InfoLine(stringResource(R.string.ambient_light_current), luxValue(light.currentLux), foreground)
+        InfoLine(stringResource(R.string.ambient_light_min), luxValue(light.observedMinLux), foreground)
+        InfoLine(stringResource(R.string.ambient_light_max), luxValue(light.observedMaxLux), foreground)
+
+        val minLux = light.observedMinLux
+        val maxLux = light.observedMaxLux
+        val thresholdLux = light.thresholdLux
+        if (light.calibrationReady && minLux != null && maxLux != null && thresholdLux != null && maxLux > minLux) {
+            Text(stringResource(R.string.auto_light_threshold), color = foreground, fontWeight = FontWeight.Bold)
+            var sliderPosition by remember(minLux, maxLux, thresholdLux) {
+                mutableFloatStateOf(luxToSliderPosition(thresholdLux, minLux, maxLux))
+            }
+            Slider(
+                value = sliderPosition,
+                onValueChange = { sliderPosition = it },
+                onValueChangeFinished = {
+                    actions.setAutoLightThresholdLux(sliderPositionToLux(sliderPosition, minLux, maxLux))
+                },
+                valueRange = 0f..1f,
+            )
+            Row(Modifier.fillMaxWidth()) {
+                Text(luxValue(minLux), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Text(
+                    luxValue(sliderPositionToLux(sliderPosition, minLux, maxLux)),
+                    color = T4AUiTokens.Blue,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(luxValue(maxLux), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+            }
+        } else {
+            Text(stringResource(R.string.auto_light_calibrating), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        }
+        Text(stringResource(R.string.auto_light_note), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 
     SettingsSection(stringResource(R.string.riding_preferences_section), "riding", actions = actions) {
@@ -239,10 +300,16 @@ private fun SettingsSection(
 }
 
 @Composable
-private fun SettingSwitch(label: String, checked: Boolean, foreground: Color, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+private fun SettingSwitch(
+    label: String,
+    checked: Boolean,
+    foreground: Color,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.55f), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = foreground, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }
 
@@ -258,3 +325,24 @@ private fun dpBoolean(value: Any?): Boolean =
     value == true || value?.toString()?.equals("true", ignoreCase = true) == true || value?.toString() == "1"
 
 private fun batteryRechargeGapIndex(hours: Int): Int = BATTERY_RECHARGE_GAP_HOURS.indexOf(hours).takeIf { it >= 0 } ?: 1
+
+private fun luxToSliderPosition(lux: Float, minLux: Float, maxLux: Float): Float {
+    if (maxLux <= minLux) return 0f
+    val minLog = ln(1.0 + minLux.toDouble())
+    val maxLog = ln(1.0 + maxLux.toDouble())
+    val valueLog = ln(1.0 + lux.coerceIn(minLux, maxLux).toDouble())
+    return ((valueLog - minLog) / (maxLog - minLog)).toFloat().coerceIn(0f, 1f)
+}
+
+private fun sliderPositionToLux(position: Float, minLux: Float, maxLux: Float): Float {
+    if (maxLux <= minLux) return minLux
+    val minLog = ln(1.0 + minLux.toDouble())
+    val maxLog = ln(1.0 + maxLux.toDouble())
+    val value = exp(minLog + position.coerceIn(0f, 1f) * (maxLog - minLog)) - 1.0
+    return value.roundToInt().toFloat().coerceIn(minLux, maxLux)
+}
+
+private fun luxValue(lux: Float?): String {
+    if (lux == null) return "--"
+    return NumberFormat.getIntegerInstance().format(lux.roundToInt()) + " lx"
+}
