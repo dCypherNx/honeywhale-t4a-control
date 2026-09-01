@@ -2,11 +2,17 @@ name: Build APK
 
 on:
   workflow_dispatch:
+    inputs:
+      backfill_run_id:
+        description: Optional successful master Build APK run ID to publish as a permanent stable Release
+        required: false
+        type: string
   push:
     branches:
       - master
 
 permissions:
+  actions: read
   contents: write
   pull-requests: read
 
@@ -17,6 +23,7 @@ env:
 jobs:
   build-debug-apk:
     name: Build debug APK
+    if: github.event_name == 'push' || inputs.backfill_run_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -38,15 +45,9 @@ jobs:
           classify_branch() {
             local branch="$1"
             case "${branch}" in
-              feature/*)
-                printf '%s\n' 'minor'
-                ;;
-              fix/*|bugfix/*|hotfix/*)
-                printf '%s\n' 'patch'
-                ;;
-              major/*|breaking/*)
-                printf '%s\n' 'major'
-                ;;
+              feature/*) printf '%s\n' 'minor' ;;
+              fix/*|bugfix/*|hotfix/*) printf '%s\n' 'patch' ;;
+              major/*|breaking/*) printf '%s\n' 'major' ;;
               *)
                 echo "Branch '${branch}' does not encode a SemVer class." >&2
                 echo 'Use feature/*, fix|bugfix|hotfix/*, or major|breaking/*.' >&2
@@ -56,43 +57,20 @@ jobs:
           }
 
           bump_semver() {
-            local base="$1"
-            local kind="$2"
-            local major minor patch
+            local base="$1" kind="$2" major minor patch
             IFS='.' read -r major minor patch <<< "${base}"
-
             case "${kind}" in
-              patch)
-                patch=$((patch + 1))
-                ;;
-              minor)
-                minor=$((minor + 1))
-                patch=0
-                ;;
-              major)
-                major=$((major + 1))
-                minor=0
-                patch=0
-                ;;
-              *)
-                echo "Unsupported version bump: ${kind}" >&2
-                return 1
-                ;;
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              *) echo "Unsupported version bump: ${kind}" >&2; return 1 ;;
             esac
-
             printf '%s.%s.%s\n' "${major}" "${minor}" "${patch}"
           }
 
           sequence="${GITHUB_RUN_NUMBER}"
           version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
-
-          latest_tag_version="$(
-            git tag --list 'v*' \
-              | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' \
-              | sort -V \
-              | tail -n 1
-          )"
-
+          latest_tag_version="$(git tag --list 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
           stable_base="${T4A_BOOTSTRAP_VERSION}"
           if [[ -n "${latest_tag_version}" ]]; then
             stable_base="$(printf '%s\n%s\n' "${T4A_BOOTSTRAP_VERSION}" "${latest_tag_version}" | sort -V | tail -n 1)"
@@ -107,34 +85,16 @@ jobs:
           if [[ "${GITHUB_REF_NAME}" == "master" ]]; then
             build_kind="master"
             source_branch="master"
-
-            current_stable_tag="$(
-              git tag --points-at "${GITHUB_SHA}" \
-                | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' \
-                | sort -V \
-                | tail -n 1
-            )"
-
+            current_stable_tag="$(git tag --points-at "${GITHUB_SHA}" | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
             if [[ -n "${current_stable_tag}" ]]; then
               version_name="${current_stable_tag}"
             elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-              associated_prs="$(
-                gh api \
-                  -H 'Accept: application/vnd.github+json' \
-                  "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls"
-              )"
-
-              source_pr="$(
-                jq -r \
-                  '[.[] | select(.merged_at != null and .base.ref == "master")] | sort_by(.merged_at) | last | .number // empty' \
-                  <<< "${associated_prs}"
-              )"
-
+              associated_prs="$(gh api -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls")"
+              source_pr="$(jq -r '[.[] | select(.merged_at != null and .base.ref == "master")] | sort_by(.merged_at) | last | .number // empty' <<< "${associated_prs}")"
               if [[ -z "${source_pr}" ]]; then
                 echo 'A push to master must originate from a merged branch identifiable by GitHub or point at an existing stable SemVer tag.' >&2
                 exit 1
               fi
-
               pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${source_pr}")"
               source_branch="$(jq -r '.head.ref' <<< "${pr_payload}")"
               bump_kind="$(classify_branch "${source_branch}")"
@@ -155,13 +115,7 @@ jobs:
           echo "T4A_VERSION_BUMP=${bump_kind}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_PR=${source_pr}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_BRANCH=${source_branch}" >> "${GITHUB_ENV}"
-
           echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
-          echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
-          echo "build_kind=${build_kind}" >> "${GITHUB_OUTPUT}"
-          echo "bump_kind=${bump_kind}" >> "${GITHUB_OUTPUT}"
-          echo "source_pr=${source_pr}" >> "${GITHUB_OUTPUT}"
-          echo "source_branch=${source_branch}" >> "${GITHUB_OUTPUT}"
           echo "create_stable_tag=${create_stable_tag}" >> "${GITHUB_OUTPUT}"
 
           echo "Stable base:   ${stable_base}"
@@ -189,19 +143,10 @@ jobs:
           TUYA_BUILD_FILES_PASSWORD: ${{ secrets.TUYA_BUILD_FILES_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_KEY)) {
-            throw 'Missing required GitHub Secret: TUYA_APP_KEY'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_SECRET)) {
-            throw 'Missing required GitHub Secret: TUYA_APP_SECRET'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:TUYA_BUILD_FILES_PASSWORD)) {
-            throw 'Missing required GitHub Secret: TUYA_BUILD_FILES_PASSWORD'
-          }
-          if (-not (Test-Path -LiteralPath 'ci/tuya-build-inputs.enc' -PathType Leaf)) {
-            throw 'Missing encrypted Tuya build bundle: ci/tuya-build-inputs.enc'
-          }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_KEY)) { throw 'Missing required GitHub Secret: TUYA_APP_KEY' }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_SECRET)) { throw 'Missing required GitHub Secret: TUYA_APP_SECRET' }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_BUILD_FILES_PASSWORD)) { throw 'Missing required GitHub Secret: TUYA_BUILD_FILES_PASSWORD' }
+          if (-not (Test-Path -LiteralPath 'ci/tuya-build-inputs.enc' -PathType Leaf)) { throw 'Missing encrypted Tuya build bundle: ci/tuya-build-inputs.enc' }
 
           @"
           TUYA_APP_KEY=$env:TUYA_APP_KEY
@@ -210,13 +155,8 @@ jobs:
           "@ | Set-Content -LiteralPath 'tuya.properties' -Encoding utf8NoBOM
 
           ./scripts/TuyaBuildBundle.ps1 -Decrypt
-
-          if (-not (Test-Path -LiteralPath 'app/libs/security-algorithm-1.0.0-beta.aar' -PathType Leaf)) {
-            throw 'Tuya security AAR was not restored.'
-          }
-          if (-not (Test-Path -LiteralPath 'app/src/main/assets/t_s.bmp' -PathType Leaf)) {
-            throw 'Tuya t_s.bmp was not restored.'
-          }
+          if (-not (Test-Path -LiteralPath 'app/libs/security-algorithm-1.0.0-beta.aar' -PathType Leaf)) { throw 'Tuya security AAR was not restored.' }
+          if (-not (Test-Path -LiteralPath 'app/src/main/assets/t_s.bmp' -PathType Leaf)) { throw 'Tuya t_s.bmp was not restored.' }
 
       - name: Restore persistent Android signing key
         shell: bash
@@ -259,6 +199,7 @@ jobs:
           mkdir -p dist release
           cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}-debug-${GITHUB_SHA::7}.apk"
           cp "${APK}" "release/RideDash-debug.apk"
+          cp "${APK}" "release/RideDash-${T4A_VERSION_NAME}.apk"
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
@@ -275,33 +216,126 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           tag="v${T4A_VERSION_NAME}"
           existing_sha="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
-
           if [[ -n "${existing_sha}" ]]; then
             if [[ "${existing_sha}" != "${GITHUB_SHA}" ]]; then
               echo "Stable tag ${tag} already exists at ${existing_sha}, not ${GITHUB_SHA}." >&2
               exit 1
             fi
-            echo "Stable tag ${tag} already points at this commit."
           else
-            gh api \
-              --method POST \
-              "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${tag}" \
-              -f sha="${GITHUB_SHA}"
-            echo "Created stable tag ${tag} at ${GITHUB_SHA}."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="${GITHUB_SHA}"
           fi
 
-      - name: Publish latest debug APK release
+      - name: Publish permanent stable Release
+        if: github.ref_name == 'master'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          git fetch --tags --force
+          tag="$(git tag --points-at "${GITHUB_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          if [[ -z "${tag}" ]]; then
+            echo 'No stable tag points at this master commit; skipping permanent Release.'
+            exit 0
+          fi
+          version="${tag#v}"
+          asset="release/RideDash-${version}.apk"
+          digest="$(sha256sum "${asset}" | awk '{print $1}')"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Stable Release ${tag} already exists; preserving it unchanged."
+          else
+            gh release create "${tag}" "${asset}" --target "${GITHUB_SHA}" --title "RideDash ${version}" --notes "Stable RideDash ${version}. Build ${GITHUB_RUN_ID}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
+          fi
+
+      - name: Publish latest stable debug APK shortcut
+        if: github.ref_name == 'master'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          tag="$(git tag --points-at "${GITHUB_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          if [[ -z "${tag}" ]]; then
+            echo 'No stable tag points at this master commit; latest-debug remains unchanged.'
+            exit 0
+          fi
           gh release delete latest-debug --cleanup-tag --yes || true
-          gh release create latest-debug release/RideDash-debug.apk \
-            --target "${GITHUB_SHA}" \
-            --title "RideDash ${T4A_VERSION_NAME} (debug)" \
-            --notes "Automated ${T4A_BUILD_KIND} build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), bump ${T4A_VERSION_BUMP}, source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, Tuya-registered package br.com.t4acontrol, commit ${GITHUB_SHA}."
+          gh release create latest-debug release/RideDash-debug.apk --target "${GITHUB_SHA}" --title "RideDash ${T4A_VERSION_NAME} (debug)" --notes "Latest stable debug shortcut. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, commit ${GITHUB_SHA}."
+
+  backfill-stable-release:
+    name: Backfill stable Release
+    if: github.event_name == 'workflow_dispatch' && inputs.backfill_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Resolve source Build APK run
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.backfill_run_id }}
+        run: |
+          set -euo pipefail
+          payload="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+          workflow_name="$(jq -r '.name' <<< "${payload}")"
+          conclusion="$(jq -r '.conclusion // empty' <<< "${payload}")"
+          head_branch="$(jq -r '.head_branch // empty' <<< "${payload}")"
+          head_sha="$(jq -r '.head_sha // empty' <<< "${payload}")"
+          [[ "${workflow_name}" == 'Build APK' ]] || { echo "Run ${RUN_ID} is not Build APK." >&2; exit 1; }
+          [[ "${conclusion}" == 'success' ]] || { echo "Run ${RUN_ID} did not succeed." >&2; exit 1; }
+          [[ "${head_branch}" == 'master' ]] || { echo "Run ${RUN_ID} is not from master." >&2; exit 1; }
+          echo "run_id=${RUN_ID}" >> "${GITHUB_OUTPUT}"
+          echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve stable tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          tag="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          [[ -n "${tag}" ]] || { echo 'No stable SemVer tag points at source commit.' >&2; exit 1; }
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download exact APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.source.outputs.run_id }}
+          pattern: ridedash-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish permanent stable Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.head_sha }}
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Stable Release ${TAG} already exists; preserving it unchanged."
+            exit 0
+          fi
+          mapfile -t apks < <(find dist -type f -name '*.apk' | sort)
+          [[ "${#apks[@]}" -eq 1 ]] || { echo "Expected exactly one APK, found ${#apks[@]}." >&2; exit 1; }
+          mkdir -p release
+          asset="release/RideDash-${VERSION}.apk"
+          cp "${apks[0]}" "${asset}"
+          digest="$(sha256sum "${asset}" | awk '{print $1}')"
+          gh release create "${TAG}" "${asset}" --target "${SOURCE_SHA}" --title "RideDash ${VERSION}" --notes "Stable RideDash ${VERSION}. Exact APK artifact from Build APK run ${SOURCE_RUN_ID}, commit ${SOURCE_SHA}. SHA-256: ${digest}."
