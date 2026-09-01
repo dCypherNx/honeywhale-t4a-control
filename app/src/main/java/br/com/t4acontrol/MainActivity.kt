@@ -133,12 +133,10 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         }
 
         override fun setAutoLockFromSettings(enabled: Boolean) {
-            appendRaw("AUTO_LOCK enabled=$enabled")
             session.setAutoLockEnabled(enabled)
         }
 
         override fun setAutoLockDistanceFromSettings(distance: String) {
-            appendRaw("AUTO_LOCK distance=$distance")
             session.setAutoLockDistance(distance)
         }
 
@@ -228,13 +226,6 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     override fun onEvent(value: String) {
         runOnUiThread {
             appendEvent(value)
-            if (
-                value.startsWith("Sinal distante") ||
-                value.startsWith("Sinal próximo") ||
-                value.startsWith("Bloqueio automático por distância")
-            ) {
-                appendRaw("AUTO_LOCK $value")
-            }
         }
     }
 
