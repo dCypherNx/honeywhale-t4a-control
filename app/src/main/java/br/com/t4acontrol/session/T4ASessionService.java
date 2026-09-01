@@ -19,6 +19,7 @@ import android.util.Log;
 import br.com.t4acontrol.BuildConfig;
 import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.T4AApplication;
+import br.com.t4acontrol.backend.AutoLightController;
 import br.com.t4acontrol.backend.T4ABackend;
 import br.com.t4acontrol.backend.T4AState;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
@@ -36,12 +37,15 @@ public final class T4ASessionService extends Service
   private static final String TAG = "T4ASession";
   private static final String CHANNEL_ID = "t4a_session";
   private static final int NOTIFICATION_ID = 4101;
+  private static final String DP_LIGHT = "8";
 
   private final Set<T4ASession.Listener> listeners = new CopyOnWriteArraySet<>();
   private final SessionBinder binder = new SessionBinder();
   private final String instanceId = Long.toHexString(SystemClock.elapsedRealtime());
 
   private T4ABackend backend;
+  private AutoLightController autoLightController;
+  private AndroidAmbientLightMonitor ambientLightMonitor;
   private MqttTelemetryCoordinator mqttTelemetry;
   private AndroidLocationProvider locationProvider;
   private AndroidBleRssiMonitor androidBleRssiMonitor;
@@ -74,6 +78,22 @@ public final class T4ASessionService extends Service
             });
 
     T4AApplication application = (T4AApplication) getApplication();
+    autoLightController =
+        application.createAutoLightController(
+            new AutoLightController.Listener() {
+              @Override
+              public void onAutomaticCommand(boolean enabled, float lux, float thresholdLux) {
+                if (backend != null && lastState != null && lastState.connected) {
+                  backend.publish(DP_LIGHT, enabled);
+                }
+              }
+
+              @Override
+              public void onRawLog(String entry) {
+                if (entry != null && !entry.isBlank()) forwardRaw(entry);
+              }
+            });
+
     mqttTelemetry = application.createMqttTelemetryCoordinator(this);
     mqttTelemetry.start();
     locationProvider =
@@ -98,8 +118,34 @@ public final class T4ASessionService extends Service
                 rawTagged("GPS", "UNAVAILABLE " + reason);
               }
             });
+
     backend = application.createSessionBackend(this);
     backend.start();
+
+    ambientLightMonitor =
+        new AndroidAmbientLightMonitor(
+            this,
+            new AndroidAmbientLightMonitor.Listener() {
+              @Override
+              public void onScreenInteractive(boolean interactive) {
+                if (autoLightController == null) return;
+                autoLightController.setScreenInteractive(interactive);
+                emitAutoLightState();
+              }
+
+              @Override
+              public void onLux(float lux) {
+                if (autoLightController == null) return;
+                autoLightController.onLux(lux);
+                emitAutoLightState();
+              }
+
+              @Override
+              public void onUnavailable(String reason) {
+                rawTagged("ANDROID", "LIGHT_SENSOR unavailable=" + reason);
+              }
+            });
+    ambientLightMonitor.start();
   }
 
   @Override
@@ -136,6 +182,14 @@ public final class T4ASessionService extends Service
   public void onDestroy() {
     rawTagged("ANDROID", "DESTROY instance=" + instanceId);
     stopNetworkDiagnostics();
+    if (ambientLightMonitor != null) {
+      ambientLightMonitor.close();
+      ambientLightMonitor = null;
+    }
+    if (autoLightController != null) {
+      autoLightController.close();
+      autoLightController = null;
+    }
     if (androidBleRssiMonitor != null) {
       androidBleRssiMonitor.close();
       androidBleRssiMonitor = null;
@@ -159,20 +213,27 @@ public final class T4ASessionService extends Service
   @Override
   public void onState(T4AState state) {
     T4AState previous = lastState;
-    lastState = state;
-    if (previous == null || previous.connected != state.connected) {
-      rawTagged("SDK", state.connected ? "CONNECTED" : "DISCONNECTED");
+    if (autoLightController != null) {
+      if (!state.pendingDps.contains(DP_LIGHT)) {
+        autoLightController.setLightState(dpBoolean(state.dps.get(DP_LIGHT)));
+      }
+      autoLightController.setControlAvailable(state.connected);
+    }
+    T4AState decorated = decorateAutoLight(state);
+    lastState = decorated;
+    if (previous == null || previous.connected != decorated.connected) {
+      rawTagged("SDK", decorated.connected ? "CONNECTED" : "DISCONNECTED");
     }
     if (androidBleRssiMonitor != null) {
-      androidBleRssiMonitor.setTarget(state.mac, state.connected);
+      androidBleRssiMonitor.setTarget(decorated.mac, decorated.connected);
     }
-    if (mqttTelemetry != null) mqttTelemetry.onState(state);
+    if (mqttTelemetry != null) mqttTelemetry.onState(decorated);
     if (locationProvider != null) {
-      locationProvider.setMoving(scooterMoving(state));
-      locationProvider.setActive(state.connected);
+      locationProvider.setMoving(scooterMoving(decorated));
+      locationProvider.setActive(decorated.connected);
     }
-    updateNotification(state);
-    for (T4ASession.Listener listener : listeners) listener.onState(state);
+    updateNotification(decorated);
+    for (T4ASession.Listener listener : listeners) listener.onState(decorated);
   }
 
   @Override
@@ -253,6 +314,47 @@ public final class T4ASessionService extends Service
 
   private void removeListener(T4ASession.Listener listener) {
     if (listener != null) listeners.remove(listener);
+  }
+
+  private void emitAutoLightState() {
+    if (lastState == null) return;
+    lastState = decorateAutoLight(lastState);
+    for (T4ASession.Listener listener : listeners) listener.onState(lastState);
+  }
+
+  private T4AState decorateAutoLight(T4AState state) {
+    T4AState.AutoLightState autoLight =
+        autoLightController == null ? state.autoLight : autoLightController.snapshot();
+    return new T4AState(
+        state.authenticated,
+        state.account,
+        state.homeId,
+        state.homeName,
+        state.pairing,
+        state.connected,
+        state.deviceName,
+        state.mac,
+        state.rssi,
+        state.dps,
+        state.schema,
+        state.pendingDps,
+        state.autoLockEnabled,
+        state.autoLockDistance,
+        state.rssiObservedBest,
+        state.rssiObservedWorst,
+        state.rssiStableWorst,
+        state.rssiShortMin,
+        state.rssiMediumMin,
+        state.rssiLongMin,
+        state.rssiCalibrationReady,
+        state.batteryObservedMin,
+        state.batteryObservedMax,
+        state.batteryCycleStartedAt,
+        state.batteryRechargeMinGapHours,
+        state.pendingBatteryRechargePercent,
+        state.pendingBatteryRechargeDetectedAt,
+        state.message,
+        autoLight);
   }
 
   private void startNetworkDiagnostics() {
@@ -417,6 +519,12 @@ public final class T4ASessionService extends Service
     }
   }
 
+  private boolean dpBoolean(Object value) {
+    return value == true
+        || (value != null && "true".equalsIgnoreCase(String.valueOf(value)))
+        || (value != null && "1".equals(String.valueOf(value)));
+  }
+
   public final class SessionBinder extends Binder implements T4ASession {
     @Override
     public void addListener(Listener listener) {
@@ -437,49 +545,41 @@ public final class T4ASessionService extends Service
       }
     }
 
+    @Override public void login(String email, String password) { if (backend != null) backend.login(email, password); }
+    @Override public void scan() { if (backend != null) backend.scan(); }
+    @Override public void pair() { if (backend != null) backend.pair(); }
+    @Override public void publish(String dpId, Object value) { if (backend != null) backend.publish(dpId, value); }
+
     @Override
-    public void login(String email, String password) {
-      if (backend != null) backend.login(email, password);
+    public void setLight(boolean enabled) {
+      if (autoLightController != null) autoLightController.onManualLightChanged(enabled);
+      if (backend != null) backend.publish(DP_LIGHT, enabled);
+      emitAutoLightState();
+    }
+
+    @Override public void setAutoLockEnabled(boolean enabled) { if (backend != null) backend.setAutoLockEnabled(enabled); }
+    @Override public void setAutoLockDistance(String distance) { if (backend != null) backend.setAutoLockDistance(distance); }
+
+    @Override
+    public void setAutoLightEnabled(boolean enabled) {
+      if (autoLightController != null) autoLightController.setEnabled(enabled);
+      emitAutoLightState();
     }
 
     @Override
-    public void scan() {
-      if (backend != null) backend.scan();
+    public void setAutoLightAutoOffEnabled(boolean enabled) {
+      if (autoLightController != null) autoLightController.setAutoOffEnabled(enabled);
+      emitAutoLightState();
     }
 
     @Override
-    public void pair() {
-      if (backend != null) backend.pair();
+    public void setAutoLightThresholdLux(float lux) {
+      if (autoLightController != null) autoLightController.setThresholdLux(lux);
+      emitAutoLightState();
     }
 
-    @Override
-    public void publish(String dpId, Object value) {
-      if (backend != null) backend.publish(dpId, value);
-    }
-
-    @Override
-    public void setAutoLockEnabled(boolean enabled) {
-      if (backend != null) backend.setAutoLockEnabled(enabled);
-    }
-
-    @Override
-    public void setAutoLockDistance(String distance) {
-      if (backend != null) backend.setAutoLockDistance(distance);
-    }
-
-    @Override
-    public void setBatteryRechargeMinGapHours(int hours) {
-      if (backend != null) backend.setBatteryRechargeMinGapHours(hours);
-    }
-
-    @Override
-    public void resolveBatteryRecharge(boolean startNewCycle) {
-      if (backend != null) backend.resolveBatteryRecharge(startNewCycle);
-    }
-
-    @Override
-    public void unpair() {
-      if (backend != null) backend.unpair();
-    }
+    @Override public void setBatteryRechargeMinGapHours(int hours) { if (backend != null) backend.setBatteryRechargeMinGapHours(hours); }
+    @Override public void resolveBatteryRecharge(boolean startNewCycle) { if (backend != null) backend.resolveBatteryRecharge(startNewCycle); }
+    @Override public void unpair() { if (backend != null) backend.unpair(); }
   }
 }
