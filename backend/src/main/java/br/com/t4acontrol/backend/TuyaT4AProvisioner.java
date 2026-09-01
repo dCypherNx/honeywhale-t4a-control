@@ -8,9 +8,10 @@ import com.thingclips.smart.sdk.api.IThingDevice;
  * Tuya-only provisioning adapter kept independent from the runtime transport.
  *
  * <p>Account, home, discovery and pairing behavior continue to use the validated
- * {@link TuyaT4APlatform}. Device removal deliberately creates its own Tuya device handle instead
- * of relying on a transport-attached runtime handle. This keeps {@link T4AProvisioner} usable when
- * {@link T4ATransport} is later replaced by a native BLE implementation.
+ * {@link TuyaT4APlatform}. Removal uses its own Tuya device handle, but is deliberately refused
+ * unless the Tuya BLE manager reports the device locally online. Tuya documents that removing an
+ * offline BLE device clears only the cloud binding and leaves the device bound locally, which can
+ * strand the device outside pairing mode.
  */
 public final class TuyaT4AProvisioner implements T4AProvisioner {
   private final TuyaT4APlatform platform = new TuyaT4APlatform();
@@ -54,6 +55,13 @@ public final class TuyaT4AProvisioner implements T4AProvisioner {
 
   @Override
   public void remove(String deviceId, T4AContracts.ResultCallback callback) {
+    if (!ThingHomeSdk.getBleManager().isBleLocalOnline(deviceId)) {
+      callback.onError(
+          "BLE_NOT_CONNECTED",
+          "O T4A precisa estar conectado por Bluetooth antes de remover o pareamento");
+      return;
+    }
+
     IThingDevice removalDevice = ThingHomeSdk.newDeviceInstance(deviceId);
     if (removalDevice == null) {
       callback.onError("DEVICE_UNAVAILABLE", "Não foi possível abrir o dispositivo para remoção");
