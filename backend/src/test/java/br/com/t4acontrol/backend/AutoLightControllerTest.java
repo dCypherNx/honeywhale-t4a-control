@@ -75,6 +75,53 @@ public final class AutoLightControllerTest {
   }
 
   @Test
+  public void directT4ALightChangeCreatesSameOverrideAsAppButton() {
+    FakeStore store = new FakeStore();
+    FakeScheduler scheduler = new FakeScheduler();
+    RecordingListener listener = new RecordingListener();
+    AutoLightController controller = new AutoLightController(store, scheduler, listener);
+    learnRange(controller);
+    controller.setLightState(true);
+    controller.setControlAvailable(true);
+    controller.setEnabled(true);
+
+    controller.onLux(20f);
+    controller.setLightState(false);
+    controller.onLux(15f);
+    assertFalse(scheduler.hasDelayed());
+    assertTrue(listener.commands.isEmpty());
+
+    controller.onLux(80f);
+    controller.onLux(20f);
+    assertTrue(scheduler.hasDelayed());
+    scheduler.runDelayed();
+    assertEquals(1, listener.commands.size());
+    assertTrue(listener.commands.get(0));
+  }
+
+  @Test
+  public void automaticCommandConfirmationDoesNotBecomeManualOverride() {
+    FakeStore store = new FakeStore();
+    FakeScheduler scheduler = new FakeScheduler();
+    RecordingListener listener = new RecordingListener();
+    AutoLightController controller = new AutoLightController(store, scheduler, listener);
+    learnRange(controller);
+    controller.setLightState(false);
+    controller.setControlAvailable(true);
+    controller.setEnabled(true);
+
+    controller.onLux(20f);
+    scheduler.runDelayed();
+    assertEquals(1, listener.commands.size());
+    assertTrue(listener.commands.get(0));
+
+    controller.setLightState(true);
+    controller.onLux(80f);
+    controller.onLux(20f);
+    assertFalse(scheduler.hasDelayed());
+  }
+
+  @Test
   public void autoOffRequiresExplicitPermission() {
     FakeStore store = new FakeStore();
     FakeScheduler scheduler = new FakeScheduler();
