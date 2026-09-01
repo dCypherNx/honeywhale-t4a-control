@@ -144,17 +144,67 @@ internal fun SettingsScreen(
             enabled = light.enabled,
             onChange = actions::setAutoLightAutoOffEnabled,
         )
-        InfoLine(stringResource(R.string.ambient_light_current), luxValue(light.currentLux), foreground)
-        InfoLine(stringResource(R.string.ambient_light_min), luxValue(light.observedMinLux), foreground)
-        InfoLine(stringResource(R.string.ambient_light_max), luxValue(light.observedMaxLux), foreground)
+
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.ambient_light_current) + ": ",
+                color = foreground,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            Text(luxValue(light.currentLux), color = foreground, maxLines = 1)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ambient_light_min) + ": ",
+                    color = foreground,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(luxValue(light.observedMinLux), color = foreground, maxLines = 1)
+            }
+            Row(
+                Modifier.weight(1f),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.ambient_light_max) + ": ",
+                    color = foreground,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Text(luxValue(light.observedMaxLux), color = foreground, maxLines = 1)
+            }
+        }
 
         val minLux = light.observedMinLux
         val maxLux = light.observedMaxLux
         val thresholdLux = light.thresholdLux
         if (light.calibrationReady && minLux != null && maxLux != null && thresholdLux != null && maxLux > minLux) {
-            Text(stringResource(R.string.auto_light_threshold), color = foreground, fontWeight = FontWeight.Bold)
             var sliderPosition by remember(minLux, maxLux, thresholdLux) {
                 mutableFloatStateOf(luxToSliderPosition(thresholdLux, minLux, maxLux))
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.auto_light_threshold),
+                    color = foreground,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    luxValue(sliderPositionToLux(sliderPosition, minLux, maxLux)),
+                    color = T4AUiTokens.Blue,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                )
             }
             Slider(
                 value = sliderPosition,
@@ -163,18 +213,24 @@ internal fun SettingsScreen(
                     actions.setAutoLightThresholdLux(sliderPositionToLux(sliderPosition, minLux, maxLux))
                 },
                 valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.fillMaxWidth()) {
-                Text(luxValue(minLux), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.weight(1f))
                 Text(
-                    luxValue(sliderPositionToLux(sliderPosition, minLux, maxLux)),
-                    color = T4AUiTokens.Blue,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
+                    luxValue(minLux),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                Text(luxValue(maxLux), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                Text(
+                    luxValue(maxLux),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f),
+                )
             }
         } else {
             Text(stringResource(R.string.auto_light_calibrating), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
