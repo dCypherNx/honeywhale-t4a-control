@@ -42,6 +42,8 @@ import br.com.t4acontrol.R
 
 @Composable
 internal fun RidingControls(state: T4ADashboardState, surface: Color, outline: Color, foreground: Color, muted: Color, darkMode: Boolean, actions: T4ADashboardActions) {
+    var lightMenuExpanded by remember { mutableStateOf(false) }
+
     DashboardCard(surface, outline) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(RidingMode.WALK, RidingMode.ECO, RidingMode.RACE, RidingMode.SPORT).forEach { mode ->
@@ -50,19 +52,50 @@ internal fun RidingControls(state: T4ADashboardState, surface: Color, outline: C
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ToggleTile(
-                stringResource(R.string.light),
-                stringResource(if (state.lightOn) R.string.state_on else R.string.state_off),
-                "cmd-car-light-dimmed",
-                state.lightOn,
-                T4ADashboardTokens.Orange,
-                state.lightEnabled,
-                surface,
-                muted,
-                darkMode,
-                Modifier.weight(1f),
-                automaticBadge = state.autoLightOn,
-            ) { actions.setLight(!state.lightOn) }
+            Box(Modifier.weight(1f)) {
+                ToggleTile(
+                    stringResource(R.string.light),
+                    stringResource(if (state.lightOn) R.string.state_on else R.string.state_off),
+                    "cmd-car-light-dimmed",
+                    state.lightOn,
+                    T4ADashboardTokens.Orange,
+                    state.lightEnabled,
+                    surface,
+                    muted,
+                    darkMode,
+                    Modifier.fillMaxWidth(),
+                    automaticBadge = state.autoLightOn,
+                    onLongClick = { lightMenuExpanded = true },
+                ) { actions.setLight(!state.lightOn) }
+                DropdownMenu(expanded = lightMenuExpanded, onDismissRequest = { lightMenuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.auto_light_turn_on), color = T4ADashboardTokens.Orange) },
+                        onClick = { lightMenuExpanded = false; actions.setLight(true) },
+                        enabled = state.lightEnabled,
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.auto_light_turn_off)) },
+                        onClick = { lightMenuExpanded = false; actions.setLight(false) },
+                        enabled = state.lightEnabled,
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (state.autoLightOn) R.string.auto_light_disable_automatic
+                                    else R.string.auto_light_enable_automatic,
+                                ),
+                                color = T4ADashboardTokens.Blue,
+                            )
+                        },
+                        onClick = {
+                            lightMenuExpanded = false
+                            actions.setAutoLightEnabled(!state.autoLightOn)
+                        },
+                        enabled = state.controlsEnabled || state.autoLightOn,
+                    )
+                }
+            }
             ToggleTile(stringResource(R.string.start_mode), stringResource(if (state.initialPushOn) R.string.state_kick else R.string.state_zero), "cmd-run", state.initialPushOn, T4ADashboardTokens.Green, state.initialPushEnabled, surface, muted, darkMode, Modifier.weight(1f)) { actions.setInitialPush(!state.initialPushOn) }
             ToggleTile(stringResource(R.string.cruise), stringResource(if (state.cruiseOn) R.string.state_on else R.string.state_off), "cmd-car-cruise-control", state.cruiseOn, T4ADashboardTokens.Blue, state.cruiseEnabled, surface, muted, darkMode, Modifier.weight(1f), iconOffsetX = (-3).dp) { actions.setCruise(!state.cruiseOn) }
             ConsolidatedLockControl(state, surface, muted, darkMode, actions, Modifier.weight(1f))
@@ -112,6 +145,13 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
             }
             ControlText(stringResource(R.string.lock_control), stateLabel, if (enabled) color else foregroundForInactive(darkMode), true)
         }
+        if (state.autoLockOn) {
+            AutomaticBadge(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-4).dp, y = 4.dp),
+            )
+        }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.lock), color = T4ADashboardTokens.Red) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(true) }, enabled = state.lockEnabled)
             DropdownMenuItem(text = { Text(stringResource(R.string.unlock), color = T4ADashboardTokens.Green) }, onClick = { menuExpanded = false; actions.setAutoLock(false); actions.setLocked(false) }, enabled = state.lockEnabled)
@@ -159,6 +199,7 @@ private fun modeLabelRes(mode: RidingMode): Int = when (mode) {
     RidingMode.UNKNOWN -> R.string.unknown
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ToggleTile(
     title: String,
@@ -176,9 +217,15 @@ private fun ToggleTile(
     iconSize: Dp = T4ADashboardTokens.SecondRowIconSize,
     iconOffsetX: Dp = 0.dp,
     automaticBadge: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val fill = if (active) color.copy(alpha = if (darkMode) 0.19f else 0.07f) else surface
+    val clickModifier = if (onLongClick == null) {
+        Modifier.clickable(enabled = enabled, onClick = onClick)
+    } else {
+        Modifier.combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLongClick)
+    }
     Box(modifier.height(actionHeight)) {
         Column(
             Modifier
@@ -186,7 +233,7 @@ private fun ToggleTile(
                 .alpha(if (enabled) 1f else 0.55f)
                 .background(fill, RoundedCornerShape(radius))
                 .border(if (active) 2.dp else 1.dp, color, RoundedCornerShape(radius))
-                .clickable(enabled = enabled, onClick = onClick)
+                .then(clickModifier)
                 .padding(horizontal = 5.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -195,17 +242,24 @@ private fun ToggleTile(
             ControlText(title, stateLabel, if (active) color else foregroundForInactive(darkMode), active, if (actionHeight == T4ADashboardTokens.ActionHeight) T4ADashboardTokens.ActionFontSize else T4ADashboardTokens.ControlFontSize)
         }
         if (automaticBadge) {
-            Box(
+            AutomaticBadge(
                 Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = (-4).dp, y = 4.dp)
-                    .size(16.dp)
-                    .background(T4ADashboardTokens.Blue, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("A", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, lineHeight = 9.sp)
-            }
+                    .offset(x = (-4).dp, y = 4.dp),
+            )
         }
+    }
+}
+
+@Composable
+private fun AutomaticBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(16.dp)
+            .background(T4ADashboardTokens.Blue, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("A", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, lineHeight = 9.sp)
     }
 }
 
