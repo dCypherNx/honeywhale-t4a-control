@@ -13,7 +13,7 @@ internal interface T4AUiActions : T4ADashboardActions {
     fun openMqttSettings()
     fun setAutoLockFromSettings(enabled: Boolean)
     fun setAutoLockDistanceFromSettings(distance: String)
-    fun setAutoLightEnabled(enabled: Boolean)
+    override fun setAutoLightEnabled(enabled: Boolean)
     fun setAutoLightAutoOffEnabled(enabled: Boolean)
     fun setAutoLightThresholdLux(lux: Float)
     fun setUnit(unit: String)
