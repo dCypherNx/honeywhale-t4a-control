@@ -45,4 +45,23 @@ public interface T4AStateStore {
   Integer batteryRechargeMinGapHours();
 
   void setBatteryRechargeMinGapHours(int hours);
+
+  /** Automatic-headlight settings and learned light-sensor range. Defaults preserve old stores/tests. */
+  default boolean autoLightEnabled() { return false; }
+
+  default void setAutoLightEnabled(boolean enabled) {}
+
+  default boolean autoLightAutoOffEnabled() { return false; }
+
+  default void setAutoLightAutoOffEnabled(boolean enabled) {}
+
+  default Float lightObservedMinLux() { return null; }
+
+  default Float lightObservedMaxLux() { return null; }
+
+  default void setLightObservation(float minLux, float maxLux) {}
+
+  default Float autoLightThresholdLux() { return null; }
+
+  default void setAutoLightThresholdLux(float lux) {}
 }
