@@ -21,6 +21,11 @@ public final class AndroidT4AStateStore implements T4AStateStore {
   static final String PREF_BATTERY_LAST_LIVE_PERCENT = "battery_last_live_percent";
   static final String PREF_BATTERY_LAST_LIVE_AT = "battery_last_live_at";
   static final String PREF_BATTERY_RECHARGE_MIN_GAP_HOURS = "battery_recharge_min_gap_hours";
+  static final String PREF_AUTO_LIGHT_ENABLED = "auto_light_enabled";
+  static final String PREF_AUTO_LIGHT_AUTO_OFF_ENABLED = "auto_light_auto_off_enabled";
+  static final String PREF_LIGHT_OBSERVED_MIN_LUX = "light_observed_min_lux";
+  static final String PREF_LIGHT_OBSERVED_MAX_LUX = "light_observed_max_lux";
+  static final String PREF_AUTO_LIGHT_THRESHOLD_LUX = "auto_light_threshold_lux";
 
   private final SharedPreferences preferences;
 
@@ -143,5 +148,50 @@ public final class AndroidT4AStateStore implements T4AStateStore {
 
   @Override public void setBatteryRechargeMinGapHours(int hours) {
     preferences.edit().putInt(PREF_BATTERY_RECHARGE_MIN_GAP_HOURS, hours).apply();
+  }
+
+  @Override public boolean autoLightEnabled() {
+    return preferences.getBoolean(PREF_AUTO_LIGHT_ENABLED, false);
+  }
+
+  @Override public void setAutoLightEnabled(boolean enabled) {
+    preferences.edit().putBoolean(PREF_AUTO_LIGHT_ENABLED, enabled).apply();
+  }
+
+  @Override public boolean autoLightAutoOffEnabled() {
+    return preferences.getBoolean(PREF_AUTO_LIGHT_AUTO_OFF_ENABLED, false);
+  }
+
+  @Override public void setAutoLightAutoOffEnabled(boolean enabled) {
+    preferences.edit().putBoolean(PREF_AUTO_LIGHT_AUTO_OFF_ENABLED, enabled).apply();
+  }
+
+  @Override public Float lightObservedMinLux() {
+    return preferences.contains(PREF_LIGHT_OBSERVED_MIN_LUX)
+        ? preferences.getFloat(PREF_LIGHT_OBSERVED_MIN_LUX, 0f)
+        : null;
+  }
+
+  @Override public Float lightObservedMaxLux() {
+    return preferences.contains(PREF_LIGHT_OBSERVED_MAX_LUX)
+        ? preferences.getFloat(PREF_LIGHT_OBSERVED_MAX_LUX, 0f)
+        : null;
+  }
+
+  @Override public void setLightObservation(float minLux, float maxLux) {
+    preferences.edit()
+        .putFloat(PREF_LIGHT_OBSERVED_MIN_LUX, minLux)
+        .putFloat(PREF_LIGHT_OBSERVED_MAX_LUX, maxLux)
+        .apply();
+  }
+
+  @Override public Float autoLightThresholdLux() {
+    return preferences.contains(PREF_AUTO_LIGHT_THRESHOLD_LUX)
+        ? preferences.getFloat(PREF_AUTO_LIGHT_THRESHOLD_LUX, 0f)
+        : null;
+  }
+
+  @Override public void setAutoLightThresholdLux(float lux) {
+    preferences.edit().putFloat(PREF_AUTO_LIGHT_THRESHOLD_LUX, lux).apply();
   }
 }
