@@ -57,6 +57,7 @@ enum class RidingMode(val label: String, val limitKmh: Int) {
 interface T4ADashboardActions {
     fun setRidingMode(mode: RidingMode)
     fun setLight(enabled: Boolean)
+    fun setAutoLightEnabled(enabled: Boolean)
     fun setInitialPush(enabled: Boolean)
     fun setCruise(enabled: Boolean)
     fun setLocked(locked: Boolean)
@@ -67,6 +68,7 @@ interface T4ADashboardActions {
 object NoOpT4ADashboardActions : T4ADashboardActions {
     override fun setRidingMode(mode: RidingMode) = Unit
     override fun setLight(enabled: Boolean) = Unit
+    override fun setAutoLightEnabled(enabled: Boolean) = Unit
     override fun setInitialPush(enabled: Boolean) = Unit
     override fun setCruise(enabled: Boolean) = Unit
     override fun setLocked(locked: Boolean) = Unit
