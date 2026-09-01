@@ -7,10 +7,10 @@ package br.com.t4acontrol.backend;
  * neutral lux samples and an interactive-screen flag, learns trustworthy extrema, and decides when a
  * headlight command is allowed.
  */
-final class AutoLightController {
-  static final long DARK_HOLD_MS = 5000L;
+public final class AutoLightController {
+  public static final long DARK_HOLD_MS = 5000L;
 
-  interface Listener {
+  public interface Listener {
     void onAutomaticCommand(boolean enabled, float lux, float thresholdLux);
     void onRawLog(String entry);
   }
@@ -21,6 +21,7 @@ final class AutoLightController {
   private final LightCalibration calibration;
 
   private boolean screenInteractive;
+  private boolean controlAvailable;
   private Float currentLux;
   private boolean currentLightOn;
   private Boolean manualOverrideDarkSide;
@@ -32,6 +33,7 @@ final class AutoLightController {
       darkHoldScheduled = false;
       Float threshold = thresholdLux();
       if (!screenInteractive
+          || !controlAvailable
           || !stateStore.autoLightEnabled()
           || currentLux == null
           || threshold == null
@@ -47,7 +49,7 @@ final class AutoLightController {
     }
   };
 
-  AutoLightController(T4AStateStore stateStore, Scheduler scheduler, Listener listener) {
+  public AutoLightController(T4AStateStore stateStore, Scheduler scheduler, Listener listener) {
     this.stateStore = stateStore;
     this.scheduler = scheduler;
     this.listener = listener;
@@ -55,7 +57,7 @@ final class AutoLightController {
         new LightCalibration(stateStore.lightObservedMinLux(), stateStore.lightObservedMaxLux());
   }
 
-  void setScreenInteractive(boolean interactive) {
+  public void setScreenInteractive(boolean interactive) {
     if (screenInteractive == interactive) return;
     screenInteractive = interactive;
     if (!interactive) {
@@ -68,7 +70,13 @@ final class AutoLightController {
     }
   }
 
-  void onLux(float lux) {
+  public void setControlAvailable(boolean available) {
+    controlAvailable = available;
+    if (!available) cancelDarkHold();
+    else evaluate();
+  }
+
+  public void onLux(float lux) {
     if (!screenInteractive || !validLux(lux)) return;
     currentLux = lux;
 
@@ -94,11 +102,11 @@ final class AutoLightController {
     evaluate();
   }
 
-  void setLightState(boolean enabled) {
+  public void setLightState(boolean enabled) {
     currentLightOn = enabled;
   }
 
-  void onManualLightChanged(boolean enabled) {
+  public void onManualLightChanged(boolean enabled) {
     currentLightOn = enabled;
     cancelDarkHold();
     Boolean dark = currentDarkSide();
@@ -113,7 +121,7 @@ final class AutoLightController {
         + " overrideSide=" + (dark == null ? "pending" : (dark ? "dark" : "bright")));
   }
 
-  void setEnabled(boolean enabled) {
+  public void setEnabled(boolean enabled) {
     stateStore.setAutoLightEnabled(enabled);
     cancelDarkHold();
     listener.onRawLog("[APP] AUTO_LIGHT enabled=" + enabled
@@ -121,13 +129,13 @@ final class AutoLightController {
     if (enabled) evaluate();
   }
 
-  void setAutoOffEnabled(boolean enabled) {
+  public void setAutoOffEnabled(boolean enabled) {
     stateStore.setAutoLightAutoOffEnabled(enabled);
     listener.onRawLog("[APP] AUTO_LIGHT autoOff=" + enabled);
     if (enabled) evaluate();
   }
 
-  void setThresholdLux(float lux) {
+  public void setThresholdLux(float lux) {
     LightCalibration.Snapshot learned = calibration.snapshot();
     if (!learned.ready || learned.minLux == null || learned.maxLux == null || !validLux(lux)) return;
     float clamped = Math.max(learned.minLux, Math.min(learned.maxLux, lux));
@@ -138,7 +146,7 @@ final class AutoLightController {
     evaluate();
   }
 
-  T4AState.AutoLightState snapshot() {
+  public T4AState.AutoLightState snapshot() {
     LightCalibration.Snapshot learned = calibration.snapshot();
     return new T4AState.AutoLightState(
         stateStore.autoLightEnabled(),
@@ -154,6 +162,7 @@ final class AutoLightController {
   private void evaluate() {
     Float threshold = thresholdLux();
     if (!screenInteractive
+        || !controlAvailable
         || !stateStore.autoLightEnabled()
         || currentLux == null
         || threshold == null) {
