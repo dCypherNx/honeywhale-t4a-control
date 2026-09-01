@@ -108,6 +108,10 @@ public final class AutoLightController implements AutoCloseable {
   public void onManualLightChanged(boolean enabled) {
     currentLightOn = enabled;
     cancelDarkHold();
+    if (!stateStore.autoLightEnabled()) {
+      clearManualOverride();
+      return;
+    }
     Boolean dark = currentDarkSide();
     if (dark == null) {
       manualOverrideDarkSide = null;
@@ -123,6 +127,7 @@ public final class AutoLightController implements AutoCloseable {
   public void setEnabled(boolean enabled) {
     stateStore.setAutoLightEnabled(enabled);
     cancelDarkHold();
+    if (!enabled) clearManualOverride();
     listener.onRawLog("[APP] AUTO_LIGHT enabled=" + enabled
         + " threshold=" + nullableLux(thresholdLux()));
     if (enabled) evaluate();
@@ -140,6 +145,7 @@ public final class AutoLightController implements AutoCloseable {
     float clamped = Math.max(learned.minLux, Math.min(learned.maxLux, lux));
     stateStore.setAutoLightThresholdLux(clamped);
     cancelDarkHold();
+    clearManualOverride();
     listener.onRawLog("[APP] AUTO_LIGHT threshold=" + formatLux(clamped)
         + " range=" + formatLux(learned.minLux) + ".." + formatLux(learned.maxLux));
     evaluate();
@@ -207,6 +213,11 @@ public final class AutoLightController implements AutoCloseable {
 
   private boolean isManualOverrideFor(boolean dark) {
     return manualOverrideDarkSide != null && manualOverrideDarkSide.booleanValue() == dark;
+  }
+
+  private void clearManualOverride() {
+    manualOverrideDarkSide = null;
+    manualOverridePendingSide = false;
   }
 
   private void scheduleDarkHold() {
