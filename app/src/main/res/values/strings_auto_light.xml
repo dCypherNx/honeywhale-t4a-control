@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auto_light_section">Farol automático</string>
+    <string name="auto_light_enabled">Automático</string>
+    <string name="auto_light_auto_off">Desligar automaticamente</string>
+    <string name="ambient_light_current">Luminosidade atual</string>
+    <string name="ambient_light_min">Mínimo observado</string>
+    <string name="ambient_light_max">Máximo observado</string>
+    <string name="auto_light_threshold">Acender abaixo de</string>
+    <string name="auto_light_calibrating">Calibrando faixa de luminosidade com a tela ligada…</string>
+    <string name="auto_light_note">A luminosidade só é observada com a tela ligada. Para ligar automaticamente, a leitura abaixo do limite deve persistir por pelo menos 5 segundos.</string>
+</resources>
