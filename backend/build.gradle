@@ -47,7 +47,7 @@ configurations.configureEach {
 
 tasks.register('verifyTuyaBoundary') {
     group = 'verification'
-    description = 'Garante contratos separados, persistência isolada e tipos ThingClips restritos ao adaptador/bootstrap.'
+    description = 'Garante contratos neutros, fronteiras Tuya/BLE separadas, persistência isolada e tipos ThingClips restritos aos adaptadores/bootstrap.'
 
     def requiredBoundarySources = [
             file('src/main/java/br/com/t4acontrol/backend/T4AContracts.java'),
@@ -55,14 +55,20 @@ tasks.register('verifyTuyaBoundary') {
             file('src/main/java/br/com/t4acontrol/backend/T4ATransport.java'),
             file('src/main/java/br/com/t4acontrol/backend/T4AStateStore.java'),
             file('src/main/java/br/com/t4acontrol/backend/persistence/AndroidT4AStateStore.java'),
-            file('src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java')
+            file('src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java'),
+            file('src/main/java/br/com/t4acontrol/backend/TuyaT4AProvisioner.java')
+    ]
+    def neutralBoundarySources = [
+            file('src/main/java/br/com/t4acontrol/backend/T4AContracts.java'),
+            file('src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java'),
+            file('src/main/java/br/com/t4acontrol/backend/T4ATransport.java')
     ]
     def backendSource = file('src/main/java/br/com/t4acontrol/backend/T4ABackend.java')
     def domainSources = fileTree('src/main/java') {
         include '**/*.java'
-        exclude '**/TuyaT4APlatform.java', '**/T4ASdk.java'
+        exclude '**/TuyaT4APlatform.java', '**/TuyaT4AProvisioner.java', '**/T4ASdk.java'
     }
-    inputs.files(domainSources, requiredBoundarySources, backendSource)
+    inputs.files(domainSources, requiredBoundarySources, neutralBoundarySources, backendSource)
 
     doLast {
         def missing = requiredBoundarySources.findAll { !it.isFile() }
@@ -80,10 +86,22 @@ tasks.register('verifyTuyaBoundary') {
                     'Dependência Tuya fora da fronteira permitida: ' +
                             violations.collect { project.relativePath(it) }.join(', '))
         }
-        def backendText = backendSource.getText('UTF-8')
-        if (backendText.contains('TuyaT4APlatform')) {
+        def providerLeaks = neutralBoundarySources.findAll { source ->
+            def text = source.getText('UTF-8')
+            text.contains('com.thingclips.') ||
+                    text.contains('ThingHomeSdk') ||
+                    text.contains('Tuya') ||
+                    text.contains('ThingClips')
+        }
+        if (!providerLeaks.isEmpty()) {
             throw new GradleException(
-                    'T4ABackend não pode criar o adaptador Tuya; use o composition root do app.')
+                    'Contrato neutro contém referência específica do provedor: ' +
+                            providerLeaks.collect { project.relativePath(it) }.join(', '))
+        }
+        def backendText = backendSource.getText('UTF-8')
+        if (backendText.contains('TuyaT4APlatform') || backendText.contains('TuyaT4AProvisioner')) {
+            throw new GradleException(
+                    'T4ABackend não pode criar adaptadores Tuya; use o composition root do app.')
         }
         if (backendText.contains('android.content.Context') ||
                 backendText.contains('SharedPreferences')) {

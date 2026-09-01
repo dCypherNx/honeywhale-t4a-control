@@ -2,8 +2,11 @@ package br.com.t4acontrol;
 
 import android.app.Application;
 import br.com.t4acontrol.backend.T4ABackend;
+import br.com.t4acontrol.backend.T4AProvisioner;
 import br.com.t4acontrol.backend.T4ASdk;
+import br.com.t4acontrol.backend.T4ATransport;
 import br.com.t4acontrol.backend.TuyaT4APlatform;
+import br.com.t4acontrol.backend.TuyaT4AProvisioner;
 import br.com.t4acontrol.backend.mqtt.AndroidMqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
@@ -25,11 +28,12 @@ public final class T4AApplication extends Application {
    * Activities must depend on the UI-facing session facade instead of constructing this graph.
    */
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
-    TuyaT4APlatform platform = new TuyaT4APlatform();
+    T4AProvisioner provisioner = new TuyaT4AProvisioner();
+    T4ATransport transport = new TuyaT4APlatform();
     return new T4ABackend(
         new AndroidT4AStateStore(this),
-        platform,
-        platform,
+        provisioner,
+        transport,
         listener,
         new AndroidClock(),
         new AndroidScheduler());

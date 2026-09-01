@@ -63,6 +63,7 @@ jobs:
             'backend/src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java',
             'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java',
             'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4APlatform.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/TuyaT4AProvisioner.java',
             'app/src/main/java/br/com/t4acontrol/MainActivity.kt',
             'app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboardState.kt',
             'app/src/main/java/br/com/t4acontrol/ui/dashboard/T4ADashboardMapper.kt',
@@ -85,7 +86,7 @@ jobs:
             exit 1
           }
 
-          $allowed = @('TuyaT4APlatform.java', 'T4ASdk.java')
+          $allowed = @('TuyaT4APlatform.java', 'TuyaT4AProvisioner.java', 'T4ASdk.java')
           $domainSources = Get-ChildItem 'backend/src/main/java' -Recurse -Filter '*.java' |
             Where-Object { $_.Name -notin $allowed }
           $violations = $domainSources | Select-String -Pattern 'com\.thingclips\.|ThingHomeSdk'
@@ -94,16 +95,28 @@ jobs:
             exit 1
           }
 
+          $neutralContracts = @(
+            'backend/src/main/java/br/com/t4acontrol/backend/T4AContracts.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/T4AProvisioner.java',
+            'backend/src/main/java/br/com/t4acontrol/backend/T4ATransport.java'
+          )
+          $providerLeaks = $neutralContracts |
+            ForEach-Object { Select-String -LiteralPath $_ -Pattern 'com\.thingclips\.|ThingHomeSdk|ThingClips|Tuya' }
+          if ($providerLeaks) {
+            $providerLeaks | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
           $backend = Get-Content -LiteralPath `
             'backend/src/main/java/br/com/t4acontrol/backend/T4ABackend.java' -Raw
-          if ($backend.Contains('TuyaT4APlatform')) {
-            Write-Error 'T4ABackend must not instantiate the Tuya adapter.'
+          if ($backend -match 'TuyaT4APlatform|TuyaT4AProvisioner') {
+            Write-Error 'T4ABackend must not instantiate Tuya adapters.'
             exit 1
           }
 
           $activity = Get-Content -LiteralPath `
             'app/src/main/java/br/com/t4acontrol/MainActivity.kt' -Raw
-          if ($activity -match 'T4ABackend|TuyaT4APlatform|ThingHomeSdk|com\.thingclips\.|org\.eclipse\.paho') {
+          if ($activity -match 'T4ABackend|TuyaT4APlatform|TuyaT4AProvisioner|ThingHomeSdk|com\.thingclips\.|org\.eclipse\.paho') {
             Write-Error 'MainActivity must depend on UI/session contracts, not provider implementations.'
             exit 1
           }

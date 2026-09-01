@@ -176,11 +176,20 @@ public final class T4ABackend {
   public void pair() {
     if (candidate == null || homeId == 0) return;
     pairing = T4AState.Pairing.PAIRING;
+    raw("[APP] PAIR requested discoveryId=" + candidate.discoveryId
+        + " address=" + candidate.address
+        + " bound=" + candidate.bound);
     emit("Pareando…");
     provisioner.pair(homeId, candidate, new T4AContracts.Callback<T4AContracts.Device>() {
-      @Override public void onSuccess(T4AContracts.Device result) { scheduler.post(() -> attach(withRememberedBleAddress(result))); }
+      @Override public void onSuccess(T4AContracts.Device result) {
+        scheduler.post(() -> {
+          raw("[APP] PAIR success deviceId=" + (result == null ? "" : result.id));
+          attach(withRememberedBleAddress(result));
+        });
+      }
       @Override public void onError(String code, String error) {
         scheduler.post(() -> {
+          raw("[APP] PAIR error code=" + code + " message=" + T4AContracts.value(error));
           pairing = T4AState.Pairing.READY;
           emit("Pareamento falhou: " + code);
         });
@@ -258,13 +267,26 @@ public final class T4ABackend {
 
   public void unpair() {
     if (device == null) return;
+    final String removingDeviceId = device.id;
+    raw("[APP] UNPAIR requested deviceId=" + removingDeviceId
+        + " connected=" + transport.isConnected(removingDeviceId));
     pairing = T4AState.Pairing.REMOVING;
     emit("Removendo pareamento…");
-    provisioner.remove(device.id, new T4AContracts.ResultCallback() {
-      @Override public void onSuccess() { scheduler.post(() -> clearDevice("T4A liberado para outro aplicativo")); }
+    provisioner.remove(removingDeviceId, new T4AContracts.ResultCallback() {
+      @Override public void onSuccess() {
+        scheduler.post(() -> {
+          raw("[APP] UNPAIR success deviceId=" + removingDeviceId);
+          clearDevice("T4A liberado para outro aplicativo");
+        });
+      }
       @Override public void onError(String code, String error) {
-        pairing = T4AState.Pairing.PAIRED;
-        emit("Falha ao remover pareamento: " + code);
+        scheduler.post(() -> {
+          raw("[APP] UNPAIR error deviceId=" + removingDeviceId
+              + " code=" + code
+              + " message=" + T4AContracts.value(error));
+          pairing = T4AState.Pairing.PAIRED;
+          emit("Falha ao remover pareamento: " + code);
+        });
       }
     });
   }
