@@ -4,6 +4,7 @@ import br.com.t4acontrol.backend.navigation.NavigationInstruction;
 import br.com.t4acontrol.backend.navigation.Route;
 import br.com.t4acontrol.backend.navigation.RouteLeg;
 import br.com.t4acontrol.backend.navigation.RouteParser;
+import br.com.t4acontrol.backend.navigation.RoutingProfile;
 import br.com.t4acontrol.backend.navigation.Waypoint;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -77,7 +78,43 @@ public final class GoogleMapsRouteParser implements RouteParser {
     }
 
     String routeId = "google:" + Integer.toHexString(routeReference.hashCode());
-    return new Route(routeId, "google-maps", routeReference.trim(), waypoints, legs);
+    return new Route(
+        routeId,
+        "google-maps",
+        routeReference.trim(),
+        parseRoutingProfile(uri, routeReference),
+        waypoints,
+        legs);
+  }
+
+  static RoutingProfile parseRoutingProfile(URI uri, String routeReference) {
+    String query = uri.getRawQuery();
+    if (query != null) {
+      for (String parameter : query.split("&")) {
+        int separator = parameter.indexOf('=');
+        String key = separator >= 0 ? parameter.substring(0, separator) : parameter;
+        String value = separator >= 0 ? parameter.substring(separator + 1) : "";
+        if ("travelmode".equalsIgnoreCase(decodeUnchecked(key))) {
+          RoutingProfile explicit = fromTravelMode(decodeUnchecked(value));
+          if (explicit != null) return explicit;
+        }
+      }
+    }
+
+    // Google shared /maps/dir URLs currently encode the selected mode inside an undocumented
+    // /data= block. Keep this only as a tested compatibility fallback; official Maps URLs use
+    // travelmode=driving|walking|bicycling.
+    if (routeReference.contains("!3e0")) return RoutingProfile.CAR;
+    if (routeReference.contains("!3e1")) return RoutingProfile.BICYCLE;
+    if (routeReference.contains("!3e2")) return RoutingProfile.FOOT;
+    return null;
+  }
+
+  private static RoutingProfile fromTravelMode(String travelMode) {
+    if ("driving".equalsIgnoreCase(travelMode)) return RoutingProfile.CAR;
+    if ("bicycling".equalsIgnoreCase(travelMode)) return RoutingProfile.BICYCLE;
+    if ("walking".equalsIgnoreCase(travelMode)) return RoutingProfile.FOOT;
+    return null;
   }
 
   private static ParsedPoint parsePoint(String value) {
@@ -100,6 +137,14 @@ public final class GoogleMapsRouteParser implements RouteParser {
       return URLDecoder.decode(value.replace("+", "%20"), StandardCharsets.UTF_8.name());
     } catch (Exception ex) {
       throw new RouteParseException("Unable to decode Google Maps route segment", ex);
+    }
+  }
+
+  private static String decodeUnchecked(String value) {
+    try {
+      return URLDecoder.decode(value.replace("+", "%20"), StandardCharsets.UTF_8.name());
+    } catch (Exception ignored) {
+      return value;
     }
   }
 
