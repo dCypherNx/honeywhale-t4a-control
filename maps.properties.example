@@ -1,0 +1,3 @@
+# Local-only Google Maps Platform credentials.
+# Copy to maps.properties (ignored by git) and fill the key created for Routes API.
+GOOGLE_ROUTES_API_KEY=
