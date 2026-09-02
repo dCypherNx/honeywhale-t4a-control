@@ -28,6 +28,16 @@ public final class NavigationDeviationPolicyTest {
     assertTrue(policy.shouldRecalculate(offRoute, location(13_000L, 8.0)));
   }
 
+  @Test public void unknownAccuracyDoesNotCountAsEvidence() {
+    NavigationDeviationPolicy policy = new NavigationDeviationPolicy();
+    NavigationState offRoute = offRouteState();
+
+    assertFalse(policy.shouldRecalculate(offRoute, location(1_000L, 0.0)));
+    assertFalse(policy.shouldRecalculate(offRoute, location(4_000L, 5.0)));
+    assertFalse(policy.shouldRecalculate(offRoute, location(7_000L, 5.0)));
+    assertTrue(policy.shouldRecalculate(offRoute, location(10_000L, 5.0)));
+  }
+
   @Test public void returningToRouteResetsEvidence() {
     NavigationDeviationPolicy policy = new NavigationDeviationPolicy();
     NavigationState offRoute = offRouteState();
