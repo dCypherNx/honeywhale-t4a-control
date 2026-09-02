@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
         private const val PREF_TOTAL_ODOMETER = "show_total_odometer"
         private const val PREF_THEME = "theme_mode"
+        private const val PREF_NAVIGATION_WAYPOINTS_VISIBLE = "navigation_waypoints_visible"
     }
 
     private var session: T4ASession = T4ASession.EMPTY
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private var keepScreenOn by mutableStateOf(true)
     private var showTotalOdometer by mutableStateOf(true)
     private var themeMode by mutableStateOf("system")
+    private var navigationWaypointsVisible by mutableStateOf(true)
     private var configurationTick by mutableIntStateOf(0)
     private var lastStatusEvent = ""
     private val eventHistory = mutableStateListOf<String>()
@@ -138,6 +140,11 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         override fun setTheme(mode: String) = applyTheme(mode)
 
+        override fun setNavigationWaypointsVisible(enabled: Boolean) {
+            navigationWaypointsVisible = enabled
+            preferences().edit().putBoolean(PREF_NAVIGATION_WAYPOINTS_VISIBLE, enabled).apply()
+        }
+
         override fun setBatteryRechargeMinGapHours(hours: Int) = session.setBatteryRechargeMinGapHours(hours)
 
         override fun openMqttSettings() {
@@ -183,6 +190,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
         showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true)
         themeMode = preferences().getString(PREF_THEME, "system") ?: "system"
+        navigationWaypointsVisible = preferences().getBoolean(PREF_NAVIGATION_WAYPOINTS_VISIBLE, true)
         consumeNavigationRawLog(intent)
         NavigationRuntime.get().addListener(navigationLogListener)
         applyKeepScreenOn(keepScreenOn)
@@ -197,6 +205,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 showTotalOdometer = showTotalOdometer,
                 keepScreenOn = keepScreenOn,
                 themeMode = themeMode,
+                navigationWaypointsVisible = navigationWaypointsVisible,
                 eventHistory = eventHistory,
                 rawHistory = rawHistory,
                 rawLogFilter = rawLogFilter,
