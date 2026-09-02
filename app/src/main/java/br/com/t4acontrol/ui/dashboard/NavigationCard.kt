@@ -84,7 +84,9 @@ internal fun NavigationCard(
                     fontWeight = FontWeight.Bold,
                 )
                 val detail = instruction?.text?.takeIf { it.isNotBlank() }
-                if (detail != null) Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
+                if (detail != null && state.status != NavigationState.Status.RECALCULATING) {
+                    Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
+                }
             }
             state.distanceToInstructionMeters?.let { distance ->
                 Text(
@@ -121,7 +123,10 @@ private fun NavigationManeuverIcon(
     Box {
         MdiIcon(
             name = maneuverIcon(instruction?.maneuver, status),
-            color = if (status == NavigationState.Status.OFF_ROUTE) T4ADashboardTokens.Red else T4ADashboardTokens.Blue,
+            color = if (
+                status == NavigationState.Status.OFF_ROUTE ||
+                status == NavigationState.Status.RECALCULATING
+            ) T4ADashboardTokens.Red else T4ADashboardTokens.Blue,
             iconSize = 40.dp,
             modifier = interactionModifier,
         )
@@ -192,7 +197,8 @@ private fun navigationTitle(state: NavigationState): String = when (state.status
     NavigationState.Status.READY -> "Rota pronta"
     NavigationState.Status.POSITION_UNAVAILABLE -> "Aguardando GPS"
     NavigationState.Status.OFF_ROUTE -> "Fora da rota"
-    NavigationState.Status.WAYPOINT_REACHED -> "Ponto intermediário"
+    NavigationState.Status.RECALCULATING -> "Recalculando rota…"
+    NavigationState.Status.WAYPOINT_REACHED -> "Parada alcançada"
     NavigationState.Status.ARRIVED -> "Destino alcançado"
     NavigationState.Status.NAVIGATING -> when (state.instruction?.maneuver) {
         NavigationInstruction.Maneuver.TURN_LEFT -> "Vire à esquerda"
@@ -207,7 +213,7 @@ private fun navigationTitle(state: NavigationState): String = when (state.status
 }
 
 private fun maneuverIcon(maneuver: NavigationInstruction.Maneuver?, status: NavigationState.Status): String {
-    if (status == NavigationState.Status.OFF_ROUTE) return "cmd-map-marker-alert"
+    if (status == NavigationState.Status.OFF_ROUTE || status == NavigationState.Status.RECALCULATING) return "cmd-map-marker-alert"
     if (status == NavigationState.Status.ARRIVED) return "cmd-map-marker-check"
     return when (maneuver) {
         NavigationInstruction.Maneuver.TURN_LEFT -> "cmd-arrow-left-top"
