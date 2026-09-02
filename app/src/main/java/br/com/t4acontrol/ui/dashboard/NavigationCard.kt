@@ -39,11 +39,15 @@ import br.com.t4acontrol.ui.MdiIcon
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private const val GUIDANCE_MIN_SECONDS = 10.0
-private const val GUIDANCE_MAX_SECONDS = 30.0
 private const val GUIDANCE_MIN_METERS = 15.0
-private const val GUIDANCE_MAX_METERS = 75.0
+private const val GUIDANCE_MAX_METERS = 100.0
 private const val GUIDANCE_DEFAULT_METERS = 30.0
+private const val NORMAL_TURN_SECONDS = 10.0
+private const val NORMAL_TURN_TARGET_KMH = 25.0
+private const val ROUNDABOUT_SECONDS = 12.0
+private const val ROUNDABOUT_TARGET_KMH = 15.0
+private const val U_TURN_SECONDS = 15.0
+private const val U_TURN_TARGET_KMH = 0.0
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -148,9 +152,11 @@ private fun navigationPresentation(route: Route?, state: NavigationState, waypoi
 }
 
 /**
- * The directional command is activated from GPS speed instead of a fixed distance. Ten seconds is
- * the normal target. At very low speed the time window can grow, up to 30 seconds, to avoid a
- * warning closer than 15 m. At higher speed the command is never exposed farther than 75 m.
+ * Guidance distance is derived from current speed and the speed reduction expected for the maneuver.
+ * We model progressive, approximately linear deceleration after the command appears. A normal turn
+ * targets at least 10 s, a roundabout 12 s, and a U-turn 15 s. Distances are bounded to 15..100 m.
+ * The current OSRM adapter does not preserve slight/sharp/fork detail, so left/right are conservatively
+ * treated as normal turns until the domain exposes richer maneuver semantics.
  */
 private fun timedNavigationPresentation(
     presentation: NavigationPresentation,
@@ -160,7 +166,7 @@ private fun timedNavigationPresentation(
     val maneuver = presentation.instruction?.maneuver ?: return presentation
     if (!isDirectionalManeuver(maneuver)) return presentation
     val distance = presentation.distanceMeters ?: return presentation
-    if (distance <= guidanceActivationMeters(gpsSpeedKmh)) return presentation
+    if (distance <= guidanceActivationMeters(gpsSpeedKmh, maneuver)) return presentation
 
     return NavigationPresentation(
         NavigationState.Status.NAVIGATING,
@@ -169,21 +175,32 @@ private fun timedNavigationPresentation(
     )
 }
 
-internal fun guidanceLeadSeconds(gpsSpeedKmh: Double?): Double {
-    if (gpsSpeedKmh == null || !gpsSpeedKmh.isFinite() || gpsSpeedKmh <= 0.0) {
-        return GUIDANCE_MIN_SECONDS
-    }
-    val metersPerSecond = gpsSpeedKmh / 3.6
-    val secondsNeededForMinimumDistance = GUIDANCE_MIN_METERS / metersPerSecond
-    return secondsNeededForMinimumDistance.coerceIn(GUIDANCE_MIN_SECONDS, GUIDANCE_MAX_SECONDS)
+private data class GuidanceProfile(
+    val leadSeconds: Double,
+    val targetSpeedKmh: Double,
+)
+
+private fun guidanceProfile(maneuver: NavigationInstruction.Maneuver): GuidanceProfile = when (maneuver) {
+    NavigationInstruction.Maneuver.U_TURN -> GuidanceProfile(U_TURN_SECONDS, U_TURN_TARGET_KMH)
+    NavigationInstruction.Maneuver.ROUNDABOUT -> GuidanceProfile(ROUNDABOUT_SECONDS, ROUNDABOUT_TARGET_KMH)
+    NavigationInstruction.Maneuver.TURN_LEFT,
+    NavigationInstruction.Maneuver.TURN_RIGHT -> GuidanceProfile(NORMAL_TURN_SECONDS, NORMAL_TURN_TARGET_KMH)
+    else -> GuidanceProfile(NORMAL_TURN_SECONDS, NORMAL_TURN_TARGET_KMH)
 }
 
-internal fun guidanceActivationMeters(gpsSpeedKmh: Double?): Double {
+internal fun guidanceActivationMeters(
+    gpsSpeedKmh: Double?,
+    maneuver: NavigationInstruction.Maneuver,
+): Double {
     if (gpsSpeedKmh == null || !gpsSpeedKmh.isFinite() || gpsSpeedKmh <= 1.0) {
         return GUIDANCE_DEFAULT_METERS
     }
-    val metersPerSecond = gpsSpeedKmh / 3.6
-    return (metersPerSecond * guidanceLeadSeconds(gpsSpeedKmh))
+
+    val profile = guidanceProfile(maneuver)
+    val currentMps = gpsSpeedKmh / 3.6
+    val targetMps = minOf(currentMps, profile.targetSpeedKmh / 3.6)
+    val projectedAverageMps = (currentMps + targetMps) / 2.0
+    return (projectedAverageMps * profile.leadSeconds)
         .coerceIn(GUIDANCE_MIN_METERS, GUIDANCE_MAX_METERS)
 }
 
