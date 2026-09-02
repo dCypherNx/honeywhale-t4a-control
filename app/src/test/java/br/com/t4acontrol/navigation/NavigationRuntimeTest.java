@@ -21,13 +21,44 @@ public final class NavigationRuntimeTest {
   }
 
   @Test public void activeRouteAdvancesFromExistingLocationStream() {
+    Route route = route();
+    NavigationRuntime runtime = NavigationRuntime.get();
+    runtime.setRoute(route);
+    runtime.onLocation(location(-23.5500, -46.6300, 1L));
+
+    assertSame(route, runtime.route());
+    assertEquals(NavigationState.Status.NAVIGATING, runtime.state().status);
+    assertSame(route.legs.get(0).instructions.get(0), runtime.state().instruction);
+  }
+
+  @Test public void pausedNavigationIgnoresLocationUntilExplicitResume() {
+    Route route = route();
+    NavigationRuntime runtime = NavigationRuntime.get();
+    runtime.setRoute(route);
+    runtime.onLocation(location(-23.5500, -46.6300, 1L));
+    NavigationInstruction turn = runtime.state().instruction;
+
+    runtime.pause();
+    assertEquals(NavigationState.Status.PAUSED, runtime.state().status);
+    assertSame(turn, runtime.state().instruction);
+
+    runtime.onLocation(location(-23.5510, -46.6310, 2L));
+    assertEquals(NavigationState.Status.PAUSED, runtime.state().status);
+    assertSame(turn, runtime.state().instruction);
+
+    runtime.resume();
+    assertEquals(NavigationState.Status.NAVIGATING, runtime.state().status);
+    assertSame(turn, runtime.state().instruction);
+  }
+
+  private static Route route() {
     Waypoint origin = new Waypoint("o", "origin", -23.5500, -46.6300, Waypoint.Role.ORIGIN);
     Waypoint destination = new Waypoint("d", "destination", -23.5510, -46.6310, Waypoint.Role.DESTINATION);
     NavigationInstruction turn = new NavigationInstruction(
         "turn", NavigationInstruction.Maneuver.TURN_RIGHT, "turn", -23.5505, -46.6305, 75.0, 50.0);
     NavigationInstruction arrive = new NavigationInstruction(
         "arrive", NavigationInstruction.Maneuver.ARRIVE, "arrive", -23.5510, -46.6310, 150.0, 0.0);
-    Route route = new Route(
+    return new Route(
         "route", "test", "ref", RoutingProfile.BICYCLE,
         Arrays.asList(origin, destination),
         Arrays.asList(new RouteLeg(
@@ -38,13 +69,9 @@ public final class NavigationRuntimeTest {
                 new GeoPoint(-23.5500, -46.6300),
                 new GeoPoint(-23.5505, -46.6305),
                 new GeoPoint(-23.5510, -46.6310)))));
+  }
 
-    NavigationRuntime runtime = NavigationRuntime.get();
-    runtime.setRoute(route);
-    runtime.onLocation(new LocationSnapshot(-23.5500, -46.6300, 5.0, 1L, 5.0, 90.0, null));
-
-    assertSame(route, runtime.route());
-    assertEquals(NavigationState.Status.NAVIGATING, runtime.state().status);
-    assertSame(turn, runtime.state().instruction);
+  private static LocationSnapshot location(double latitude, double longitude, long timestamp) {
+    return new LocationSnapshot(latitude, longitude, 5.0, timestamp, 5.0, 90.0, null);
   }
 }
