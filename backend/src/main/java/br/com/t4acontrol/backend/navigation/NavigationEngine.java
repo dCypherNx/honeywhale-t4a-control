@@ -9,6 +9,8 @@ public final class NavigationEngine {
   private static final double DEFAULT_REACHED_THRESHOLD_METERS = 25.0;
   private static final double DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS = 35.0;
   private static final double MAX_ACCURACY_MARGIN_METERS = 25.0;
+  private static final double MANEUVER_PASS_THRESHOLD_METERS = 8.0;
+  private static final double MANEUVER_FALLBACK_THRESHOLD_METERS = 8.0;
   private final double reachedThresholdMeters;
   private final double offRouteBaseThresholdMeters;
 
@@ -36,7 +38,7 @@ public final class NavigationEngine {
     }
 
     double distance = distanceToInstruction(cursor.instruction, progress, location);
-    if (distance <= reachedThresholdMeters) {
+    if (instructionCompleted(cursor.instruction, progress, distance)) {
       if (cursor.instruction.maneuver == NavigationInstruction.Maneuver.ARRIVE) {
         if (cursor.legIndex >= route.legs.size() - 1) {
           return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
@@ -70,6 +72,25 @@ public final class NavigationEngine {
           distanceToInstruction(next.instruction, nextProgress, location));
     }
     return NavigationState.of(NavigationState.Status.NAVIGATING, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+  }
+
+  /**
+   * Arrival/waypoint proximity and maneuver completion are intentionally different concepts.
+   * A turn must remain visible while approaching it and until the rider has actually passed the
+   * maneuver point; using the 25 m waypoint radius for turns made guidance disappear too early.
+   */
+  private boolean instructionCompleted(NavigationInstruction instruction, Progress progress, double distance) {
+    if (instruction.maneuver == NavigationInstruction.Maneuver.ARRIVE
+        || instruction.maneuver == NavigationInstruction.Maneuver.WAYPOINT) {
+      return distance <= reachedThresholdMeters;
+    }
+    if (instruction.maneuver == NavigationInstruction.Maneuver.START) {
+      return distance <= reachedThresholdMeters;
+    }
+    if (progress != null && Double.isFinite(instruction.routeOffsetMeters)) {
+      return progress.offsetMeters >= instruction.routeOffsetMeters + MANEUVER_PASS_THRESHOLD_METERS;
+    }
+    return distance <= MANEUVER_FALLBACK_THRESHOLD_METERS;
   }
 
   /** Base route corridor plus a bounded GPS uncertainty margin. Accuracy 0 is unknown in Android. */
