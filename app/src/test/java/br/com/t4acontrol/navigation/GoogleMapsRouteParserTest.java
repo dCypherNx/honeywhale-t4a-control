@@ -62,7 +62,7 @@ public class GoogleMapsRouteParserTest {
 
   @Test public void acceptsBrazilianGoogleMapsHost() throws Exception {
     Route route = new GoogleMapsRouteParser().parse(
-        "https://www.google.com.br/maps/dir/-23.6,-46.6/-23.7,-46.7/data=!4m2!3e1");
+        "https://www.google.com.br/maps/dir/-23.6,-46.6/-23.7,-46.7?api=1&travelmode=bicycling");
 
     assertEquals(RoutingProfile.BICYCLE, route.routingProfile);
     assertEquals(2, route.waypoints.size());
