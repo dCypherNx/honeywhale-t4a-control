@@ -38,8 +38,28 @@ public final class NavigationEngine {
     double distance = distanceToInstruction(cursor.instruction, progress, location);
     if (distance <= reachedThresholdMeters) {
       if (cursor.instruction.maneuver == NavigationInstruction.Maneuver.ARRIVE) {
-        return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+        if (cursor.legIndex >= route.legs.size() - 1) {
+          return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+        }
+
+        // OSRM ends every leg with ARRIVE. Intermediate arrivals are VIA stops, not the final
+        // destination. Advance strictly to the next leg so nearby later geometry cannot skip the
+        // route order (important for loop-shaped routes whose destination is near the origin).
+        Cursor nextLeg = cursorAtOrAfter(route, cursor.legIndex + 1, 0);
+        if (nextLeg == null) {
+          return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+        }
+        RouteLeg nextRouteLeg = route.legs.get(nextLeg.legIndex);
+        Progress nextProgress = project(nextRouteLeg.geometry, location.latitude, location.longitude);
+        return NavigationState.of(
+            NavigationState.Status.WAYPOINT_REACHED,
+            route,
+            nextLeg.legIndex,
+            nextLeg.instructionIndex,
+            nextLeg.instruction,
+            distanceToInstruction(nextLeg.instruction, nextProgress, location));
       }
+
       Cursor next = nextCursor(route, cursor.legIndex, cursor.instructionIndex);
       if (next == null) return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
       NavigationState.Status status = cursor.instruction.maneuver == NavigationInstruction.Maneuver.WAYPOINT
