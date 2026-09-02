@@ -7,15 +7,17 @@ import java.util.Objects;
 /** Provider-neutral navigation progress engine using route geometry when available. */
 public final class NavigationEngine {
   private static final double DEFAULT_REACHED_THRESHOLD_METERS = 25.0;
-  private static final double DEFAULT_OFF_ROUTE_THRESHOLD_METERS = 60.0;
+  private static final double DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS = 35.0;
+  private static final double MAX_ACCURACY_MARGIN_METERS = 25.0;
   private final double reachedThresholdMeters;
-  private final double offRouteThresholdMeters;
+  private final double offRouteBaseThresholdMeters;
 
-  public NavigationEngine() { this(DEFAULT_REACHED_THRESHOLD_METERS, DEFAULT_OFF_ROUTE_THRESHOLD_METERS); }
-  public NavigationEngine(double reachedThresholdMeters) { this(reachedThresholdMeters, DEFAULT_OFF_ROUTE_THRESHOLD_METERS); }
-  public NavigationEngine(double reachedThresholdMeters, double offRouteThresholdMeters) {
-    if (reachedThresholdMeters <= 0 || offRouteThresholdMeters <= 0) throw new IllegalArgumentException("navigation thresholds must be positive");
-    this.reachedThresholdMeters = reachedThresholdMeters; this.offRouteThresholdMeters = offRouteThresholdMeters;
+  public NavigationEngine() { this(DEFAULT_REACHED_THRESHOLD_METERS, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS); }
+  public NavigationEngine(double reachedThresholdMeters) { this(reachedThresholdMeters, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS); }
+  public NavigationEngine(double reachedThresholdMeters, double offRouteBaseThresholdMeters) {
+    if (reachedThresholdMeters <= 0 || offRouteBaseThresholdMeters <= 0) throw new IllegalArgumentException("navigation thresholds must be positive");
+    this.reachedThresholdMeters = reachedThresholdMeters;
+    this.offRouteBaseThresholdMeters = offRouteBaseThresholdMeters;
   }
 
   public NavigationState update(Route route, NavigationState previous, LocationSnapshot location) {
@@ -28,7 +30,8 @@ public final class NavigationEngine {
 
     RouteLeg leg = route.legs.get(cursor.legIndex);
     Progress progress = project(leg.geometry, location.latitude, location.longitude);
-    if (progress != null && progress.distanceFromRouteMeters > offRouteThresholdMeters) {
+    double offRouteThreshold = effectiveOffRouteThreshold(offRouteBaseThresholdMeters, location.accuracyMeters);
+    if (progress != null && progress.distanceFromRouteMeters > offRouteThreshold) {
       return NavigationState.of(NavigationState.Status.OFF_ROUTE, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, null);
     }
 
@@ -47,6 +50,14 @@ public final class NavigationEngine {
           distanceToInstruction(next.instruction, nextProgress, location));
     }
     return NavigationState.of(NavigationState.Status.NAVIGATING, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+  }
+
+  /** Base route corridor plus a bounded GPS uncertainty margin. Accuracy 0 is unknown in Android. */
+  static double effectiveOffRouteThreshold(double baseThresholdMeters, double accuracyMeters) {
+    double margin = (!Double.isFinite(accuracyMeters) || accuracyMeters <= 0.0)
+        ? MAX_ACCURACY_MARGIN_METERS
+        : Math.min(accuracyMeters, MAX_ACCURACY_MARGIN_METERS);
+    return baseThresholdMeters + margin;
   }
 
   private static double distanceToInstruction(NavigationInstruction instruction, Progress progress, LocationSnapshot location) {
