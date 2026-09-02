@@ -32,6 +32,7 @@ import br.com.t4acontrol.ui.diagnostics.DashboardEvents
 import br.com.t4acontrol.ui.diagnostics.RawLogCard
 import br.com.t4acontrol.ui.login.LoginScreen
 import br.com.t4acontrol.ui.pairing.PairingScreen
+import br.com.t4acontrol.ui.settings.NavigationSettingsCard
 import br.com.t4acontrol.ui.settings.SettingsScreen
 import java.util.Locale
 
@@ -80,12 +81,16 @@ internal fun T4AApp(
                     return@Column
                 }
                 if (settings) {
+                    NavigationSettingsCard(
+                        foreground = foreground,
+                        waypointsVisible = navigationWaypointsVisible,
+                        actions = actions,
+                    )
                     SettingsScreen(
                         current = current,
                         foreground = foreground,
                         keepScreenOn = keepScreenOn,
                         themeMode = themeMode,
-                        navigationWaypointsVisible = navigationWaypointsVisible,
                         actions = actions,
                     )
                     RawLogCard(rawHistory, rawLogFilter, foreground, actions)
