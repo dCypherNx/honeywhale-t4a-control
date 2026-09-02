@@ -41,7 +41,7 @@ public class GoogleMapsRouteReferenceResolverTest {
     String html = "route=\\\"https://www.google.com/maps/dir/A/B/data!3d1\\u0026foo=bar\\\"";
 
     assertEquals(
-        "https://www.google.com/maps/dir/A/B/data!3d1&foo=bar\\",
+        "https://www.google.com/maps/dir/A/B/data!3d1&foo=bar",
         GoogleMapsRouteReferenceResolver.extractRedirectTarget(html));
   }
 }
