@@ -96,6 +96,13 @@ public class NavigationEngineTest {
     assertEquals(NavigationState.Status.POSITION_UNAVAILABLE, state.status);
   }
 
+  @Test public void offRouteThresholdIncludesBoundedAccuracyMargin() {
+    assertEquals(40.0, NavigationEngine.effectiveOffRouteThreshold(35.0, 5.0), 0.001);
+    assertEquals(60.0, NavigationEngine.effectiveOffRouteThreshold(35.0, 25.0), 0.001);
+    assertEquals(60.0, NavigationEngine.effectiveOffRouteThreshold(35.0, 0.0), 0.001);
+    assertEquals(60.0, NavigationEngine.effectiveOffRouteThreshold(35.0, 80.0), 0.001);
+  }
+
   private static Waypoint waypoint(String id, double lat, double lon, Waypoint.Role role) {
     return new Waypoint(id, id, lat, lon, role);
   }
