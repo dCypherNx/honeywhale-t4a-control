@@ -20,6 +20,7 @@ public final class NavigationRuntime {
   }
 
   private static final NavigationRuntime INSTANCE = new NavigationRuntime();
+  private static final long NAVIGATION_UPDATE_INTERVAL_MS = 2_000L;
 
   public static NavigationRuntime get() {
     return INSTANCE;
@@ -35,6 +36,8 @@ public final class NavigationRuntime {
   private volatile NavigationState state = NavigationState.noRoute();
   private volatile NavigationState pausedFromState;
   private volatile String lastLoggedStateSignature = "";
+  private volatile long lastNavigationLocationTimestampMs = Long.MIN_VALUE;
+  private volatile Double guidanceSpeedKmh;
 
   private NavigationRuntime() {}
 
@@ -46,6 +49,11 @@ public final class NavigationRuntime {
     return state;
   }
 
+  /** Last GPS speed accepted by the navigation cadence, used only to time visual guidance. */
+  public Double guidanceSpeedKmh() {
+    return guidanceSpeedKmh;
+  }
+
   /** A newly shared route is immediately active; READY lasts only until the next GPS fix. */
   public void setRoute(Route value) {
     route = value;
@@ -53,6 +61,8 @@ public final class NavigationRuntime {
     state = value == null ? NavigationState.noRoute() : NavigationState.ready(value);
     deviationPolicy.reset();
     lastLoggedStateSignature = "";
+    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
+    guidanceSpeedKmh = null;
     notifyListeners();
     logStateIfChanged(state);
   }
@@ -63,6 +73,8 @@ public final class NavigationRuntime {
     state = value == null ? NavigationState.noRoute() : NavigationState.paused(value, pausedFromState);
     deviationPolicy.reset();
     lastLoggedStateSignature = "";
+    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
+    guidanceSpeedKmh = null;
     notifyListeners();
     logStateIfChanged(state);
     if (value != null) rawLog("[NAV] SESSION RESTORED paused route=" + value.id);
@@ -89,6 +101,7 @@ public final class NavigationRuntime {
     state = resumeFrom == null ? NavigationState.ready(active) : resumeFrom;
     pausedFromState = null;
     deviationPolicy.reset();
+    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     notifyListeners();
     logStateIfChanged(state);
     rawLog("[NAV] SESSION RESUMED route=" + active.id);
@@ -105,6 +118,8 @@ public final class NavigationRuntime {
     recalculationRunning.set(false);
     restoreStarted.set(true);
     lastLoggedStateSignature = "";
+    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
+    guidanceSpeedKmh = null;
     notifyListeners();
     if (active != null) rawLog("[NAV] SESSION ENDED route=" + active.id);
   }
@@ -130,34 +145,57 @@ public final class NavigationRuntime {
   /** Called by the existing AndroidLocationProvider; no second GPS source is created. */
   public void onLocation(LocationSnapshot snapshot) {
     Route active = route;
-    if (active == null || state.status == NavigationState.Status.PAUSED) return;
+    if (active == null || state.status == NavigationState.Status.PAUSED || snapshot == null) return;
+
+    // Navigation intentionally runs at a stable 2 s cadence. Telemetry continues receiving every
+    // location fix independently; this throttle only controls route projection/guidance churn.
+    long timestamp = snapshot.timestampMs;
+    if (timestamp > 0L && lastNavigationLocationTimestampMs != Long.MIN_VALUE
+        && timestamp >= lastNavigationLocationTimestampMs
+        && timestamp - lastNavigationLocationTimestampMs < NAVIGATION_UPDATE_INTERVAL_MS) {
+      return;
+    }
+    if (timestamp > 0L) lastNavigationLocationTimestampMs = timestamp;
+    guidanceSpeedKmh = snapshot.gpsSpeedKmh;
 
     // Keep RECALCULATING stable while network planning is in flight. The location provider keeps
     // running normally; only navigation-state projection pauses until the replacement is known.
     if (recalculationRunning.get()) return;
 
     NavigationState next = engine.update(active, state, snapshot);
+
+    // OFF_ROUTE is evidence, not a user-facing step. Keep the last useful maneuver visible while
+    // the deviation policy rejects GPS noise; when deviation is confirmed, jump directly to
+    // RECALCULATING. The internal OFF_ROUTE transition remains in raw logs for diagnosis.
+    if (next.status == NavigationState.Status.OFF_ROUTE) {
+      logStateIfChanged(next);
+      if (!deviationPolicy.shouldRecalculate(next, snapshot)) return;
+      if (!recalculationRunning.compareAndSet(false, true)) return;
+
+      state = NavigationState.recalculating(active, next);
+      notifyListeners();
+      logStateIfChanged(state);
+      rawLog("[NAV] RECALC START route=" + active.id
+          + " leg=" + next.legIndex
+          + " lat=" + snapshot.latitude
+          + " lon=" + snapshot.longitude
+          + " accuracy=" + snapshot.accuracyMeters);
+      startRecalculation(active, next, snapshot);
+      return;
+    }
+
     state = next;
     notifyListeners();
     logStateIfChanged(next);
+    deviationPolicy.shouldRecalculate(next, snapshot); // resets any previous deviation evidence
+  }
 
-    if (!deviationPolicy.shouldRecalculate(next, snapshot)) return;
-    if (!recalculationRunning.compareAndSet(false, true)) return;
-
-    state = NavigationState.recalculating(active, next);
-    notifyListeners();
-    logStateIfChanged(state);
-    rawLog("[NAV] RECALC START route=" + active.id
-        + " leg=" + next.legIndex
-        + " lat=" + snapshot.latitude
-        + " lon=" + snapshot.longitude
-        + " accuracy=" + snapshot.accuracyMeters);
-
+  private void startRecalculation(Route active, NavigationState offRouteState, LocationSnapshot snapshot) {
     new Thread(() -> {
       try {
         Route recalculated = routeRecalculator.recalculate(
             active,
-            next,
+            offRouteState,
             snapshot,
             new OsrmRoutePlanner());
         if (route == active && state.status != NavigationState.Status.PAUSED) {
@@ -169,7 +207,7 @@ public final class NavigationRuntime {
         }
       } catch (Exception error) {
         if (route == active && state.status != NavigationState.Status.PAUSED) {
-          state = next;
+          state = offRouteState;
           notifyListeners();
           logStateIfChanged(state);
         }
