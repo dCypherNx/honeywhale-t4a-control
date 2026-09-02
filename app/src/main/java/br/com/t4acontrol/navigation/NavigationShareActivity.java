@@ -7,31 +7,50 @@ import android.widget.Toast;
 import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.R;
 import br.com.t4acontrol.backend.navigation.Route;
+import java.util.ArrayList;
 
 /** Receives text/plain shares from Google Maps and imports them without touching T4A control flow. */
 public final class NavigationShareActivity extends Activity {
+  public static final String EXTRA_NAVIGATION_RAW_LOG =
+      "br.com.t4acontrol.navigation.EXTRA_NAVIGATION_RAW_LOG";
+
   @Override protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    ArrayList<String> trace = new ArrayList<>();
     String reference = sharedText(getIntent());
     if (reference == null) {
+      trace.add("[NAV] SHARE FAIL stage=EXTRACT message=no_route_url");
       Toast.makeText(this, R.string.navigation_share_invalid, Toast.LENGTH_LONG).show();
-      openMainAndFinish();
+      openMainAndFinish(trace);
       return;
     }
 
-    NavigationRouteImporter importer = new NavigationRouteImporter(getApplicationContext());
+    trace.add("[NAV] SHARE RECEIVED reference=" + reference);
+    NavigationRouteImporter importer =
+        new NavigationRouteImporter(
+            new GoogleMapsRouteReferenceResolver(),
+            new GoogleMapsRouteParser(),
+            new OsrmRoutePlanner(),
+            new SharedPreferencesRouteReferenceStore(getApplicationContext()),
+            trace::add);
     new Thread(() -> {
       try {
         Route route = importer.importReference(reference);
         NavigationRuntime.get().setRoute(route);
+        trace.add("[NAV] SHARE SUCCESS route=" + route.id);
         runOnUiThread(() -> {
           Toast.makeText(this, R.string.navigation_route_imported, Toast.LENGTH_LONG).show();
-          openMainAndFinish();
+          openMainAndFinish(trace);
         });
       } catch (NavigationRouteImporter.ImportException error) {
+        trace.add(
+            "[NAV] SHARE FAIL type="
+                + error.getClass().getSimpleName()
+                + " message="
+                + safeMessage(error));
         runOnUiThread(() -> {
           Toast.makeText(this, R.string.navigation_route_import_failed, Toast.LENGTH_LONG).show();
-          openMainAndFinish();
+          openMainAndFinish(trace);
         });
       }
     }, "navigation-route-import").start();
@@ -61,10 +80,17 @@ public final class NavigationShareActivity extends Activity {
     return value.substring(0, end);
   }
 
-  private void openMainAndFinish() {
+  private void openMainAndFinish(ArrayList<String> trace) {
     Intent main = new Intent(this, MainActivity.class)
-        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .putStringArrayListExtra(EXTRA_NAVIGATION_RAW_LOG, trace);
     startActivity(main);
     finish();
+  }
+
+  private static String safeMessage(Throwable error) {
+    String message = error.getMessage();
+    if (message == null || message.isBlank()) return "<none>";
+    return message.replace('\n', ' ').replace('\r', ' ');
   }
 }
