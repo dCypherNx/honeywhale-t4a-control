@@ -148,8 +148,8 @@ private fun ConsolidatedLockControl(state: T4ADashboardState, surface: Color, mu
         if (state.autoLockOn) {
             AutomaticBadge(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = (-4).dp, y = 4.dp),
+                    .align(Alignment.TopStart)
+                    .offset(x = 4.dp, y = 4.dp),
             )
         }
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -244,8 +244,8 @@ private fun ToggleTile(
         if (automaticBadge) {
             AutomaticBadge(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = (-4).dp, y = 4.dp),
+                    .align(Alignment.TopStart)
+                    .offset(x = 4.dp, y = 4.dp),
             )
         }
     }
