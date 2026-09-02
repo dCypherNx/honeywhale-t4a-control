@@ -48,7 +48,7 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     if (profile == null) throw new RoutePlanningException("Routing profile is required");
     try {
       List<Waypoint> points = resolveWaypoints(importedRoute.waypoints);
-      JSONObject response = getJson(buildRouteUrl(points, profile));
+      JSONObject response = getJson(buildRouteUrl(routingBase, points, profile));
       return parseResponse(importedRoute, points, response);
     } catch (IOException | JSONException ex) {
       throw new RoutePlanningException("Unable to compute route with OSRM", ex);
@@ -112,7 +112,7 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     }
   }
 
-  static String buildRouteUrl(List<Waypoint> waypoints, RoutingProfile profile)
+  static String buildRouteUrl(String routingBase, List<Waypoint> waypoints, RoutingProfile profile)
       throws RoutePlanningException {
     if (waypoints == null || waypoints.size() < 2) {
       throw new RoutePlanningException("Route requires origin and destination");
@@ -125,14 +125,9 @@ public final class OsrmRoutePlanner implements RoutePlanner {
       if (coordinates.length() > 0) coordinates.append(';');
       coordinates.append(waypoint.longitude).append(',').append(waypoint.latitude);
     }
-    return DEFAULT_ROUTING_BASE + "/" + graph(profile)
+    return routingBase + "/" + graph(profile)
         + "/route/v1/driving/" + coordinates
         + "?steps=true&overview=full&geometries=geojson";
-  }
-
-  private String buildRouteUrl(List<Waypoint> waypoints, RoutingProfile selected)
-      throws RoutePlanningException {
-    return buildRouteUrl(waypoints, selected).replace(DEFAULT_ROUTING_BASE, routingBase);
   }
 
   static String graph(RoutingProfile profile) throws RoutePlanningException {
