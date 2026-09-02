@@ -21,24 +21,22 @@ env:
   T4A_VERSION_CODE_OFFSET: '100000'
 
 jobs:
-  build-debug-apk:
-    name: Build debug APK
-    if: github.event_name == 'push' || inputs.backfill_run_id == ''
+  build-test-apk:
+    name: Build test APK
+    if: github.event_name == 'workflow_dispatch' && github.ref_name != 'master' && inputs.backfill_run_id == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Resolve CI version
+      - name: Resolve test version
         id: version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -76,58 +74,23 @@ jobs:
             stable_base="$(printf '%s\n%s\n' "${T4A_BOOTSTRAP_VERSION}" "${latest_tag_version}" | sort -V | tail -n 1)"
           fi
 
-          build_kind="feature"
-          bump_kind="none"
-          source_pr=""
-          source_branch="${GITHUB_REF_NAME}"
-          create_stable_tag="false"
-
-          if [[ "${GITHUB_REF_NAME}" == "master" ]]; then
-            build_kind="master"
-            source_branch="master"
-            current_stable_tag="$(git tag --points-at "${GITHUB_SHA}" | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
-            if [[ -n "${current_stable_tag}" ]]; then
-              version_name="${current_stable_tag}"
-            elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-              associated_prs="$(gh api -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls")"
-              source_pr="$(jq -r '[.[] | select(.merged_at != null and .base.ref == "master")] | sort_by(.merged_at) | last | .number // empty' <<< "${associated_prs}")"
-              if [[ -z "${source_pr}" ]]; then
-                echo 'A push to master must originate from a merged branch identifiable by GitHub or point at an existing stable SemVer tag.' >&2
-                exit 1
-              fi
-              pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${source_pr}")"
-              source_branch="$(jq -r '.head.ref' <<< "${pr_payload}")"
-              bump_kind="$(classify_branch "${source_branch}")"
-              version_name="$(bump_semver "${stable_base}" "${bump_kind}")"
-              create_stable_tag="true"
-            else
-              version_name="${stable_base}"
-            fi
-          else
-            bump_kind="$(classify_branch "${GITHUB_REF_NAME}")"
-            projected_version="$(bump_semver "${stable_base}" "${bump_kind}")"
-            version_name="${projected_version}-f${sequence}"
-          fi
+          bump_kind="$(classify_branch "${GITHUB_REF_NAME}")"
+          projected_version="$(bump_semver "${stable_base}" "${bump_kind}")"
+          version_name="${projected_version}-f${sequence}"
 
           echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
           echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
-          echo "T4A_BUILD_KIND=${build_kind}" >> "${GITHUB_ENV}"
-          echo "T4A_VERSION_BUMP=${bump_kind}" >> "${GITHUB_ENV}"
-          echo "T4A_SOURCE_PR=${source_pr}" >> "${GITHUB_ENV}"
-          echo "T4A_SOURCE_BRANCH=${source_branch}" >> "${GITHUB_ENV}"
+          echo "T4A_SOURCE_BRANCH=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
           echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
-          echo "create_stable_tag=${create_stable_tag}" >> "${GITHUB_OUTPUT}"
 
           echo "Stable base:   ${stable_base}"
           echo "Version name:  ${version_name}"
           echo "Version code:  ${version_code}"
-          echo "Build kind:    ${build_kind}"
           echo "Version bump:  ${bump_kind}"
-          echo "Source branch: ${source_branch}"
-          echo "Source PR:     ${source_pr:-n/a}"
+          echo "Source branch: ${GITHUB_REF_NAME}"
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -169,12 +132,6 @@ jobs:
           printf '%s' "${ANDROID_SIGNING_KEY_B64}" | base64 --decode > ci/signing/t4a-ci.keystore
           test -s ci/signing/t4a-ci.keystore
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
-
-      - name: Verify Tuya architecture boundary
-        run: ./gradlew --no-daemon :backend:verifyTuyaBoundary
-
       - name: Build debug APK
         env:
           ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
@@ -183,6 +140,7 @@ jobs:
           ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          chmod +x ./gradlew
           test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
           test -n "${ANDROID_SIGNING_KEY_ALIAS}"
           test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
@@ -190,34 +148,31 @@ jobs:
           test -n "${T4A_VERSION_CODE}"
           ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Stage debug APK
+      - name: Stage test APK
         shell: bash
         run: |
           set -euo pipefail
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -s "${APK}"
           mkdir -p dist release
-          cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}-debug-${GITHUB_SHA::7}.apk"
-          cp "${APK}" "release/RideDash-debug.apk"
-          cp "${APK}" "release/RideDash-${T4A_VERSION_NAME}.apk"
-          cp "${APK}" "release/RideDash-test.apk"
+          cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}-test-${GITHUB_SHA::7}.apk"
+          cp "${APK}" "release/RideDash-${T4A_VERSION_NAME}-test.apk"
 
-      - name: Upload debug APK artifact
+      - name: Upload test APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ridedash-${{ steps.version.outputs.version_name }}-${{ github.sha }}
+          name: ridedash-test-${{ steps.version.outputs.version_name }}-${{ github.sha }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish latest test APK
-        if: github.event_name == 'workflow_dispatch' && github.ref_name != 'master'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          asset='release/RideDash-test.apk'
+          asset="release/RideDash-${T4A_VERSION_NAME}-test.apk"
           test -s "${asset}"
           digest="$(sha256sum "${asset}" | awk '{print $1}')"
           gh release delete latest-test --cleanup-tag --yes || true
@@ -227,8 +182,175 @@ jobs:
             --prerelease \
             --notes "Latest physical-validation build. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), source branch ${T4A_SOURCE_BRANCH}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
 
+  build-release-apk:
+    name: Build release APK
+    if: github.event_name == 'push' && github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          classify_branch() {
+            local branch="$1"
+            case "${branch}" in
+              feature/*) printf '%s\n' 'minor' ;;
+              fix/*|bugfix/*|hotfix/*) printf '%s\n' 'patch' ;;
+              major/*|breaking/*) printf '%s\n' 'major' ;;
+              *)
+                echo "Branch '${branch}' does not encode a SemVer class." >&2
+                echo 'Use feature/*, fix|bugfix|hotfix/*, or major|breaking/*.' >&2
+                return 1
+                ;;
+            esac
+          }
+
+          bump_semver() {
+            local base="$1" kind="$2" major minor patch
+            IFS='.' read -r major minor patch <<< "${base}"
+            case "${kind}" in
+              patch) patch=$((patch + 1)) ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              *) echo "Unsupported version bump: ${kind}" >&2; return 1 ;;
+            esac
+            printf '%s.%s.%s\n' "${major}" "${minor}" "${patch}"
+          }
+
+          sequence="${GITHUB_RUN_NUMBER}"
+          version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
+          latest_tag_version="$(git tag --list 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
+          stable_base="${T4A_BOOTSTRAP_VERSION}"
+          if [[ -n "${latest_tag_version}" ]]; then
+            stable_base="$(printf '%s\n%s\n' "${T4A_BOOTSTRAP_VERSION}" "${latest_tag_version}" | sort -V | tail -n 1)"
+          fi
+
+          source_pr=""
+          source_branch="master"
+          create_stable_tag="false"
+          current_stable_tag="$(git tag --points-at "${GITHUB_SHA}" | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
+
+          if [[ -n "${current_stable_tag}" ]]; then
+            version_name="${current_stable_tag}"
+          else
+            associated_prs="$(gh api -H 'Accept: application/vnd.github+json' "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls")"
+            source_pr="$(jq -r '[.[] | select(.merged_at != null and .base.ref == "master")] | sort_by(.merged_at) | last | .number // empty' <<< "${associated_prs}")"
+            if [[ -z "${source_pr}" ]]; then
+              echo 'A push to master must originate from a merged branch identifiable by GitHub or point at an existing stable SemVer tag.' >&2
+              exit 1
+            fi
+            pr_payload="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${source_pr}")"
+            source_branch="$(jq -r '.head.ref' <<< "${pr_payload}")"
+            bump_kind="$(classify_branch "${source_branch}")"
+            version_name="$(bump_semver "${stable_base}" "${bump_kind}")"
+            create_stable_tag="true"
+          fi
+
+          echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
+          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
+          echo "T4A_SOURCE_PR=${source_pr}" >> "${GITHUB_ENV}"
+          echo "T4A_SOURCE_BRANCH=${source_branch}" >> "${GITHUB_ENV}"
+          echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
+          echo "create_stable_tag=${create_stable_tag}" >> "${GITHUB_OUTPUT}"
+
+          echo "Stable base:   ${stable_base}"
+          echo "Version name:  ${version_name}"
+          echo "Version code:  ${version_code}"
+          echo "Source branch: ${source_branch}"
+          echo "Source PR:     ${source_pr:-n/a}"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore private Tuya build inputs
+        shell: pwsh
+        env:
+          TUYA_APP_KEY: ${{ secrets.TUYA_APP_KEY }}
+          TUYA_APP_SECRET: ${{ secrets.TUYA_APP_SECRET }}
+          TUYA_BUILD_FILES_PASSWORD: ${{ secrets.TUYA_BUILD_FILES_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_KEY)) { throw 'Missing required GitHub Secret: TUYA_APP_KEY' }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_APP_SECRET)) { throw 'Missing required GitHub Secret: TUYA_APP_SECRET' }
+          if ([string]::IsNullOrWhiteSpace($env:TUYA_BUILD_FILES_PASSWORD)) { throw 'Missing required GitHub Secret: TUYA_BUILD_FILES_PASSWORD' }
+          if (-not (Test-Path -LiteralPath 'ci/tuya-build-inputs.enc' -PathType Leaf)) { throw 'Missing encrypted Tuya build bundle: ci/tuya-build-inputs.enc' }
+
+          @"
+          TUYA_APP_KEY=$env:TUYA_APP_KEY
+          TUYA_APP_SECRET=$env:TUYA_APP_SECRET
+          TUYA_SDK_VERSION=7.8.0
+          "@ | Set-Content -LiteralPath 'tuya.properties' -Encoding utf8NoBOM
+
+          ./scripts/TuyaBuildBundle.ps1 -Decrypt
+          if (-not (Test-Path -LiteralPath 'app/libs/security-algorithm-1.0.0-beta.aar' -PathType Leaf)) { throw 'Tuya security AAR was not restored.' }
+          if (-not (Test-Path -LiteralPath 'app/src/main/assets/t_s.bmp' -PathType Leaf)) { throw 'Tuya t_s.bmp was not restored.' }
+
+      - name: Restore persistent Android signing key
+        shell: bash
+        env:
+          ANDROID_SIGNING_KEY_B64: ${{ secrets.ANDROID_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_SIGNING_KEY_B64}"
+          mkdir -p ci/signing
+          printf '%s' "${ANDROID_SIGNING_KEY_B64}" | base64 --decode > ci/signing/t4a-ci.keystore
+          test -s ci/signing/t4a-ci.keystore
+
+      - name: Build release APK
+        env:
+          ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
+          test -n "${ANDROID_SIGNING_KEY_ALIAS}"
+          test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
+          test -n "${T4A_VERSION_NAME}"
+          test -n "${T4A_VERSION_CODE}"
+          ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Stage release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/release/app-release.apk'
+          test -s "${APK}"
+          mkdir -p dist release
+          cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}.apk"
+          cp "${APK}" "release/RideDash-${T4A_VERSION_NAME}.apk"
+          cp "${APK}" "release/RideDash.apk"
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ridedash-${{ steps.version.outputs.version_name }}-${{ github.sha }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Persist stable SemVer tag
-        if: github.ref_name == 'master' && steps.version.outputs.create_stable_tag == 'true'
+        if: steps.version.outputs.create_stable_tag == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -246,7 +368,6 @@ jobs:
           fi
 
       - name: Publish permanent stable Release
-        if: github.ref_name == 'master'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,11 +385,13 @@ jobs:
           if gh release view "${tag}" >/dev/null 2>&1; then
             echo "Stable Release ${tag} already exists; preserving it unchanged."
           else
-            gh release create "${tag}" "${asset}" --target "${GITHUB_SHA}" --title "RideDash ${version}" --notes "Stable RideDash ${version}. Build ${GITHUB_RUN_ID}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
+            gh release create "${tag}" "${asset}" \
+              --target "${GITHUB_SHA}" \
+              --title "RideDash ${version}" \
+              --notes "Stable RideDash ${version} release build. Build ${GITHUB_RUN_ID}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
           fi
 
-      - name: Publish latest stable debug APK shortcut
-        if: github.ref_name == 'master'
+      - name: Publish latest release APK shortcut
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -277,11 +400,14 @@ jobs:
           git fetch --tags --force
           tag="$(git tag --points-at "${GITHUB_SHA}" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
           if [[ -z "${tag}" ]]; then
-            echo 'No stable tag points at this master commit; latest-debug remains unchanged.'
+            echo 'No stable tag points at this master commit; latest remains unchanged.'
             exit 0
           fi
-          gh release delete latest-debug --cleanup-tag --yes || true
-          gh release create latest-debug release/RideDash-debug.apk --target "${GITHUB_SHA}" --title "RideDash ${T4A_VERSION_NAME} (debug)" --notes "Latest stable debug shortcut. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, commit ${GITHUB_SHA}."
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest release/RideDash.apk \
+            --target "${GITHUB_SHA}" \
+            --title "RideDash ${T4A_VERSION_NAME} (latest)" \
+            --notes "Latest stable release shortcut. Version ${T4A_VERSION_NAME} (code ${T4A_VERSION_CODE}), source branch ${T4A_SOURCE_BRANCH}, source PR ${T4A_SOURCE_PR:-n/a}, commit ${GITHUB_SHA}."
 
   backfill-stable-release:
     name: Backfill stable Release
@@ -310,7 +436,7 @@ jobs:
           echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Check out source commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.source.outputs.head_sha }}
           fetch-depth: 0
@@ -356,4 +482,7 @@ jobs:
           asset="release/RideDash-${VERSION}.apk"
           cp "${apks[0]}" "${asset}"
           digest="$(sha256sum "${asset}" | awk '{print $1}')"
-          gh release create "${TAG}" "${asset}" --target "${SOURCE_SHA}" --title "RideDash ${VERSION}" --notes "Stable RideDash ${VERSION}. Exact APK artifact from Build APK run ${SOURCE_RUN_ID}, commit ${SOURCE_SHA}. SHA-256: ${digest}."
+          gh release create "${TAG}" "${asset}" \
+            --target "${SOURCE_SHA}" \
+            --title "RideDash ${VERSION}" \
+            --notes "Stable RideDash ${VERSION}. Exact release APK artifact from Build APK run ${SOURCE_RUN_ID}, commit ${SOURCE_SHA}. SHA-256: ${digest}."
