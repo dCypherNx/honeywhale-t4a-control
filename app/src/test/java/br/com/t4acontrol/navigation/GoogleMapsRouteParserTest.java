@@ -47,6 +47,22 @@ public class GoogleMapsRouteParserTest {
         destination.label);
   }
 
+  @Test public void stopsAtDataMetadataWhenThereIsNoViewportSegment() throws Exception {
+    String reference =
+        "https://www.google.com/maps/dir/-23.6377058,-46.6588125/-23.6133157,-46.6883815/"
+            + "Av.+Brig.+Faria+Lima,+4400+-+Itaim+Bibi/"
+            + "data=!4m14!4m13!1m1!4e1!1m1!4e1!1m5!1m4!1s0x94ce574fd39e5283:0xc15a5a1d135bcabf!8m2!3d-23.5949653!4d-46.6805564!2m1!11b1!3e1"
+            + "?utm_source=mstt_0";
+
+    Route route = new GoogleMapsRouteParser().parse(reference);
+
+    assertEquals(RoutingProfile.BICYCLE, route.routingProfile);
+    assertEquals(3, route.waypoints.size());
+    assertEquals(2, route.legs.size());
+    assertEquals(Waypoint.Role.DESTINATION, route.waypoints.get(2).role);
+    assertEquals("Av. Brig. Faria Lima, 4400 - Itaim Bibi", route.waypoints.get(2).label);
+  }
+
   @Test public void readsOfficialTravelModeParameter() throws Exception {
     Route car = new GoogleMapsRouteParser().parse(
         "https://www.google.com/maps/dir/A/B?api=1&travelmode=driving");
