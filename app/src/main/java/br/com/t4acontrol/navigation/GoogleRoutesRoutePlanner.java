@@ -29,9 +29,13 @@ public final class GoogleRoutesRoutePlanner implements RoutePlanner {
   private static final int READ_TIMEOUT_MS = 12_000;
 
   private final String apiKey;
+  private final String androidPackage;
+  private final String androidCertSha1;
 
-  public GoogleRoutesRoutePlanner(String apiKey) {
-    this.apiKey = apiKey == null ? "" : apiKey.trim();
+  public GoogleRoutesRoutePlanner(String apiKey, String androidPackage, String androidCertSha1) {
+    this.apiKey = normalize(apiKey);
+    this.androidPackage = normalize(androidPackage);
+    this.androidCertSha1 = normalize(androidCertSha1);
   }
 
   @Override
@@ -41,6 +45,9 @@ public final class GoogleRoutesRoutePlanner implements RoutePlanner {
     }
     if (apiKey.isEmpty()) {
       throw new RoutePlanningException("Google Routes API key is not configured");
+    }
+    if (androidPackage.isEmpty() || androidCertSha1.isEmpty()) {
+      throw new RoutePlanningException("Android identity for Google Routes API is not configured");
     }
 
     HttpURLConnection connection = null;
@@ -53,6 +60,8 @@ public final class GoogleRoutesRoutePlanner implements RoutePlanner {
       connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
       connection.setRequestProperty("X-Goog-Api-Key", apiKey);
       connection.setRequestProperty("X-Goog-FieldMask", FIELD_MASK);
+      connection.setRequestProperty("X-Android-Package", androidPackage);
+      connection.setRequestProperty("X-Android-Cert", androidCertSha1);
 
       byte[] request = buildRequest(importedRoute).toString().getBytes(StandardCharsets.UTF_8);
       connection.setFixedLengthStreamingMode(request.length);
@@ -193,7 +202,8 @@ public final class GoogleRoutesRoutePlanner implements RoutePlanner {
     if (maneuver.contains("RIGHT")) {
       return NavigationInstruction.Maneuver.TURN_RIGHT;
     }
-    if (maneuver.equals("STRAIGHT") || maneuver.equals("NAME_CHANGE") || maneuver.equals("KEEP_STRAIGHT")) {
+    if (maneuver.equals("STRAIGHT") || maneuver.equals("NAME_CHANGE")
+        || maneuver.equals("KEEP_STRAIGHT")) {
       return NavigationInstruction.Maneuver.STRAIGHT;
     }
     if (maneuver.equals("DEPART")) {
@@ -237,5 +247,9 @@ public final class GoogleRoutesRoutePlanner implements RoutePlanner {
       // Keep HTTP status as the stable error signal.
     }
     return "";
+  }
+
+  private static String normalize(String value) {
+    return value == null ? "" : value.trim();
   }
 }
