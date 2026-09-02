@@ -11,9 +11,11 @@ public final class RouteLeg {
   public final Waypoint to;
   public final List<NavigationInstruction> instructions;
   public final List<GeoPoint> geometry;
+  /** Optional fine-grained metrics supplied by the route provider. */
+  public final RouteLegMetadata metadata;
 
   public RouteLeg(Waypoint from, Waypoint to, List<NavigationInstruction> instructions) {
-    this(from, to, instructions, Collections.<GeoPoint>emptyList());
+    this(from, to, instructions, Collections.<GeoPoint>emptyList(), null);
   }
 
   public RouteLeg(
@@ -21,11 +23,21 @@ public final class RouteLeg {
       Waypoint to,
       List<NavigationInstruction> instructions,
       List<GeoPoint> geometry) {
+    this(from, to, instructions, geometry, null);
+  }
+
+  public RouteLeg(
+      Waypoint from,
+      Waypoint to,
+      List<NavigationInstruction> instructions,
+      List<GeoPoint> geometry,
+      RouteLegMetadata metadata) {
     this.from = Objects.requireNonNull(from, "from");
     this.to = Objects.requireNonNull(to, "to");
     this.instructions = Collections.unmodifiableList(new ArrayList<>(
         Objects.requireNonNull(instructions, "instructions")));
     this.geometry = Collections.unmodifiableList(new ArrayList<>(
         Objects.requireNonNull(geometry, "geometry")));
+    this.metadata = metadata;
   }
 }
