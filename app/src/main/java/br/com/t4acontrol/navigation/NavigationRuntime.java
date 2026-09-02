@@ -33,6 +33,7 @@ public final class NavigationRuntime {
   private final AtomicBoolean recalculationRunning = new AtomicBoolean();
   private volatile Route route;
   private volatile NavigationState state = NavigationState.noRoute();
+  private volatile String lastLoggedStateSignature = "";
 
   private NavigationRuntime() {}
 
@@ -48,7 +49,9 @@ public final class NavigationRuntime {
     route = value;
     state = value == null ? NavigationState.noRoute() : NavigationState.ready(value);
     deviationPolicy.reset();
+    lastLoggedStateSignature = "";
     notifyListeners();
+    logStateIfChanged(state);
   }
 
   public void clear() {
@@ -81,12 +84,14 @@ public final class NavigationRuntime {
     NavigationState next = engine.update(active, state, snapshot);
     state = next;
     notifyListeners();
+    logStateIfChanged(next);
 
     if (!deviationPolicy.shouldRecalculate(next, snapshot)) return;
     if (!recalculationRunning.compareAndSet(false, true)) return;
 
     state = NavigationState.recalculating(active, next);
     notifyListeners();
+    logStateIfChanged(state);
     rawLog("[NAV] RECALC START route=" + active.id
         + " leg=" + next.legIndex
         + " lat=" + snapshot.latitude
@@ -114,6 +119,7 @@ public final class NavigationRuntime {
         if (route == active) {
           state = next;
           notifyListeners();
+          logStateIfChanged(state);
         }
         rawLog("[NAV] RECALC FAIL route=" + active.id
             + " type=" + error.getClass().getSimpleName()
@@ -138,6 +144,21 @@ public final class NavigationRuntime {
     Route currentRoute = route;
     NavigationState currentState = state;
     for (Listener listener : listeners) listener.onNavigationChanged(currentRoute, currentState);
+  }
+
+  private void logStateIfChanged(NavigationState value) {
+    if (value == null) return;
+    String instructionId = value.instruction == null ? "none" : value.instruction.id;
+    String maneuver = value.instruction == null ? "none" : value.instruction.maneuver.name();
+    String signature = value.status + "|" + value.legIndex + "|" + value.instructionIndex + "|" + instructionId;
+    if (signature.equals(lastLoggedStateSignature)) return;
+    lastLoggedStateSignature = signature;
+    rawLog("[NAV] STATE status=" + value.status
+        + " leg=" + value.legIndex
+        + " instruction=" + value.instructionIndex
+        + " maneuver=" + maneuver
+        + " id=" + instructionId
+        + " distance=" + String.valueOf(value.distanceToInstructionMeters));
   }
 
   private void rawLog(String value) {
