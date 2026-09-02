@@ -1,11 +1,13 @@
 package br.com.t4acontrol.navigation;
 
+import android.content.Context;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
 import br.com.t4acontrol.backend.navigation.NavigationEngine;
 import br.com.t4acontrol.backend.navigation.NavigationState;
 import br.com.t4acontrol.backend.navigation.Route;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Process-local holder for the active planned route and navigation progress. */
 public final class NavigationRuntime {
@@ -21,6 +23,7 @@ public final class NavigationRuntime {
 
   private final NavigationEngine engine = new NavigationEngine();
   private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
+  private final AtomicBoolean restoreStarted = new AtomicBoolean();
   private volatile Route route;
   private volatile NavigationState state = NavigationState.noRoute();
 
@@ -42,6 +45,20 @@ public final class NavigationRuntime {
 
   public void clear() {
     setRoute(null);
+  }
+
+  /** Restores the canonical shared reference once per process and replans it off the UI thread. */
+  public void ensureRestored(Context context) {
+    if (route != null || !restoreStarted.compareAndSet(false, true)) return;
+    Context applicationContext = context.getApplicationContext();
+    new Thread(() -> {
+      try {
+        Route restored = new NavigationRouteImporter(applicationContext).restore();
+        if (restored != null && route == null) setRoute(restored);
+      } catch (NavigationRouteImporter.ImportException ignored) {
+        // Keep NO_ROUTE; the persisted reference remains available for a later explicit retry.
+      }
+    }, "navigation-route-restore").start();
   }
 
   /** Called by the existing AndroidLocationProvider; no second GPS source is created. */
