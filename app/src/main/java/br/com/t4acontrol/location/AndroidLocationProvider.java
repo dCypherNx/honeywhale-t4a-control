@@ -8,6 +8,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.location.LocationRequest;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
+import br.com.t4acontrol.navigation.NavigationRuntime;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
@@ -164,7 +165,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
     Double altitude = location.hasAltitude() ? location.getAltitude() : null;
     double accuracy = location.hasAccuracy() ? Math.max(0d, location.getAccuracy()) : 0d;
 
-    listener.onLocation(
+    LocationSnapshot snapshot =
         new LocationSnapshot(
             latitude,
             longitude,
@@ -172,7 +173,9 @@ public final class AndroidLocationProvider implements AutoCloseable {
             location.getTime() > 0 ? location.getTime() : System.currentTimeMillis(),
             gpsSpeedKmh,
             bearing,
-            altitude));
+            altitude);
+    NavigationRuntime.get().onLocation(snapshot);
+    listener.onLocation(snapshot);
   }
 
   private boolean hasAnyLocationPermission() {
