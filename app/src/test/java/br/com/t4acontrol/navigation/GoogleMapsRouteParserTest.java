@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import br.com.t4acontrol.backend.navigation.Route;
+import br.com.t4acontrol.backend.navigation.RoutingProfile;
 import br.com.t4acontrol.backend.navigation.Waypoint;
 import org.junit.Test;
 
@@ -16,10 +17,11 @@ public class GoogleMapsRouteParserTest {
           + "@-23.6169638,-46.6743256,12z/data=!4m7!4m6!1m0!1m0!1m2!1m1!1s0x94ce574fd39e5283:0xc15a5a1d135bcabf!3e1"
           + "?utm_campaign=ml-ardl-mgrt2&g_ep=Eg1tbF8yMDI2MDgzMF8wIJvbDyoASAJQAQ%3D%3D";
 
-  @Test public void parsesRealGoogleMapsRoutePreservingWaypointOrder() throws Exception {
+  @Test public void parsesRealGoogleMapsRoutePreservingWaypointOrderAndMode() throws Exception {
     Route route = new GoogleMapsRouteParser().parse(REAL_SHARED_ROUTE);
 
     assertEquals("google-maps", route.source);
+    assertEquals(RoutingProfile.BICYCLE, route.routingProfile);
     assertEquals(3, route.waypoints.size());
     assertEquals(2, route.legs.size());
 
@@ -43,5 +45,18 @@ public class GoogleMapsRouteParserTest {
     assertEquals(
         "Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil",
         destination.label);
+  }
+
+  @Test public void readsOfficialTravelModeParameter() throws Exception {
+    Route car = new GoogleMapsRouteParser().parse(
+        "https://www.google.com/maps/dir/A/B?api=1&travelmode=driving");
+    Route foot = new GoogleMapsRouteParser().parse(
+        "https://www.google.com/maps/dir/A/B?api=1&travelmode=walking");
+    Route bicycle = new GoogleMapsRouteParser().parse(
+        "https://www.google.com/maps/dir/A/B?api=1&travelmode=bicycling");
+
+    assertEquals(RoutingProfile.CAR, car.routingProfile);
+    assertEquals(RoutingProfile.FOOT, foot.routingProfile);
+    assertEquals(RoutingProfile.BICYCLE, bicycle.routingProfile);
   }
 }
