@@ -84,7 +84,11 @@ internal fun NavigationCard(
                     fontWeight = FontWeight.Bold,
                 )
                 val detail = instruction?.text?.takeIf { it.isNotBlank() }
-                if (detail != null && state.status != NavigationState.Status.RECALCULATING) {
+                if (
+                    detail != null &&
+                    state.status != NavigationState.Status.RECALCULATING &&
+                    instruction.maneuver != NavigationInstruction.Maneuver.WAYPOINT
+                ) {
                     Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
                 }
             }
@@ -205,6 +209,7 @@ private fun navigationTitle(state: NavigationState): String = when (state.status
         NavigationInstruction.Maneuver.TURN_RIGHT -> "Vire à direita"
         NavigationInstruction.Maneuver.U_TURN -> "Faça o retorno"
         NavigationInstruction.Maneuver.ROUNDABOUT -> "Rotatória"
+        NavigationInstruction.Maneuver.WAYPOINT -> "Chegue à parada"
         NavigationInstruction.Maneuver.ARRIVE -> "Chegue ao destino"
         NavigationInstruction.Maneuver.START -> "Inicie a rota"
         else -> "Siga em frente"
@@ -220,6 +225,7 @@ private fun maneuverIcon(maneuver: NavigationInstruction.Maneuver?, status: Navi
         NavigationInstruction.Maneuver.TURN_RIGHT -> "cmd-arrow-right-top"
         NavigationInstruction.Maneuver.U_TURN -> "cmd-arrow-u-left-top"
         NavigationInstruction.Maneuver.ROUNDABOUT -> "cmd-rotate-right"
+        NavigationInstruction.Maneuver.WAYPOINT -> "cmd-map-marker-radius"
         NavigationInstruction.Maneuver.ARRIVE -> "cmd-map-marker"
         NavigationInstruction.Maneuver.START -> "cmd-navigation-variant"
         else -> "cmd-arrow-up"
