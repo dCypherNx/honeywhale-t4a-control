@@ -73,6 +73,7 @@ public final class NavigationStepMetadata {
   public final String drivingSide;
   public final double durationSeconds;
   public final double weight;
+  public final List<GeoPoint> geometry;
   public final List<Intersection> intersections;
 
   public NavigationStepMetadata(
@@ -94,6 +95,7 @@ public final class NavigationStepMetadata {
       String drivingSide,
       double durationSeconds,
       double weight,
+      List<GeoPoint> geometry,
       List<Intersection> intersections) {
     this.context = context;
     this.severity = severity;
@@ -113,6 +115,7 @@ public final class NavigationStepMetadata {
     this.drivingSide = drivingSide;
     this.durationSeconds = durationSeconds;
     this.weight = weight;
+    this.geometry = Collections.unmodifiableList(new ArrayList<>(geometry));
     this.intersections = Collections.unmodifiableList(new ArrayList<>(intersections));
   }
 }
