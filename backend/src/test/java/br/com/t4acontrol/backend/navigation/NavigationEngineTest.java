@@ -84,6 +84,71 @@ public class NavigationEngineTest {
     assertEquals(1, state.instructionIndex);
   }
 
+  @Test public void intermediateArriveAdvancesToNextLegInsteadOfEndingLoopRoute() {
+    Waypoint origin = waypoint("origin", -23.63766, -46.65890, Waypoint.Role.ORIGIN);
+    Waypoint stopA = waypoint("a", -23.63766, -46.65963, Waypoint.Role.VIA);
+    Waypoint stopB = waypoint("b", -23.63653, -46.65796, Waypoint.Role.VIA);
+    Waypoint destination = waypoint("destination", -23.63765, -46.65887, Waypoint.Role.DESTINATION);
+
+    NavigationInstruction arriveA = new NavigationInstruction(
+        "arrive-a", NavigationInstruction.Maneuver.ARRIVE, "A", stopA.latitude, stopA.longitude);
+    NavigationInstruction departA = new NavigationInstruction(
+        "depart-a", NavigationInstruction.Maneuver.START, "Siga para B", stopA.latitude, stopA.longitude);
+    NavigationInstruction arriveB = new NavigationInstruction(
+        "arrive-b", NavigationInstruction.Maneuver.ARRIVE, "B", stopB.latitude, stopB.longitude);
+    NavigationInstruction departB = new NavigationInstruction(
+        "depart-b", NavigationInstruction.Maneuver.START, "Siga para destino", stopB.latitude, stopB.longitude);
+    NavigationInstruction finalArrive = new NavigationInstruction(
+        "arrive-final", NavigationInstruction.Maneuver.ARRIVE, "Destino", destination.latitude, destination.longitude);
+
+    Route route = new Route(
+        "loop", "test", "reference", List.of(origin, stopA, stopB, destination),
+        List.of(
+            new RouteLeg(origin, stopA, List.of(arriveA)),
+            new RouteLeg(stopA, stopB, List.of(departA, arriveB)),
+            new RouteLeg(stopB, destination, List.of(departB, finalArrive))));
+
+    NavigationEngine engine = new NavigationEngine(25.0);
+    NavigationState atA = engine.update(
+        route,
+        NavigationState.ready(route),
+        new LocationSnapshot(stopA.latitude, stopA.longitude, 4.0, 3L, 0.0, null, null));
+
+    assertEquals(NavigationState.Status.WAYPOINT_REACHED, atA.status);
+    assertEquals(1, atA.legIndex);
+    assertEquals(0, atA.instructionIndex);
+    assertSame(departA, atA.instruction);
+  }
+
+  @Test public void onlyArriveOnLastLegEndsRoute() {
+    Waypoint origin = waypoint("origin", -23.63766, -46.65890, Waypoint.Role.ORIGIN);
+    Waypoint via = waypoint("via", -23.63653, -46.65796, Waypoint.Role.VIA);
+    Waypoint destination = waypoint("destination", -23.63765, -46.65887, Waypoint.Role.DESTINATION);
+    NavigationInstruction arriveVia = new NavigationInstruction(
+        "arrive-via", NavigationInstruction.Maneuver.ARRIVE, "Via", via.latitude, via.longitude);
+    NavigationInstruction finalArrive = new NavigationInstruction(
+        "arrive-final", NavigationInstruction.Maneuver.ARRIVE, "Destino", destination.latitude, destination.longitude);
+    Route route = new Route(
+        "loop", "test", "reference", List.of(origin, via, destination),
+        List.of(
+            new RouteLeg(origin, via, List.of(arriveVia)),
+            new RouteLeg(via, destination, List.of(finalArrive))));
+
+    NavigationEngine engine = new NavigationEngine(25.0);
+    NavigationState afterVia = engine.update(
+        route,
+        NavigationState.ready(route),
+        new LocationSnapshot(via.latitude, via.longitude, 4.0, 4L, 0.0, null, null));
+    NavigationState finalState = engine.update(
+        route,
+        afterVia,
+        new LocationSnapshot(destination.latitude, destination.longitude, 4.0, 5L, 0.0, null, null));
+
+    assertEquals(NavigationState.Status.ARRIVED, finalState.status);
+    assertEquals(1, finalState.legIndex);
+    assertSame(finalArrive, finalState.instruction);
+  }
+
   @Test public void missingLocationIsExplicitState() {
     Waypoint origin = waypoint("origin", -23.55, -46.63, Waypoint.Role.ORIGIN);
     Waypoint destination = waypoint("destination", -23.56, -46.64, Waypoint.Role.DESTINATION);
