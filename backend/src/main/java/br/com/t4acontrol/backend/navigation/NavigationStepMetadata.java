@@ -32,6 +32,7 @@ public final class NavigationStepMetadata {
     public final List<Boolean> entry;
     public final int inIndex;
     public final int outIndex;
+    public final List<String> classes;
     public final List<Lane> lanes;
 
     public Intersection(
@@ -41,6 +42,7 @@ public final class NavigationStepMetadata {
         List<Boolean> entry,
         int inIndex,
         int outIndex,
+        List<String> classes,
         List<Lane> lanes) {
       this.latitude = latitude;
       this.longitude = longitude;
@@ -48,6 +50,7 @@ public final class NavigationStepMetadata {
       this.entry = Collections.unmodifiableList(new ArrayList<>(entry));
       this.inIndex = inIndex;
       this.outIndex = outIndex;
+      this.classes = Collections.unmodifiableList(new ArrayList<>(classes));
       this.lanes = Collections.unmodifiableList(new ArrayList<>(lanes));
     }
   }
