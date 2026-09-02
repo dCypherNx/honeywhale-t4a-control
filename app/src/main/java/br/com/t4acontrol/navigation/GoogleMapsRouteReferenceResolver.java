@@ -22,6 +22,10 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   private static final int READ_TIMEOUT_MS = 8_000;
   private static final int MAX_HTML_CHARS = 256 * 1024;
   private static final Consumer<String> NOOP_DIAGNOSTICS = entry -> {};
+  private static final String APP_USER_AGENT = "RideDash/1.0";
+  private static final String BROWSER_USER_AGENT =
+      "Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 "
+          + "(KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36";
 
   private static final Pattern META_REFRESH = Pattern.compile(
       "(?is)<meta[^>]+http-equiv\\s*=\\s*['\"]?refresh['\"]?[^>]+content\\s*=\\s*['\"][^'\"]*?url\\s*=\\s*([^'\">]+)");
@@ -72,16 +76,31 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
           throw new RouteResolutionException("Google Maps redirect cycle detected at " + safeUrl(current));
         }
 
-        HttpURLConnection connection = (HttpURLConnection) current.openConnection();
-        connection.setInstanceFollowRedirects(false);
-        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("User-Agent", "RideDash/1.0");
-        connection.setRequestProperty("Accept", "text/html,application/xhtml+xml");
-
+        HttpURLConnection connection = openConnection(current, APP_USER_AGENT);
         int status = connection.getResponseCode();
-        diagnostics.accept("[NAV] RESOLVE HOP " + hop + " status=" + status + " url=" + safeUrl(current));
+        diagnostics.accept(
+            "[NAV] RESOLVE HOP "
+                + hop
+                + " attempt=APP status="
+                + status
+                + " url="
+                + safeUrl(current));
+
+        if (status == HttpURLConnection.HTTP_NOT_FOUND
+            && "maps.app.goo.gl".equalsIgnoreCase(current.getHost())) {
+          connection.disconnect();
+          diagnostics.accept(
+              "[NAV] RESOLVE RETRY hop=" + hop + " reason=HTTP_404 identity=ANDROID_BROWSER");
+          connection = openConnection(current, BROWSER_USER_AGENT);
+          status = connection.getResponseCode();
+          diagnostics.accept(
+              "[NAV] RESOLVE HOP "
+                  + hop
+                  + " attempt=ANDROID_BROWSER status="
+                  + status
+                  + " url="
+                  + safeUrl(current));
+        }
 
         if (status >= 300 && status < 400) {
           String location = connection.getHeaderField("Location");
@@ -138,6 +157,18 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   static String extractRedirectTarget(String html) {
     RedirectTarget target = extractRedirectTargetWithSource(html);
     return target == null ? null : target.value;
+  }
+
+  private static HttpURLConnection openConnection(URL url, String userAgent) throws IOException {
+    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+    connection.setInstanceFollowRedirects(false);
+    connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+    connection.setReadTimeout(READ_TIMEOUT_MS);
+    connection.setRequestMethod("GET");
+    connection.setRequestProperty("User-Agent", userAgent);
+    connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.7,en;q=0.6");
+    return connection;
   }
 
   private static RedirectTarget extractRedirectTargetWithSource(String html) {
