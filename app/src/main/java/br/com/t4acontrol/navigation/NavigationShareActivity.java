@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.widget.Toast;
 import br.com.t4acontrol.MainActivity;
 import br.com.t4acontrol.R;
+import br.com.t4acontrol.backend.navigation.Route;
 
 /** Receives text/plain shares from Google Maps and imports them without touching T4A control flow. */
 public final class NavigationShareActivity extends Activity {
@@ -21,7 +22,8 @@ public final class NavigationShareActivity extends Activity {
     NavigationRouteImporter importer = new NavigationRouteImporter(getApplicationContext());
     new Thread(() -> {
       try {
-        importer.importReference(reference);
+        Route route = importer.importReference(reference);
+        NavigationRuntime.get().setRoute(route);
         runOnUiThread(() -> {
           Toast.makeText(this, R.string.navigation_route_imported, Toast.LENGTH_LONG).show();
           openMainAndFinish();
