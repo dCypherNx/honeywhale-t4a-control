@@ -138,18 +138,38 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
           URL next = current.toURI().resolve(location.trim()).toURL();
           diagnostics.accept(
               "[NAV] RESOLVE NEXT hop=" + hop + " source=HTTP_LOCATION url=" + safeUrl(next));
+          if (looksLikeExpandedRoute(next.toString())) {
+            diagnostics.accept(
+                "[NAV] RESOLVE SUCCESS hop=" + hop + " source=HTTP_LOCATION url=" + safeUrl(next));
+            return next.toString();
+          }
           current = next;
           continue;
         }
 
         if (status >= 200 && status < 300) {
           URL responseUrl = connection.getURL();
+          String resolved = responseUrl.toString();
+          if (looksLikeExpandedRoute(resolved)) {
+            connection.disconnect();
+            diagnostics.accept(
+                "[NAV] RESOLVE SUCCESS hop=" + hop + " source=HTTP_RESPONSE url=" + safeUrl(responseUrl));
+            return resolved;
+          }
+
           String html = readBody(connection);
           connection.disconnect();
 
           RedirectTarget embedded = extractRedirectTargetWithSource(html);
           if (embedded != null) {
-            URL next = responseUrl.toURI().resolve(decodeHtml(embedded.value.trim())).toURL();
+            String target = decodeHtml(embedded.value.trim());
+            if ("EMBEDDED_ROUTE".equals(embedded.source) && looksLikeExpandedRoute(target)) {
+              diagnostics.accept(
+                  "[NAV] RESOLVE SUCCESS hop=" + hop + " source=EMBEDDED_ROUTE url=" + safeText(target));
+              return target;
+            }
+
+            URL next = responseUrl.toURI().resolve(target).toURL();
             diagnostics.accept(
                 "[NAV] RESOLVE NEXT hop="
                     + hop
@@ -163,11 +183,6 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
             }
           }
 
-          String resolved = responseUrl.toString();
-          if (looksLikeExpandedRoute(resolved)) {
-            diagnostics.accept("[NAV] RESOLVE SUCCESS hop=" + hop + " url=" + safeUrl(responseUrl));
-            return resolved;
-          }
           throw new RouteResolutionException(
               "Google Maps short link returned HTTP " + status + " without an expanded /maps/dir route");
         }
