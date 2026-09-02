@@ -30,26 +30,33 @@ public final class OsrmRoutePlanner implements RoutePlanner {
 
   private final String routingBase;
   private final String nominatimEndpoint;
-  private final RoutingProfile profile;
+  private final RoutingProfile overrideProfile;
 
-  public OsrmRoutePlanner(RoutingProfile profile) {
-    this(DEFAULT_ROUTING_BASE, DEFAULT_NOMINATIM_ENDPOINT, profile);
+  public OsrmRoutePlanner() {
+    this(DEFAULT_ROUTING_BASE, DEFAULT_NOMINATIM_ENDPOINT, null);
   }
 
-  OsrmRoutePlanner(String routingBase, String nominatimEndpoint, RoutingProfile profile) {
+  /** Explicit override for routes whose imported profile should be intentionally replaced. */
+  public OsrmRoutePlanner(RoutingProfile overrideProfile) {
+    this(DEFAULT_ROUTING_BASE, DEFAULT_NOMINATIM_ENDPOINT, overrideProfile);
+  }
+
+  OsrmRoutePlanner(String routingBase, String nominatimEndpoint, RoutingProfile overrideProfile) {
     this.routingBase = routingBase;
     this.nominatimEndpoint = nominatimEndpoint;
-    this.profile = profile;
+    this.overrideProfile = overrideProfile;
   }
 
   @Override
   public Route plan(Route importedRoute) throws RoutePlanningException {
     if (importedRoute == null) throw new RoutePlanningException("Imported route is required");
-    if (profile == null) throw new RoutePlanningException("Routing profile is required");
+    RoutingProfile selectedProfile = overrideProfile != null
+        ? overrideProfile
+        : importedRoute.routingProfile != null ? importedRoute.routingProfile : RoutingProfile.BICYCLE;
     try {
       List<Waypoint> points = resolveWaypoints(importedRoute.waypoints);
-      JSONObject response = getJson(buildRouteUrl(routingBase, points, profile));
-      return parseResponse(importedRoute, points, response);
+      JSONObject response = getJson(buildRouteUrl(routingBase, points, selectedProfile));
+      return parseResponse(importedRoute, selectedProfile, points, response);
     } catch (IOException | JSONException ex) {
       throw new RoutePlanningException("Unable to compute route with OSRM", ex);
     }
@@ -137,8 +144,11 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     throw new RoutePlanningException("Unsupported routing profile: " + profile);
   }
 
-  static Route parseResponse(Route importedRoute, List<Waypoint> waypoints, JSONObject response)
-      throws JSONException, RoutePlanningException {
+  static Route parseResponse(
+      Route importedRoute,
+      RoutingProfile selectedProfile,
+      List<Waypoint> waypoints,
+      JSONObject response) throws JSONException, RoutePlanningException {
     if (!"Ok".equals(response.optString("code"))) {
       throw new RoutePlanningException("OSRM returned " + response.optString("code", "unknown error"));
     }
@@ -169,7 +179,13 @@ public final class OsrmRoutePlanner implements RoutePlanner {
       legs.add(new RouteLeg(waypoints.get(legIndex), waypoints.get(legIndex + 1), instructions));
     }
 
-    return new Route(importedRoute.id, "osrm", importedRoute.originalReference, waypoints, legs);
+    return new Route(
+        importedRoute.id,
+        "osrm",
+        importedRoute.originalReference,
+        selectedProfile,
+        waypoints,
+        legs);
   }
 
   static NavigationInstruction.Maneuver mapManeuver(String type, String modifier) {
