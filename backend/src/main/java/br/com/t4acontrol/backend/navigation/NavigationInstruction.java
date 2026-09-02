@@ -25,6 +25,8 @@ public final class NavigationInstruction {
   public final double routeOffsetMeters;
   /** Distance from this maneuver to the following maneuver, in meters; NaN when unavailable. */
   public final double segmentDistanceMeters;
+  /** Optional rich routing metadata. Null when the provider does not expose it. */
+  public final NavigationStepMetadata metadata;
 
   public NavigationInstruction(
       String id,
@@ -32,7 +34,7 @@ public final class NavigationInstruction {
       String text,
       double latitude,
       double longitude) {
-    this(id, maneuver, text, latitude, longitude, Double.NaN, Double.NaN);
+    this(id, maneuver, text, latitude, longitude, Double.NaN, Double.NaN, null);
   }
 
   public NavigationInstruction(
@@ -43,6 +45,18 @@ public final class NavigationInstruction {
       double longitude,
       double routeOffsetMeters,
       double segmentDistanceMeters) {
+    this(id, maneuver, text, latitude, longitude, routeOffsetMeters, segmentDistanceMeters, null);
+  }
+
+  public NavigationInstruction(
+      String id,
+      Maneuver maneuver,
+      String text,
+      double latitude,
+      double longitude,
+      double routeOffsetMeters,
+      double segmentDistanceMeters,
+      NavigationStepMetadata metadata) {
     this.id = Objects.requireNonNull(id, "id");
     this.maneuver = Objects.requireNonNull(maneuver, "maneuver");
     this.text = text;
@@ -50,5 +64,6 @@ public final class NavigationInstruction {
     this.longitude = longitude;
     this.routeOffsetMeters = routeOffsetMeters;
     this.segmentDistanceMeters = segmentDistanceMeters;
+    this.metadata = metadata;
   }
 }
