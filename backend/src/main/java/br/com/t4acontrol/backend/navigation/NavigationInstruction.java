@@ -10,6 +10,7 @@ public final class NavigationInstruction {
     TURN_LEFT,
     TURN_RIGHT,
     U_TURN,
+    ROUNDABOUT,
     WAYPOINT,
     ARRIVE,
     UNKNOWN
