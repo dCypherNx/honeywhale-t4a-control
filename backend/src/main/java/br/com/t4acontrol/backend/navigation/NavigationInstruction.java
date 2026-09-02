@@ -2,7 +2,7 @@ package br.com.t4acontrol.backend.navigation;
 
 import java.util.Objects;
 
-/** Provider-neutral turn or progress instruction anchored to a geographic point. */
+/** Provider-neutral instruction anchored to a geographic point. */
 public final class NavigationInstruction {
   public enum Maneuver {
     START,
