@@ -156,7 +156,7 @@ jobs:
           test -s "${APK}"
           mkdir -p dist release
           cp "${APK}" "dist/RideDash-${T4A_VERSION_NAME}-test-${GITHUB_SHA::7}.apk"
-          cp "${APK}" "release/RideDash-test.apk"
+          cp "${APK}" "release/RideDash-${T4A_VERSION_NAME}-test.apk"
 
       - name: Upload test APK artifact
         uses: actions/upload-artifact@v4
@@ -172,7 +172,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          asset='release/RideDash-test.apk'
+          asset="release/RideDash-${T4A_VERSION_NAME}-test.apk"
           test -s "${asset}"
           digest="$(sha256sum "${asset}" | awk '{print $1}')"
           gh release delete latest-test --cleanup-tag --yes || true
