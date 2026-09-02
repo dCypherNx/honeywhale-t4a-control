@@ -20,4 +20,28 @@ public class GoogleMapsRouteReferenceResolverTest {
 
     assertThrows(RouteResolutionException.class, () -> resolver.resolve("  "));
   }
+
+  @Test public void extractsMetaRefreshRedirect() {
+    String html = "<html><head><meta http-equiv=\"refresh\" content=\"0; url=https://www.google.com/maps/dir/A/B?x=1&amp;y=2\"></head></html>";
+
+    assertEquals(
+        "https://www.google.com/maps/dir/A/B?x=1&amp;y=2",
+        GoogleMapsRouteReferenceResolver.extractRedirectTarget(html));
+  }
+
+  @Test public void extractsJavascriptLocationRedirect() {
+    String html = "<script>window.location.href='https://www.google.com/maps/dir/A/B/data=!4m2!3e1';</script>";
+
+    assertEquals(
+        "https://www.google.com/maps/dir/A/B/data=!4m2!3e1",
+        GoogleMapsRouteReferenceResolver.extractRedirectTarget(html));
+  }
+
+  @Test public void extractsEscapedEmbeddedGoogleRoute() {
+    String html = "route=\\\"https://www.google.com/maps/dir/A/B/data!3d1\\u0026foo=bar\\\"";
+
+    assertEquals(
+        "https://www.google.com/maps/dir/A/B/data!3d1&foo=bar\\",
+        GoogleMapsRouteReferenceResolver.extractRedirectTarget(html));
+  }
 }
