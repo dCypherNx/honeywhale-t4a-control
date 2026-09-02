@@ -10,16 +10,6 @@ if (!tuyaPropertiesFile.exists()) {
 }
 tuyaPropertiesFile.withInputStream { tuyaProperties.load(it) }
 
-def mapsProperties = new Properties()
-def mapsPropertiesFile = rootProject.file('maps.properties')
-if (mapsPropertiesFile.exists()) {
-    mapsPropertiesFile.withInputStream { mapsProperties.load(it) }
-}
-def googleRoutesApiKey = System.getenv('GOOGLE_ROUTES_API_KEY')
-if (googleRoutesApiKey == null || googleRoutesApiKey.trim().isEmpty()) {
-    googleRoutesApiKey = mapsProperties.getProperty('GOOGLE_ROUTES_API_KEY', '')
-}
-
 def signingKeystore = System.getenv('ANDROID_SIGNING_KEYSTORE')
 def signingStorePassword = System.getenv('ANDROID_SIGNING_STORE_PASSWORD')
 def signingKeyAlias = System.getenv('ANDROID_SIGNING_KEY_ALIAS')
@@ -52,8 +42,6 @@ android {
         targetSdk 35
         versionCode appVersionCode
         versionName appVersionName
-
-        buildConfigField 'String', 'GOOGLE_ROUTES_API_KEY', '"' + googleRoutesApiKey.trim() + '"'
 
         manifestPlaceholders = [
                 TUYA_SMART_APPKEY: tuyaProperties.getProperty('TUYA_APP_KEY', ''),
