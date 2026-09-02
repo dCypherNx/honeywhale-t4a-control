@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.R
 import br.com.t4acontrol.backend.T4AState
+import br.com.t4acontrol.backend.navigation.NavigationState
 import br.com.t4acontrol.ui.dashboard.T4ADashboard
 import br.com.t4acontrol.ui.dashboard.T4ADashboardMapper
 import br.com.t4acontrol.ui.diagnostics.DashboardEvents
@@ -38,6 +39,7 @@ import java.util.Locale
 @Composable
 internal fun T4AApp(
     current: T4AState?,
+    navigationState: NavigationState,
     settings: Boolean,
     showTotalOdometer: Boolean,
     keepScreenOn: Boolean,
@@ -90,6 +92,7 @@ internal fun T4AApp(
                 } else {
                     T4ADashboard(
                         state = T4ADashboardMapper.map(current, showTotalOdometer),
+                        navigationState = navigationState,
                         actions = actions,
                         darkMode = darkMode,
                     )
