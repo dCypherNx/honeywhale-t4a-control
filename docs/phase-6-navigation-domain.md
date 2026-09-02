@@ -13,7 +13,7 @@ Foram introduzidos em `backend/navigation`:
 - `NavigationState` — estado atual da navegação;
 - `RouteParser` — contrato para importadores de rotas externas;
 - `RouteReferenceResolver` — fronteira neutra para resolver referências externas antes do parsing;
-- `RoutePlanner` — fronteira neutra para enriquecer uma rota importada com geometria e instruções fornecidas por um motor externo;
+- `RoutePlanner` — fronteira neutra para obter geometria/instruções de um provedor externo;
 - `NavigationEngine` — avanço mínimo de instruções consumindo exclusivamente `LocationSnapshot`.
 
 ## Decisões arquiteturais
@@ -23,8 +23,8 @@ Foram introduzidos em `backend/navigation`:
 - O núcleo não depende de Android, Google Maps, Tuya, MQTT ou de um motor específico de rotas.
 - Waypoints preservam ordem e distinguem origem, pontos intermediários e destino; um waypoint intermediário não é tratado como destino final.
 - Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label; latitude e longitude devem estar ambas presentes ou ambas ausentes.
-- Importar uma rota e planejá-la são operações distintas: `RouteParser` recupera a intenção/ordem dos pontos; `RoutePlanner` pode posteriormente resolver coordenadas, geometria e instruções.
-- Persistência e UI permanecem para fases posteriores, conforme o plano de endurecimento arquitetural.
+- Importar a intenção da rota e calcular as instruções são responsabilidades separadas.
+- Persistência e UI permanecem para cortes posteriores.
 
 ## Evidência real do compartilhamento Google Maps
 
@@ -38,28 +38,47 @@ A URL expandida observada foi uma rota `/maps/dir/` contendo, em ordem:
 2. waypoint intermediário em coordenadas `-23.6133508,-46.6884184`;
 3. destino como endereço `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
 
-Isso confirma responsabilidades separadas:
+Fluxo:
 
 ```text
 URL compartilhada maps.app.goo.gl
-  -> RouteReferenceResolver (infraestrutura HTTP)
+  -> RouteReferenceResolver
   -> URL expandida /maps/dir/...
   -> GoogleMapsRouteParser
-  -> Route importada e neutra
-  -> RoutePlanner (motor externo escolhido)
-  -> Route com geometria/instruções
+  -> Route neutra com waypoints
+  -> RoutePlanner
+  -> Google Routes API
+  -> Route neutra com RouteLeg/NavigationInstruction
   -> NavigationEngine
   <- LocationSnapshot
   -> NavigationState
 ```
 
-`GoogleMapsRouteReferenceResolver` fica no módulo Android e apenas expande redirecionamentos. `GoogleMapsRouteParser` também fica fora do núcleo neutro e interpreta o formato observado do Google Maps sem SDK Google.
+`GoogleMapsRouteReferenceResolver`, `GoogleMapsRouteParser` e `GoogleRoutesRoutePlanner` ficam no módulo Android. Nenhuma dependência Google entra no backend neutro.
 
-O parser não interpreta o trecho `/@latitude,longitude,zoom` como waypoint; esse trecho representa viewport da URL. Também não depende dos parâmetros de tracking `utm_*`/`g_ep`.
+## Google Routes API
+
+O primeiro `RoutePlanner` concreto usa `POST https://routes.googleapis.com/directions/v2:computeRoutes`.
+
+A solicitação usa:
+
+- `travelMode = TWO_WHEELER`;
+- `languageCode = pt-BR`;
+- `units = METRIC`;
+- origem/destino/intermediários na ordem importada;
+- coordenadas quando presentes;
+- endereço textual quando a URL não fornece coordenadas;
+- field mask limitada a `routes.legs.steps.endLocation` e `routes.legs.steps.navigationInstruction`.
+
+Cada step retornado vira uma `NavigationInstruction`; a coordenada de `endLocation` é usada como ponto de avanço da instrução.
+
+A chave não é versionada. O build aceita `GOOGLE_ROUTES_API_KEY` por variável de ambiente ou por `maps.properties`, que é ignorado pelo Git. `maps.properties.example` documenta a configuração.
+
+Para chamadas REST diretas do Android, `GoogleRoutesPlannerFactory` calcula o SHA-1 do certificado que assinou o APK e o adaptador envia `X-Android-Package` e `X-Android-Cert`, permitindo restringir a chave no Google Cloud ao aplicativo Android e à Routes API.
 
 ## Critério coberto
 
-Os testes verificam que:
+Os testes existentes verificam que:
 
 - a rota preserva a ordem e o papel dos waypoints;
 - `NavigationEngine` recebe `LocationSnapshot` diretamente;
@@ -72,8 +91,16 @@ Os testes verificam que:
 - origem e passagem preservam suas coordenadas;
 - o destino textual permanece válido mesmo quando a URL não traz coordenadas explícitas para ele.
 
-## Limite atual
+## Próxima validação
 
-A URL compartilhada fornece os pontos da rota, mas não fornece no caminho textual todas as instruções turn-by-turn nem coordenadas explícitas para todo endereço. Portanto o importador recupera corretamente a estrutura da rota, mas não fabrica manobras ou geometria inexistentes.
+Para validar o provedor real é necessário habilitar a Routes API em um projeto Google Cloud com billing ativo, criar uma chave dedicada, restringi-la à Routes API e ao pacote Android `br.com.t4acontrol` com o SHA-1 do certificado usado para assinar o APK de teste, e fornecer a chave localmente em `maps.properties` ou `GOOGLE_ROUTES_API_KEY`.
 
-A escolha do motor de planejamento fica agora atrás de `RoutePlanner`. Google Routes API é uma opção compatível com a origem Google Maps, porém exige credencial e billing; outro motor pode ser usado sem alterar o núcleo. A próxima implementação concreta deve ocorrer no módulo de infraestrutura/app, nunca dentro de `backend/navigation`.
+A primeira execução real deve usar a rota já registrada acima e verificar:
+
+1. retorno de dois legs para os três waypoints;
+2. instruções em português;
+3. manobras coerentes com o Google Maps;
+4. avanço do `NavigationEngine` com `LocationSnapshot`;
+5. ausência de alteração no controle BLE/Tuya do T4A.
+
+Rotas `TWO_WHEELER` estão em beta; o aviso exigido pelo Google deverá ser exibido quando a navegação chegar à UI.
