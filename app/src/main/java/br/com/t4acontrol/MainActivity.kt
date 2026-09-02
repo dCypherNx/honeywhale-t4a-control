@@ -25,7 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import br.com.t4acontrol.backend.T4AState
+import br.com.t4acontrol.backend.navigation.NavigationState
+import br.com.t4acontrol.backend.navigation.Route
 import br.com.t4acontrol.mqtt.MqttSettingsActivity
+import br.com.t4acontrol.navigation.NavigationRuntime
 import br.com.t4acontrol.navigation.NavigationShareActivity
 import br.com.t4acontrol.session.T4ASession
 import br.com.t4acontrol.session.T4ASessionService
@@ -61,6 +64,14 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private val eventHistory = mutableStateListOf<String>()
     private val rawHistory = mutableStateListOf<String>()
     private var rawLogFilter by mutableStateOf("ALL")
+
+    private val navigationLogListener = object : NavigationRuntime.Listener {
+        override fun onNavigationChanged(route: Route?, state: NavigationState) = Unit
+
+        override fun onNavigationRawLog(value: String) {
+            runOnUiThread { appendRaw(value) }
+        }
+    }
 
     private val sessionConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -173,6 +184,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true)
         themeMode = preferences().getString(PREF_THEME, "system") ?: "system"
         consumeNavigationRawLog(intent)
+        NavigationRuntime.get().addListener(navigationLogListener)
         applyKeepScreenOn(keepScreenOn)
         ensurePermissions()
         setContent {
@@ -217,6 +229,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     override fun onDestroy() {
+        NavigationRuntime.get().removeListener(navigationLogListener)
         disconnectSession()
         super.onDestroy()
     }
