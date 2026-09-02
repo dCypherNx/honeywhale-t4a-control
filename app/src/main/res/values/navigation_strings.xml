@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_share_invalid">Não foi possível identificar uma rota compartilhada.</string>
+    <string name="navigation_route_imported">Rota importada com sucesso.</string>
+    <string name="navigation_route_import_failed">Não foi possível importar a rota compartilhada.</string>
+</resources>
