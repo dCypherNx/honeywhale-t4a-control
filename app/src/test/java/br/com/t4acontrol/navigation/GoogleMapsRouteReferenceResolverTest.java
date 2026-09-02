@@ -15,6 +15,17 @@ public class GoogleMapsRouteReferenceResolverTest {
     assertEquals(reference, resolver.resolve(reference));
   }
 
+  @Test public void preservesExpandedRouteEncodingExactly() {
+    String reference =
+        "https://www.google.com/maps/dir/-23.6376874,-46.6588237/-23.6133157,-46.6883815/"
+            + "Av.+Brig.+Faria+Lima,+4400+-+Itaim+Bibi/data=!4m14!4m13!3e1"
+            + "?utm_source=mstt_0&g_ep=abc%3D%3D";
+
+    assertEquals(
+        reference,
+        GoogleMapsRouteReferenceResolver.extractExpandedRouteFromNavigationUrl(reference));
+  }
+
   @Test public void rejectsEmptyReference() {
     GoogleMapsRouteReferenceResolver resolver = new GoogleMapsRouteReferenceResolver();
 
