@@ -60,11 +60,21 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
   private List<Waypoint> resolveWaypoints(List<Waypoint> waypoints)
       throws IOException, JSONException, RoutePlanningException {
     List<Waypoint> result = new ArrayList<>();
+    boolean geocoded = false;
     for (Waypoint waypoint : waypoints) {
       if (waypoint.hasCoordinates()) {
         result.add(waypoint);
       } else {
+        if (geocoded) {
+          try {
+            Thread.sleep(1_100L);
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new RoutePlanningException("Interrupted while respecting Nominatim rate limit", ex);
+          }
+        }
         result.add(resolveAddress(waypoint));
+        geocoded = true;
       }
     }
     return result;
@@ -77,8 +87,7 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
     }
 
     String url = nominatimEndpoint
-        + "?format=jsonv2&limit=1&countrycodes=br&q="
-        + URLEncoder.encode(waypoint.label.trim(), StandardCharsets.UTF_8.name());
+        + "?format=jsonv2&limit=1&countrycodes=br&q="n        + URLEncoder.encode(waypoint.label.trim(), StandardCharsets.UTF_8.name());
     HttpURLConnection connection = open(url, "GET");
     try {
       int status = connection.getResponseCode();
@@ -129,6 +138,7 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
     JSONObject request = new JSONObject();
     request.put("locations", locations);
     request.put("costing", "motor_scooter");
+    request.put("shape_format", "polyline6");
     request.put("directions_options", directions);
     return request;
   }
@@ -150,25 +160,24 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
     List<RouteLeg> legs = new ArrayList<>();
     for (int legIndex = 0; legIndex < legsJson.length(); legIndex++) {
       JSONObject legJson = legsJson.getJSONObject(legIndex);
+      List<double[]> shape = decodePolyline6(legJson.getString("shape"));
       JSONArray maneuvers = legJson.optJSONArray("maneuvers");
       List<NavigationInstruction> instructions = new ArrayList<>();
 
       if (maneuvers != null) {
         for (int maneuverIndex = 0; maneuverIndex < maneuvers.length(); maneuverIndex++) {
           JSONObject maneuver = maneuvers.getJSONObject(maneuverIndex);
-          JSONObject location = maneuver.optJSONObject("begin_location");
-          if (location == null) {
-            location = maneuver.optJSONObject("location");
-          }
-          if (location == null) {
+          int shapeIndex = maneuver.optInt("begin_shape_index", -1);
+          if (shapeIndex < 0 || shapeIndex >= shape.size()) {
             continue;
           }
+          double[] point = shape.get(shapeIndex);
           instructions.add(new NavigationInstruction(
               "valhalla-" + legIndex + "-" + maneuverIndex,
               mapManeuver(maneuver.optInt("type", 0)),
               maneuver.optString("instruction", ""),
-              location.getDouble("lat"),
-              location.getDouble("lon")));
+              point[0],
+              point[1]));
         }
       }
 
@@ -200,6 +209,53 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
       return NavigationInstruction.Maneuver.STRAIGHT;
     }
     return NavigationInstruction.Maneuver.UNKNOWN;
+  }
+
+  static List<double[]> decodePolyline6(String encoded) throws RoutePlanningException {
+    if (encoded == null || encoded.isEmpty()) {
+      throw new RoutePlanningException("Valhalla leg has no route shape");
+    }
+    List<double[]> points = new ArrayList<>();
+    int index = 0;
+    long latitude = 0;
+    long longitude = 0;
+    while (index < encoded.length()) {
+      DecodeResult lat = decodeValue(encoded, index);
+      index = lat.nextIndex;
+      DecodeResult lon = decodeValue(encoded, index);
+      index = lon.nextIndex;
+      latitude += lat.delta;
+      longitude += lon.delta;
+      points.add(new double[] {latitude / 1_000_000d, longitude / 1_000_000d});
+    }
+    return points;
+  }
+
+  private static DecodeResult decodeValue(String encoded, int start) throws RoutePlanningException {
+    long result = 0;
+    int shift = 0;
+    int index = start;
+    while (index < encoded.length()) {
+      int value = encoded.charAt(index++) - 63;
+      result |= (long) (value & 0x1f) << shift;
+      if (value < 0x20) {
+        long delta = (result & 1L) != 0 ? ~(result >> 1) : (result >> 1);
+        return new DecodeResult(delta, index);
+      }
+      shift += 5;
+      if (shift > 60) break;
+    }
+    throw new RoutePlanningException("Invalid Valhalla polyline6 shape");
+  }
+
+  private static final class DecodeResult {
+    final long delta;
+    final int nextIndex;
+
+    DecodeResult(long delta, int nextIndex) {
+      this.delta = delta;
+      this.nextIndex = nextIndex;
+    }
   }
 
   private JSONObject postJson(String endpoint, JSONObject request) throws IOException, JSONException,
