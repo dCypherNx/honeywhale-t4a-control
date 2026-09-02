@@ -59,4 +59,12 @@ public class GoogleMapsRouteParserTest {
     assertEquals(RoutingProfile.FOOT, foot.routingProfile);
     assertEquals(RoutingProfile.BICYCLE, bicycle.routingProfile);
   }
+
+  @Test public void acceptsBrazilianGoogleMapsHost() throws Exception {
+    Route route = new GoogleMapsRouteParser().parse(
+        "https://www.google.com.br/maps/dir/-23.6,-46.6/-23.7,-46.7/data=!4m2!3e1");
+
+    assertEquals(RoutingProfile.BICYCLE, route.routingProfile);
+    assertEquals(2, route.waypoints.size());
+  }
 }
