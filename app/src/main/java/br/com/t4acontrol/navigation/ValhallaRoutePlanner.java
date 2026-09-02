@@ -87,7 +87,8 @@ public final class ValhallaRoutePlanner implements RoutePlanner {
     }
 
     String url = nominatimEndpoint
-        + "?format=jsonv2&limit=1&countrycodes=br&q="n        + URLEncoder.encode(waypoint.label.trim(), StandardCharsets.UTF_8.name());
+        + "?format=jsonv2&limit=1&countrycodes=br&q="
+        + URLEncoder.encode(waypoint.label.trim(), StandardCharsets.UTF_8.name());
     HttpURLConnection connection = open(url, "GET");
     try {
       int status = connection.getResponseCode();
