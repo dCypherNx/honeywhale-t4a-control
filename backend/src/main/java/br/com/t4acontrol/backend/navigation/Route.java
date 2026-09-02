@@ -10,6 +10,7 @@ public final class Route {
   public final String id;
   public final String source;
   public final String originalReference;
+  public final RoutingProfile routingProfile;
   public final List<Waypoint> waypoints;
   public final List<RouteLeg> legs;
 
@@ -19,9 +20,20 @@ public final class Route {
       String originalReference,
       List<Waypoint> waypoints,
       List<RouteLeg> legs) {
+    this(id, source, originalReference, null, waypoints, legs);
+  }
+
+  public Route(
+      String id,
+      String source,
+      String originalReference,
+      RoutingProfile routingProfile,
+      List<Waypoint> waypoints,
+      List<RouteLeg> legs) {
     this.id = Objects.requireNonNull(id, "id");
     this.source = source;
     this.originalReference = originalReference;
+    this.routingProfile = routingProfile;
     this.waypoints = Collections.unmodifiableList(new ArrayList<>(
         Objects.requireNonNull(waypoints, "waypoints")));
     this.legs = Collections.unmodifiableList(new ArrayList<>(
