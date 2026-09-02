@@ -39,6 +39,11 @@ import br.com.t4acontrol.ui.MdiIcon
 import java.util.Locale
 import kotlin.math.roundToInt
 
+private const val GUIDANCE_TARGET_SECONDS = 10.0
+private const val GUIDANCE_MIN_METERS = 45.0
+private const val GUIDANCE_MAX_METERS = 140.0
+private const val GUIDANCE_DEFAULT_METERS = 70.0
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun NavigationCard(
@@ -63,7 +68,10 @@ internal fun NavigationCard(
     }
 
     if (state.status == NavigationState.Status.NO_ROUTE) return
-    val presentation = navigationPresentation(route, state, waypointsVisible)
+    val presentation = timedNavigationPresentation(
+        navigationPresentation(route, state, waypointsVisible),
+        runtime.guidanceSpeedKmh(),
+    )
     val instruction = presentation.instruction
     val debugRouteUrl = if (BuildConfig.DEBUG) plannedRouteDebugUrl(route) else null
     DashboardCard(surface = surface, outline = outline) {
@@ -136,6 +144,45 @@ private fun navigationPresentation(route: Route?, state: NavigationState, waypoi
         next.instruction,
         (baseDistance + extraDistance).coerceAtLeast(0.0),
     )
+}
+
+/**
+ * Keep the route engine's next maneuver known internally, but only turn it into an instruction when
+ * it becomes operationally useful. The window is about 10 seconds at current GPS speed, clamped so
+ * slow riding does not warn too late and high speed does not announce the next turn excessively early.
+ */
+private fun timedNavigationPresentation(
+    presentation: NavigationPresentation,
+    gpsSpeedKmh: Double?,
+): NavigationPresentation {
+    if (presentation.status != NavigationState.Status.NAVIGATING) return presentation
+    val maneuver = presentation.instruction?.maneuver ?: return presentation
+    if (!isDirectionalManeuver(maneuver)) return presentation
+    val distance = presentation.distanceMeters ?: return presentation
+    if (distance <= guidanceActivationMeters(gpsSpeedKmh)) return presentation
+
+    // Far from the next maneuver, distance remains useful but the visual command is simply forward.
+    return NavigationPresentation(
+        NavigationState.Status.NAVIGATING,
+        null,
+        distance,
+    )
+}
+
+internal fun guidanceActivationMeters(gpsSpeedKmh: Double?): Double {
+    if (gpsSpeedKmh == null || !gpsSpeedKmh.isFinite() || gpsSpeedKmh <= 1.0) {
+        return GUIDANCE_DEFAULT_METERS
+    }
+    return ((gpsSpeedKmh / 3.6) * GUIDANCE_TARGET_SECONDS)
+        .coerceIn(GUIDANCE_MIN_METERS, GUIDANCE_MAX_METERS)
+}
+
+private fun isDirectionalManeuver(maneuver: NavigationInstruction.Maneuver): Boolean = when (maneuver) {
+    NavigationInstruction.Maneuver.TURN_LEFT,
+    NavigationInstruction.Maneuver.TURN_RIGHT,
+    NavigationInstruction.Maneuver.U_TURN,
+    NavigationInstruction.Maneuver.ROUNDABOUT -> true
+    else -> false
 }
 
 private data class VisibleInstruction(val instruction: NavigationInstruction)
@@ -264,7 +311,7 @@ private fun navigationTitle(status: NavigationState.Status, instruction: Navigat
     NavigationState.Status.READY -> "Rota pronta"
     NavigationState.Status.PAUSED -> "Navegação pausada"
     NavigationState.Status.POSITION_UNAVAILABLE -> "Aguardando GPS"
-    NavigationState.Status.OFF_ROUTE -> "Fora da rota"
+    NavigationState.Status.OFF_ROUTE -> "Recalculando rota…"
     NavigationState.Status.RECALCULATING -> "Recalculando rota…"
     NavigationState.Status.WAYPOINT_REACHED -> "Parada alcançada"
     NavigationState.Status.ARRIVED -> "Destino alcançado"
