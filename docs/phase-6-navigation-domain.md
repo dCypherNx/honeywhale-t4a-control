@@ -13,15 +13,17 @@ Foram introduzidos em `backend/navigation`:
 - `NavigationState` — estado atual da navegação;
 - `RouteParser` — contrato para importadores de rotas externas;
 - `RouteReferenceResolver` — fronteira neutra para resolver referências externas antes do parsing;
+- `RoutePlanner` — fronteira neutra para enriquecer uma rota importada com geometria e instruções fornecidas por um motor externo;
 - `NavigationEngine` — avanço mínimo de instruções consumindo exclusivamente `LocationSnapshot`.
 
 ## Decisões arquiteturais
 
 - Navegação permanece fora de `T4ABackend`.
 - `LocationSnapshot` é a única entrada de posição; não existe segundo GPS.
-- O núcleo não depende de Android, Google Maps, Tuya ou MQTT.
+- O núcleo não depende de Android, Google Maps, Tuya, MQTT ou de um motor específico de rotas.
 - Waypoints preservam ordem e distinguem origem, pontos intermediários e destino; um waypoint intermediário não é tratado como destino final.
 - Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label; latitude e longitude devem estar ambas presentes ou ambas ausentes.
+- Importar uma rota e planejá-la são operações distintas: `RouteParser` recupera a intenção/ordem dos pontos; `RoutePlanner` pode posteriormente resolver coordenadas, geometria e instruções.
 - Persistência e UI permanecem para fases posteriores, conforme o plano de endurecimento arquitetural.
 
 ## Evidência real do compartilhamento Google Maps
@@ -36,14 +38,16 @@ A URL expandida observada foi uma rota `/maps/dir/` contendo, em ordem:
 2. waypoint intermediário em coordenadas `-23.6133508,-46.6884184`;
 3. destino como endereço `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
 
-Isso confirma duas responsabilidades separadas:
+Isso confirma responsabilidades separadas:
 
 ```text
 URL compartilhada maps.app.goo.gl
   -> RouteReferenceResolver (infraestrutura HTTP)
   -> URL expandida /maps/dir/...
   -> GoogleMapsRouteParser
-  -> Route neutra
+  -> Route importada e neutra
+  -> RoutePlanner (motor externo escolhido)
+  -> Route com geometria/instruções
   -> NavigationEngine
   <- LocationSnapshot
   -> NavigationState
@@ -70,6 +74,6 @@ Os testes verificam que:
 
 ## Limite atual
 
-A URL compartilhada fornece os pontos da rota, mas não fornece no caminho textual todas as instruções turn-by-turn nem coordenadas explícitas para todo endereço. Portanto este corte importa corretamente a estrutura da rota, mas ainda não fabrica manobras ou geometria inexistentes.
+A URL compartilhada fornece os pontos da rota, mas não fornece no caminho textual todas as instruções turn-by-turn nem coordenadas explícitas para todo endereço. Portanto o importador recupera corretamente a estrutura da rota, mas não fabrica manobras ou geometria inexistentes.
 
-O próximo corte deverá definir como obter a geometria/instruções necessárias para navegação efetiva, preservando o requisito de não depender do SDK Google no núcleo.
+A escolha do motor de planejamento fica agora atrás de `RoutePlanner`. Google Routes API é uma opção compatível com a origem Google Maps, porém exige credencial e billing; outro motor pode ser usado sem alterar o núcleo. A próxima implementação concreta deve ocorrer no módulo de infraestrutura/app, nunca dentro de `backend/navigation`.
