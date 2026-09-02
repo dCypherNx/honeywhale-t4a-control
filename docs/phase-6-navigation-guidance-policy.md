@@ -44,39 +44,50 @@ At 45 km/h this yields approximately:
 
 The U-turn may activate at a slightly shorter physical distance than a normal turn even though it has a longer temporal window. That is intentional: the model expects near-stop deceleration, so traversing those meters takes substantially longer.
 
-## What OSRM currently provides
+## OSRM enrichment
 
-OSRM itself exposes richer maneuver information through `maneuver.type` and `maneuver.modifier`, including distinctions such as slight/sharp turns, forks, merges and end-of-road situations.
+The OSRM adapter now requests `steps=true`, `annotations=true`, full overview geometry and GeoJSON geometry. The domain keeps the simple `NavigationInstruction.Maneuver` enum for stable UI/engine behavior, but no longer discards the richer routing semantics.
 
-The current `OsrmRoutePlanner.mapManeuver()` deliberately collapses that information into the provider-neutral domain enum:
+For every instruction the adapter preserves, when supplied by OSRM:
 
-- any left modifier -> `TURN_LEFT`
-- any right modifier -> `TURN_RIGHT`
-- `roundabout` / `rotary` -> `ROUNDABOUT`
-- `uturn` -> `U_TURN`
-- `straight`, `continue`, `new name` -> `STRAIGHT`
+- maneuver type and modifier;
+- normalized maneuver context (`TURN`, `FORK`, `MERGE`, `END_OF_ROAD`, `ON_RAMP`, `OFF_RAMP`, `CONTINUE`, `ROUNDABOUT`, `ROTARY`, etc.);
+- normalized turn severity (`STRAIGHT`, `SLIGHT`, `NORMAL`, `SHARP`, `U_TURN`);
+- bearing before and after the maneuver;
+- roundabout/rotary exit number;
+- street name, reference, pronunciation, destinations and exit labels;
+- travel mode, driving side, rotary name/pronunciation;
+- step duration and weight;
+- every intersection reported inside the step, including location, bearings, legal-entry flags, incoming/outgoing indexes, road classes and lane indications/validity.
 
-Therefore the application cannot currently distinguish, with reliable domain data, between:
+For every route leg the adapter also preserves:
 
-- a slight curve and a normal turn;
-- a normal turn and a sharp turn;
-- a conventional junction, fork, merge or end-of-road event when they collapse to the same left/right direction.
+- distance, duration, weight and summary;
+- fine-grained annotation arrays for segment distance, duration, weight and speed;
+- datasource indexes/names;
+- OSM node IDs.
 
-The guidance policy must not infer these categories from localized instruction text. Doing so would couple navigation behavior to OSRM wording and make the domain provider-specific again.
+At route level it preserves total distance, duration, weight, weight profile, OSRM data version and snapped waypoint metadata (street name, snapped location, snap distance and reusable hint).
 
-## Planned refinement
+This is intentionally represented by provider-neutral optional metadata objects (`NavigationStepMetadata`, `RouteLegMetadata`, `RouteMetadata`). Existing constructors remain valid for providers that cannot supply equivalent information.
 
-If physical validation shows that normal left/right treatment is insufficient, enrich `NavigationInstruction` with provider-neutral maneuver severity/topology metadata while preserving OSRM's raw semantic distinction at the adapter boundary. Then add profiles for at least:
+OSRM explicitly allows new maneuver types/properties to appear without an API version change. Unknown types therefore remain representable through `rawType`/`rawModifier`, while known values receive normalized enums. Unknown future fields are not interpreted automatically; adding semantic use for them requires an explicit adapter update.
+
+## Guidance refinement now enabled
+
+The richer metadata removes the previous information bottleneck. The next calibration step can safely distinguish at least:
 
 - no-action / straight transition;
 - slight turn;
 - normal turn;
-- attention/junction;
+- fork / merge / end-of-road attention events;
 - sharp turn;
-- roundabout;
+- roundabout / rotary;
 - U-turn.
 
-Until that domain enrichment exists, `TURN_LEFT` and `TURN_RIGHT` remain normal-turn profiles. This is a known limitation, not an implicit approximation.
+The timing policy has not yet been recalibrated to every enriched category. Until that calibration is physically validated, `TURN_LEFT` and `TURN_RIGHT` still use the current normal-turn timing profile even though severity/topology are now available to the UI policy.
+
+The policy must not infer maneuver severity from localized instruction text; structured routing metadata is authoritative.
 
 ## Validation scope
 
