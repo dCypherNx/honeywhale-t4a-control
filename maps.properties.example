@@ -1,5 +1,0 @@
-# Local-only Google Maps Platform credentials.
-# Copy to maps.properties (ignored by git) and fill the key created for Routes API.
-# Restrict the key in Google Cloud to Routes API and to Android package br.com.t4acontrol
-# using the SHA-1 fingerprint of the certificate that signs the APK under test.
-GOOGLE_ROUTES_API_KEY=
