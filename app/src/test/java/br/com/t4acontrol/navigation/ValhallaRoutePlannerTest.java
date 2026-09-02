@@ -1,12 +1,11 @@
 package br.com.t4acontrol.navigation;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertSame;
 
 import br.com.t4acontrol.backend.navigation.NavigationInstruction;
 import br.com.t4acontrol.backend.navigation.Route;
 import br.com.t4acontrol.backend.navigation.RouteLeg;
-import br.com.t4acontrol.backend.navigation.RoutePlanner;
 import br.com.t4acontrol.backend.navigation.Waypoint;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,22 +67,22 @@ public final class ValhallaRoutePlannerTest {
     assertEquals(1, planned.legs.size());
     List<NavigationInstruction> instructions = planned.legs.get(0).instructions;
     assertEquals(3, instructions.size());
-    assertEquals(NavigationInstruction.Maneuver.START, instructions.get(0).maneuver);
-    assertEquals(NavigationInstruction.Maneuver.TURN_RIGHT, instructions.get(1).maneuver);
-    assertEquals(NavigationInstruction.Maneuver.ARRIVE, instructions.get(2).maneuver);
+    assertSame(NavigationInstruction.Maneuver.START, instructions.get(0).maneuver);
+    assertSame(NavigationInstruction.Maneuver.TURN_RIGHT, instructions.get(1).maneuver);
+    assertSame(NavigationInstruction.Maneuver.ARRIVE, instructions.get(2).maneuver);
     assertEquals(-23.620000, instructions.get(1).latitude, 0.000001);
     assertEquals(-46.670000, instructions.get(1).longitude, 0.000001);
   }
 
   @Test
   public void mapsValhallaTurnFamiliesToNeutralManeuvers() {
-    assertEquals(NavigationInstruction.Maneuver.TURN_LEFT,
+    assertSame(NavigationInstruction.Maneuver.TURN_LEFT,
         ValhallaRoutePlanner.mapManeuver(15));
-    assertEquals(NavigationInstruction.Maneuver.TURN_RIGHT,
+    assertSame(NavigationInstruction.Maneuver.TURN_RIGHT,
         ValhallaRoutePlanner.mapManeuver(10));
-    assertEquals(NavigationInstruction.Maneuver.U_TURN,
+    assertSame(NavigationInstruction.Maneuver.U_TURN,
         ValhallaRoutePlanner.mapManeuver(12));
-    assertTrue(ValhallaRoutePlanner.mapManeuver(26)
-        == NavigationInstruction.Maneuver.UNKNOWN);
+    assertSame(NavigationInstruction.Maneuver.UNKNOWN,
+        ValhallaRoutePlanner.mapManeuver(26));
   }
 }
