@@ -13,7 +13,7 @@ Foram introduzidos em `backend/navigation`:
 - `NavigationState` — estado atual da navegação;
 - `RouteParser` — contrato para importadores de rotas externas;
 - `RouteReferenceResolver` — fronteira neutra para resolver referências externas antes do parsing;
-- `RoutePlanner` — fronteira neutra para enriquecer uma rota importada com geometria e instruções fornecidas por um motor externo;
+- `RoutePlanner` — fronteira neutra para um futuro motor de roteamento;
 - `NavigationEngine` — avanço mínimo de instruções consumindo exclusivamente `LocationSnapshot`.
 
 ## Decisões arquiteturais
@@ -21,80 +21,51 @@ Foram introduzidos em `backend/navigation`:
 - Navegação permanece fora de `T4ABackend`.
 - `LocationSnapshot` é a única entrada de posição; não existe segundo GPS.
 - O núcleo não depende de Android, Google Maps, Tuya, MQTT ou de um motor específico de rotas.
-- Waypoints preservam ordem e distinguem origem, pontos intermediários e destino; um waypoint intermediário não é tratado como destino final.
-- Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label; latitude e longitude devem estar ambas presentes ou ambas ausentes.
-- Importar uma rota e planejá-la são operações distintas: `RouteParser` recupera a intenção/ordem dos pontos; `RoutePlanner` resolve coordenadas faltantes e produz instruções.
+- Waypoints preservam ordem e distinguem origem, pontos intermediários e destino.
+- Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label.
+- Importar uma rota e planejá-la são operações distintas.
 - O projeto não dependerá de chave Google para navegação.
 - Persistência e UI permanecem para cortes posteriores.
 
 ## Evidência real do compartilhamento Google Maps
 
-A primeira rota fornecida para a Fase 6 foi compartilhada como short link:
+A primeira rota fornecida para a Fase 6 foi compartilhada como:
 
 `https://maps.app.goo.gl/LGtVxynCV4YpAZze7?g_st=ac`
 
-A URL expandida observada foi uma rota `/maps/dir/` contendo, em ordem:
+A URL expandida observada contém, em ordem:
 
-1. origem em coordenadas `-23.6377584,-46.658869`;
-2. waypoint intermediário em coordenadas `-23.6133508,-46.6884184`;
-3. destino como endereço `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
+1. origem `-23.6377584,-46.658869`;
+2. waypoint intermediário `-23.6133508,-46.6884184`;
+3. destino textual `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
 
-Fluxo adotado:
+Fluxo preservado:
 
 ```text
-URL compartilhada maps.app.goo.gl
+Google Maps shared URL
   -> RouteReferenceResolver
-  -> URL expandida /maps/dir/...
   -> GoogleMapsRouteParser
-  -> Route importada e neutra
-  -> ValhallaRoutePlanner
-       -> Nominatim somente para waypoint textual sem coordenadas
-       -> Valhalla /route com costing motor_scooter
-  -> Route com RouteLeg/NavigationInstruction
+  -> Route neutra com waypoints ordenados
+  -> RoutePlanner (implementação ainda não escolhida)
   -> NavigationEngine
   <- LocationSnapshot
   -> NavigationState
 ```
 
-`GoogleMapsRouteReferenceResolver`, `GoogleMapsRouteParser` e `ValhallaRoutePlanner` ficam no módulo Android. Nenhuma dependência Google ou OSM entra no backend neutro.
+## Valhalla — tentativa descartada
 
-O parser não interpreta o trecho `/@latitude,longitude,zoom` como waypoint; esse trecho representa viewport da URL. Também não depende dos parâmetros de tracking `utm_*`/`g_ep`.
+Foi implementado e avaliado um `RoutePlanner` baseado em Valhalla/OpenStreetMap usando o perfil `motor_scooter`, sem chave de API. O caso real fornecido pelo usuário não conseguiu ser roteado entre os pontos esperados na instância avaliada. Como o primeiro caso real já falhou, essa implementação foi removida do PR e não é considerada solução válida para o T4A.
 
-## Planejamento sem chave
+Não será feita troca cega para outro serviço público apenas para obter sucesso técnico. O próximo motor deve atender ao caso real, não exigir credencial e permitir um perfil de circulação coerente com o T4A.
 
-`ValhallaRoutePlanner` usa por padrão o servidor público FOSSGIS em `https://valhalla1.openstreetmap.de/route`, mas o endpoint permanece substituível. A requisição usa:
+## Alternativas avaliadas
 
-- `costing = motor_scooter`;
-- `language = pt-BR`;
-- unidades em quilômetros;
-- `shape_format = polyline6`;
-- origem e destino como `break`;
-- waypoints intermediários como `through`, preservando a intenção de apenas orientar o percurso.
+- Google Routes API: descartada porque exige chave/billing.
+- GraphHopper hosted API: descartada porque exige chave.
+- openrouteservice hosted API: descartada porque exige chave.
+- OSRM público: sem chave, porém os perfis públicos são pré-processados e não oferecem um perfil próprio para o T4A.
+- BRouter: aberto, executável localmente/Android e com perfis configuráveis. O perfil `moped` distribuído pelo projeto é explicitamente experimental e não deve ser usado diretamente para navegação real. Continua candidato apenas com perfil próprio e validação real.
 
-Quando um waypoint veio do Google Maps apenas como endereço textual, ele é resolvido pelo Nominatim público antes da chamada ao Valhalla. O adaptador envia `User-Agent` identificável e respeita o limite público de no máximo uma consulta Nominatim por segundo quando houver mais de um endereço sem coordenadas.
+## Próximo critério
 
-As manobras do Valhalla fornecem `begin_shape_index`; o adaptador decodifica o `polyline6` da perna e ancora cada `NavigationInstruction` na coordenada correspondente. Isso evita inventar coordenadas para curvas e prepara a base para distância até a próxima manobra.
-
-## Critério coberto
-
-Os testes verificam que:
-
-- a rota preserva a ordem e o papel dos waypoints;
-- `NavigationEngine` recebe `LocationSnapshot` diretamente;
-- uma instrução corrente pode ser produzida sem conhecimento do provedor;
-- atingir uma instrução avança para a próxima;
-- ausência de localização é um estado explícito;
-- referências já expandidas passam pelo resolver sem modificação;
-- referência vazia é rejeitada antes de qualquer acesso de rede;
-- a URL real fornecida na Fase 6 gera exatamente três waypoints na ordem origem -> passagem -> destino;
-- origem e passagem preservam suas coordenadas;
-- o destino textual permanece válido mesmo quando a URL não traz coordenadas explícitas;
-- o request Valhalla usa `motor_scooter` e preserva os intermediários como `through`;
-- manobras Valhalla são convertidas para a taxonomia neutra e ancoradas por `begin_shape_index`.
-
-## Limites atuais
-
-- O percurso resultante é recalculado pelo Valhalla usando os waypoints importados; ele não é uma reprodução binária do grafo interno do Google Maps.
-- Servidores públicos Valhalla/Nominatim são adequados para desenvolvimento e uso leve, sem garantia de disponibilidade. Como os endpoints são substituíveis, uma instância própria pode ser adotada posteriormente sem alterar o domínio.
-- Atribuição a OpenStreetMap/Valhalla deverá aparecer na UI quando a navegação for exposta ao usuário.
-- Persistência de rotas, UI de navegação, detecção de saída da rota e recálculo permanecem fora deste corte.
+O próximo experimento deve partir da mesma rota real e só será incorporado ao PR se conseguir roteá-la de forma plausível. A direção preferida é um motor OSM sob nosso controle, com perfil específico do T4A e sem dependência de credenciais externas.
