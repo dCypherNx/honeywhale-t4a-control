@@ -3,6 +3,7 @@ package br.com.t4acontrol.navigation;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import br.com.t4acontrol.backend.navigation.NavigationInstruction;
 import br.com.t4acontrol.backend.navigation.Route;
 import br.com.t4acontrol.backend.navigation.RoutingProfile;
 import br.com.t4acontrol.backend.navigation.Waypoint;
@@ -45,5 +46,18 @@ public final class OsrmRoutePlannerTest {
     assertEquals(120.5, planned.legs.get(0).instructions.get(0).segmentDistanceMeters, 0.001);
     assertEquals(120.5, planned.legs.get(0).instructions.get(1).routeOffsetMeters, 0.001);
     assertEquals(3, planned.legs.get(0).geometry.size());
+  }
+
+  @Test public void intermediateArriveBecomesWaypointAndFinalArriveRemainsDestination() throws Exception {
+    Route imported = new Route("r", "google-maps", "ref", RoutingProfile.BICYCLE, points, java.util.Collections.emptyList());
+    JSONObject response = new JSONObject("{\"code\":\"Ok\",\"routes\":[{\"legs\":["
+        + "{\"steps\":[{\"distance\":10,\"name\":\"Parada A\",\"maneuver\":{\"type\":\"arrive\",\"modifier\":\"straight\",\"location\":[-46.6884184,-23.6133508]},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[-46.658869,-23.6377584],[-46.6884184,-23.6133508]]}}]},"
+        + "{\"steps\":[{\"distance\":10,\"name\":\"Destino\",\"maneuver\":{\"type\":\"arrive\",\"modifier\":\"straight\",\"location\":[-46.7,-23.59]},\"geometry\":{\"type\":\"LineString\",\"coordinates\":[[-46.6884184,-23.6133508],[-46.7,-23.59]]}}]}"
+        + "]}]}");
+
+    Route planned = OsrmRoutePlanner.parseResponse(imported, RoutingProfile.BICYCLE, points, response);
+
+    assertEquals(NavigationInstruction.Maneuver.WAYPOINT, planned.legs.get(0).instructions.get(0).maneuver);
+    assertEquals(NavigationInstruction.Maneuver.ARRIVE, planned.legs.get(1).instructions.get(0).maneuver);
   }
 }
