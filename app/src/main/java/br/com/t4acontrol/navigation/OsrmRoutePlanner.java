@@ -2,8 +2,10 @@ package br.com.t4acontrol.navigation;
 
 import br.com.t4acontrol.backend.navigation.GeoPoint;
 import br.com.t4acontrol.backend.navigation.NavigationInstruction;
+import br.com.t4acontrol.backend.navigation.NavigationStepMetadata;
 import br.com.t4acontrol.backend.navigation.Route;
 import br.com.t4acontrol.backend.navigation.RouteLeg;
+import br.com.t4acontrol.backend.navigation.RouteLegMetadata;
 import br.com.t4acontrol.backend.navigation.RoutePlanner;
 import br.com.t4acontrol.backend.navigation.RoutingProfile;
 import br.com.t4acontrol.backend.navigation.Waypoint;
@@ -16,6 +18,7 @@ import java.net.URLEncoder;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -87,7 +90,8 @@ public final class OsrmRoutePlanner implements RoutePlanner {
       if (coordinates.length() > 0) coordinates.append(';');
       coordinates.append(waypoint.longitude).append(',').append(waypoint.latitude);
     }
-    return routingBase + "/" + graph(profile) + "/route/v1/driving/" + coordinates + "?steps=true&overview=full&geometries=geojson";
+    return routingBase + "/" + graph(profile) + "/route/v1/driving/" + coordinates
+        + "?steps=true&annotations=true&overview=full&geometries=geojson";
   }
 
   static String graph(RoutingProfile profile) throws RoutePlanningException {
@@ -106,26 +110,145 @@ public final class OsrmRoutePlanner implements RoutePlanner {
 
     List<RouteLeg> legs = new ArrayList<>();
     for (int legIndex = 0; legIndex < legsJson.length(); legIndex++) {
-      JSONArray steps = legsJson.getJSONObject(legIndex).optJSONArray("steps");
+      JSONObject legJson = legsJson.getJSONObject(legIndex);
+      JSONArray steps = legJson.optJSONArray("steps");
       List<NavigationInstruction> instructions = new ArrayList<>();
       List<GeoPoint> geometry = new ArrayList<>();
       double routeOffset = 0.0;
       if (steps != null) for (int stepIndex = 0; stepIndex < steps.length(); stepIndex++) {
-        JSONObject step = steps.getJSONObject(stepIndex); JSONObject maneuver = step.getJSONObject("maneuver"); JSONArray location = maneuver.getJSONArray("location");
+        JSONObject step = steps.getJSONObject(stepIndex);
+        JSONObject maneuver = step.getJSONObject("maneuver");
+        JSONArray location = maneuver.getJSONArray("location");
         double stepDistance = step.optDouble("distance", 0.0);
         NavigationInstruction.Maneuver mapped = mapManeuver(maneuver.optString("type"), maneuver.optString("modifier"));
         if (mapped == NavigationInstruction.Maneuver.ARRIVE && legIndex < legsJson.length() - 1) {
           mapped = NavigationInstruction.Maneuver.WAYPOINT;
         }
-        instructions.add(new NavigationInstruction("osrm-" + legIndex + "-" + stepIndex,
-            mapped, instructionText(step, maneuver),
-            location.getDouble(1), location.getDouble(0), routeOffset, stepDistance));
+        instructions.add(new NavigationInstruction(
+            "osrm-" + legIndex + "-" + stepIndex,
+            mapped,
+            instructionText(step, maneuver),
+            location.getDouble(1),
+            location.getDouble(0),
+            routeOffset,
+            stepDistance,
+            parseStepMetadata(step, maneuver)));
         appendGeometry(geometry, step.optJSONObject("geometry"));
         routeOffset += stepDistance;
       }
-      legs.add(new RouteLeg(waypoints.get(legIndex), waypoints.get(legIndex + 1), instructions, geometry));
+      legs.add(new RouteLeg(
+          waypoints.get(legIndex),
+          waypoints.get(legIndex + 1),
+          instructions,
+          geometry,
+          parseLegMetadata(legJson)));
     }
     return new Route(importedRoute.id, "osrm", importedRoute.originalReference, selectedProfile, waypoints, legs);
+  }
+
+  private static NavigationStepMetadata parseStepMetadata(JSONObject step, JSONObject maneuver) throws JSONException {
+    String type = maneuver.optString("type", "");
+    String modifier = maneuver.optString("modifier", "");
+    return new NavigationStepMetadata(
+        mapContext(type),
+        mapSeverity(modifier),
+        type,
+        modifier,
+        maneuver.has("bearing_before") ? maneuver.optInt("bearing_before", -1) : -1,
+        maneuver.has("bearing_after") ? maneuver.optInt("bearing_after", -1) : -1,
+        maneuver.has("exit") ? maneuver.optInt("exit", -1) : -1,
+        optionalString(step, "name"),
+        optionalString(step, "ref"),
+        optionalString(step, "pronunciation"),
+        optionalString(step, "destinations"),
+        optionalString(step, "exits"),
+        optionalString(step, "mode"),
+        optionalString(step, "rotary_name"),
+        optionalString(step, "rotary_pronunciation"),
+        optionalString(step, "driving_side"),
+        step.has("duration") ? step.optDouble("duration", Double.NaN) : Double.NaN,
+        step.has("weight") ? step.optDouble("weight", Double.NaN) : Double.NaN,
+        parseIntersections(step.optJSONArray("intersections")));
+  }
+
+  private static List<NavigationStepMetadata.Intersection> parseIntersections(JSONArray array) throws JSONException {
+    if (array == null) return Collections.emptyList();
+    List<NavigationStepMetadata.Intersection> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) {
+      JSONObject intersection = array.getJSONObject(i);
+      JSONArray location = intersection.optJSONArray("location");
+      double longitude = location != null && location.length() > 0 ? location.optDouble(0, Double.NaN) : Double.NaN;
+      double latitude = location != null && location.length() > 1 ? location.optDouble(1, Double.NaN) : Double.NaN;
+      result.add(new NavigationStepMetadata.Intersection(
+          latitude,
+          longitude,
+          intList(intersection.optJSONArray("bearings")),
+          booleanList(intersection.optJSONArray("entry")),
+          intersection.has("in") ? intersection.optInt("in", -1) : -1,
+          intersection.has("out") ? intersection.optInt("out", -1) : -1,
+          stringList(intersection.optJSONArray("classes")),
+          parseLanes(intersection.optJSONArray("lanes"))));
+    }
+    return result;
+  }
+
+  private static List<NavigationStepMetadata.Lane> parseLanes(JSONArray array) throws JSONException {
+    if (array == null) return Collections.emptyList();
+    List<NavigationStepMetadata.Lane> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) {
+      JSONObject lane = array.getJSONObject(i);
+      result.add(new NavigationStepMetadata.Lane(
+          stringList(lane.optJSONArray("indications")),
+          lane.optBoolean("valid", false),
+          lane.optBoolean("active", false)));
+    }
+    return result;
+  }
+
+  private static RouteLegMetadata parseLegMetadata(JSONObject leg) throws JSONException {
+    JSONObject annotation = leg.optJSONObject("annotation");
+    JSONObject metadata = annotation != null ? annotation.optJSONObject("metadata") : null;
+    return new RouteLegMetadata(
+        leg.has("distance") ? leg.optDouble("distance", Double.NaN) : Double.NaN,
+        leg.has("duration") ? leg.optDouble("duration", Double.NaN) : Double.NaN,
+        leg.has("weight") ? leg.optDouble("weight", Double.NaN) : Double.NaN,
+        optionalString(leg, "summary"),
+        doubleList(annotation == null ? null : annotation.optJSONArray("distance")),
+        doubleList(annotation == null ? null : annotation.optJSONArray("duration")),
+        doubleList(annotation == null ? null : annotation.optJSONArray("weight")),
+        doubleList(annotation == null ? null : annotation.optJSONArray("speed")),
+        intList(annotation == null ? null : annotation.optJSONArray("datasources")),
+        stringList(metadata == null ? null : metadata.optJSONArray("datasource_names")),
+        longList(annotation == null ? null : annotation.optJSONArray("nodes")));
+  }
+
+  static NavigationStepMetadata.Context mapContext(String type) {
+    if ("turn".equals(type)) return NavigationStepMetadata.Context.TURN;
+    if ("new name".equals(type)) return NavigationStepMetadata.Context.NEW_NAME;
+    if ("depart".equals(type)) return NavigationStepMetadata.Context.DEPART;
+    if ("arrive".equals(type)) return NavigationStepMetadata.Context.ARRIVE;
+    if ("merge".equals(type)) return NavigationStepMetadata.Context.MERGE;
+    if ("on ramp".equals(type) || "on_ramp".equals(type) || "ramp".equals(type)) return NavigationStepMetadata.Context.ON_RAMP;
+    if ("off ramp".equals(type) || "off_ramp".equals(type)) return NavigationStepMetadata.Context.OFF_RAMP;
+    if ("fork".equals(type)) return NavigationStepMetadata.Context.FORK;
+    if ("end of road".equals(type) || "end_of_road".equals(type)) return NavigationStepMetadata.Context.END_OF_ROAD;
+    if ("continue".equals(type)) return NavigationStepMetadata.Context.CONTINUE;
+    if ("roundabout".equals(type)) return NavigationStepMetadata.Context.ROUNDABOUT;
+    if ("rotary".equals(type)) return NavigationStepMetadata.Context.ROTARY;
+    if ("roundabout turn".equals(type) || "roundabout_turn".equals(type)) return NavigationStepMetadata.Context.ROUNDABOUT_TURN;
+    if ("notification".equals(type)) return NavigationStepMetadata.Context.NOTIFICATION;
+    if ("exit roundabout".equals(type) || "exit_roundabout".equals(type)) return NavigationStepMetadata.Context.EXIT_ROUNDABOUT;
+    if ("exit rotary".equals(type) || "exit_rotary".equals(type)) return NavigationStepMetadata.Context.EXIT_ROTARY;
+    return NavigationStepMetadata.Context.UNKNOWN;
+  }
+
+  static NavigationStepMetadata.TurnSeverity mapSeverity(String modifier) {
+    if ("uturn".equals(modifier)) return NavigationStepMetadata.TurnSeverity.U_TURN;
+    if ("sharp left".equals(modifier) || "sharp right".equals(modifier)) return NavigationStepMetadata.TurnSeverity.SHARP;
+    if ("slight left".equals(modifier) || "slight right".equals(modifier)) return NavigationStepMetadata.TurnSeverity.SLIGHT;
+    if ("left".equals(modifier) || "right".equals(modifier)) return NavigationStepMetadata.TurnSeverity.NORMAL;
+    if ("straight".equals(modifier)) return NavigationStepMetadata.TurnSeverity.STRAIGHT;
+    return NavigationStepMetadata.TurnSeverity.UNKNOWN;
   }
 
   private static void appendGeometry(List<GeoPoint> target, JSONObject geometry) throws JSONException {
@@ -145,13 +268,53 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     if ("uturn".equals(modifier)) return NavigationInstruction.Maneuver.U_TURN;
     if (modifier != null && modifier.contains("left")) return NavigationInstruction.Maneuver.TURN_LEFT;
     if (modifier != null && modifier.contains("right")) return NavigationInstruction.Maneuver.TURN_RIGHT;
-    if ("straight".equals(modifier) || "continue".equals(type) || "new name".equals(type)) return NavigationInstruction.Maneuver.STRAIGHT;
+    if ("straight".equals(modifier) || "continue".equals(type) || "new name".equals(type) || "notification".equals(type)
+        || "exit roundabout".equals(type) || "exit rotary".equals(type)) return NavigationInstruction.Maneuver.STRAIGHT;
     return NavigationInstruction.Maneuver.UNKNOWN;
   }
 
   private static String instructionText(JSONObject step, JSONObject maneuver) {
     String name = step.optString("name", ""), type = maneuver.optString("type", ""), modifier = maneuver.optString("modifier", "");
     StringBuilder text = new StringBuilder(type); if (!modifier.isEmpty()) text.append(' ').append(modifier); if (!name.isEmpty()) text.append(" — ").append(name); return text.toString();
+  }
+
+  private static String optionalString(JSONObject object, String key) {
+    return object.has(key) && !object.isNull(key) ? object.optString(key, null) : null;
+  }
+
+  private static List<Integer> intList(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<Integer> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) result.add(array.optInt(i));
+    return result;
+  }
+
+  private static List<Long> longList(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<Long> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) result.add(array.optLong(i));
+    return result;
+  }
+
+  private static List<Double> doubleList(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<Double> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) result.add(array.optDouble(i, Double.NaN));
+    return result;
+  }
+
+  private static List<Boolean> booleanList(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<Boolean> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) result.add(array.optBoolean(i, false));
+    return result;
+  }
+
+  private static List<String> stringList(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<String> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) result.add(array.optString(i, ""));
+    return result;
   }
 
   private JSONObject getJson(String url) throws IOException, JSONException, RoutePlanningException {
