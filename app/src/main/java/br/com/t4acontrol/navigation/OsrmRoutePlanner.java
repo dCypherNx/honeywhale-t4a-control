@@ -113,8 +113,12 @@ public final class OsrmRoutePlanner implements RoutePlanner {
       if (steps != null) for (int stepIndex = 0; stepIndex < steps.length(); stepIndex++) {
         JSONObject step = steps.getJSONObject(stepIndex); JSONObject maneuver = step.getJSONObject("maneuver"); JSONArray location = maneuver.getJSONArray("location");
         double stepDistance = step.optDouble("distance", 0.0);
+        NavigationInstruction.Maneuver mapped = mapManeuver(maneuver.optString("type"), maneuver.optString("modifier"));
+        if (mapped == NavigationInstruction.Maneuver.ARRIVE && legIndex < legsJson.length() - 1) {
+          mapped = NavigationInstruction.Maneuver.WAYPOINT;
+        }
         instructions.add(new NavigationInstruction("osrm-" + legIndex + "-" + stepIndex,
-            mapManeuver(maneuver.optString("type"), maneuver.optString("modifier")), instructionText(step, maneuver),
+            mapped, instructionText(step, maneuver),
             location.getDouble(1), location.getDouble(0), routeOffset, stepDistance));
         appendGeometry(geometry, step.optJSONObject("geometry"));
         routeOffset += stepDistance;
