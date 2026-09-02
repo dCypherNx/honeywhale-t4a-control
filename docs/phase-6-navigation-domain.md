@@ -11,7 +11,8 @@ Foram introduzidos em `backend/navigation`:
 - `RouteLeg` — trecho entre dois waypoints;
 - `NavigationInstruction` — instrução neutra de manobra;
 - `NavigationState` — estado atual da navegação;
-- `RouteParser` — contrato para futuros importadores de rotas externas;
+- `RouteParser` — contrato para importadores de rotas externas;
+- `RouteReferenceResolver` — fronteira neutra para resolver referências externas antes do parsing;
 - `NavigationEngine` — avanço mínimo de instruções consumindo exclusivamente `LocationSnapshot`.
 
 ## Decisões arquiteturais
@@ -20,32 +21,37 @@ Foram introduzidos em `backend/navigation`:
 - `LocationSnapshot` é a única entrada de posição; não existe segundo GPS.
 - O núcleo não depende de Android, Google Maps, Tuya ou MQTT.
 - Waypoints preservam ordem e distinguem origem, pontos intermediários e destino; um waypoint intermediário não é tratado como destino final.
+- Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label; latitude e longitude devem estar ambas presentes ou ambas ausentes.
 - Persistência e UI permanecem para fases posteriores, conforme o plano de endurecimento arquitetural.
 
 ## Evidência real do compartilhamento Google Maps
 
-A primeira rota fornecida para a Fase 6 foi compartilhada como:
+A primeira rota fornecida para a Fase 6 foi compartilhada como short link:
 
 `https://maps.app.goo.gl/LGtVxynCV4YpAZze7?g_st=ac`
 
-Isso confirma que o contrato de entrada do aplicativo precisa aceitar short links `maps.app.goo.gl`; eles não contêm diretamente a estrutura da rota. A expansão do short link é uma responsabilidade de infraestrutura e não pertence ao parser neutro.
+A URL expandida observada foi uma rota `/maps/dir/` contendo, em ordem:
 
-Foi introduzido `RouteReferenceResolver` no backend como fronteira neutra e `GoogleMapsRouteReferenceResolver` no módulo Android como adaptador HTTP. O adaptador apenas expande redirecionamentos do short link e devolve a referência final. `RouteParser` continua responsável exclusivamente por converter a referência já resolvida em `Route`.
+1. origem em coordenadas `-23.6377584,-46.658869`;
+2. waypoint intermediário em coordenadas `-23.6133508,-46.6884184`;
+3. destino como endereço `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
 
-Fluxo atualizado:
+Isso confirma duas responsabilidades separadas:
 
 ```text
-URL compartilhada
-  -> RouteReferenceResolver (infraestrutura)
-  -> referência expandida
-  -> RouteParser (formato da rota)
-  -> Route
+URL compartilhada maps.app.goo.gl
+  -> RouteReferenceResolver (infraestrutura HTTP)
+  -> URL expandida /maps/dir/...
+  -> GoogleMapsRouteParser
+  -> Route neutra
   -> NavigationEngine
   <- LocationSnapshot
   -> NavigationState
 ```
 
-Nenhum SDK Google foi introduzido.
+`GoogleMapsRouteReferenceResolver` fica no módulo Android e apenas expande redirecionamentos. `GoogleMapsRouteParser` também fica fora do núcleo neutro e interpreta o formato observado do Google Maps sem SDK Google.
+
+O parser não interpreta o trecho `/@latitude,longitude,zoom` como waypoint; esse trecho representa viewport da URL. Também não depende dos parâmetros de tracking `utm_*`/`g_ep`.
 
 ## Critério coberto
 
@@ -57,8 +63,13 @@ Os testes verificam que:
 - atingir uma instrução avança para a próxima;
 - ausência de localização é um estado explícito;
 - referências já expandidas passam pelo resolver sem modificação;
-- referência vazia é rejeitada antes de qualquer acesso de rede.
+- referência vazia é rejeitada antes de qualquer acesso de rede;
+- a URL real fornecida na Fase 6 gera exatamente três waypoints na ordem origem -> passagem -> destino;
+- origem e passagem preservam suas coordenadas;
+- o destino textual permanece válido mesmo quando a URL não traz coordenadas explícitas para ele.
 
-## Próximo corte
+## Limite atual
 
-Capturar a URL final resultante do redirecionamento `maps.app.goo.gl` no Android real ou em um ambiente capaz de seguir o short link. Essa URL expandida determinará a implementação concreta do primeiro `RouteParser` sem inferir um formato que ainda não foi observado.
+A URL compartilhada fornece os pontos da rota, mas não fornece no caminho textual todas as instruções turn-by-turn nem coordenadas explícitas para todo endereço. Portanto este corte importa corretamente a estrutura da rota, mas ainda não fabrica manobras ou geometria inexistentes.
+
+O próximo corte deverá definir como obter a geometria/instruções necessárias para navegação efetiva, preservando o requisito de não depender do SDK Google no núcleo.
