@@ -106,7 +106,9 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
         .replace("\\u0026", "&")
         .replace("\\u003f", "?")
         .replace("\\u002f", "/")
-        .replace("\\/", "/");
+        .replace("\\/", "/")
+        .replace("\\\"", "\"")
+        .replace("\\'", "'");
 
     String value = firstGroup(META_REFRESH, normalized);
     if (value != null) return value;
@@ -149,8 +151,7 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
       URI uri = URI.create(value);
       String host = uri.getHost();
       String path = uri.getRawPath();
-      return host != null
-          && (host.equalsIgnoreCase("google.com") || host.contains("google."))
+      return GoogleMapsRouteParser.isGoogleMapsHost(host)
           && path != null
           && path.contains("/maps/dir/");
     } catch (IllegalArgumentException ignored) {
