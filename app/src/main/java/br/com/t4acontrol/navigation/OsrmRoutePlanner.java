@@ -177,6 +177,7 @@ public final class OsrmRoutePlanner implements RoutePlanner {
         optionalString(step, "driving_side"),
         step.has("duration") ? step.optDouble("duration", Double.NaN) : Double.NaN,
         step.has("weight") ? step.optDouble("weight", Double.NaN) : Double.NaN,
+        geometryPoints(step.optJSONObject("geometry")),
         parseIntersections(step.optJSONArray("intersections")));
   }
 
@@ -289,12 +290,24 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     return NavigationStepMetadata.TurnSeverity.UNKNOWN;
   }
 
-  private static void appendGeometry(List<GeoPoint> target, JSONObject geometry) throws JSONException {
-    if (geometry == null) return;
-    JSONArray coordinates = geometry.optJSONArray("coordinates"); if (coordinates == null) return;
+  private static List<GeoPoint> geometryPoints(JSONObject geometry) throws JSONException {
+    if (geometry == null) return Collections.emptyList();
+    JSONArray coordinates = geometry.optJSONArray("coordinates");
+    if (coordinates == null) return Collections.emptyList();
+    List<GeoPoint> result = new ArrayList<>();
     for (int i = 0; i < coordinates.length(); i++) {
-      JSONArray coordinate = coordinates.getJSONArray(i); GeoPoint point = new GeoPoint(coordinate.getDouble(1), coordinate.getDouble(0));
-      if (!target.isEmpty()) { GeoPoint last = target.get(target.size() - 1); if (last.latitude == point.latitude && last.longitude == point.longitude) continue; }
+      JSONArray coordinate = coordinates.getJSONArray(i);
+      result.add(new GeoPoint(coordinate.getDouble(1), coordinate.getDouble(0)));
+    }
+    return result;
+  }
+
+  private static void appendGeometry(List<GeoPoint> target, JSONObject geometry) throws JSONException {
+    for (GeoPoint point : geometryPoints(geometry)) {
+      if (!target.isEmpty()) {
+        GeoPoint last = target.get(target.size() - 1);
+        if (last.latitude == point.latitude && last.longitude == point.longitude) continue;
+      }
       target.add(point);
     }
   }
