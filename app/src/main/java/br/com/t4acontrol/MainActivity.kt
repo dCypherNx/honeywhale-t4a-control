@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import br.com.t4acontrol.backend.T4AState
 import br.com.t4acontrol.mqtt.MqttSettingsActivity
+import br.com.t4acontrol.navigation.NavigationShareActivity
 import br.com.t4acontrol.session.T4ASession
 import br.com.t4acontrol.session.T4ASessionService
 import br.com.t4acontrol.ui.T4AApp
@@ -171,6 +172,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
         showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true)
         themeMode = preferences().getString(PREF_THEME, "system") ?: "system"
+        consumeNavigationRawLog(intent)
         applyKeepScreenOn(keepScreenOn)
         ensurePermissions()
         setContent {
@@ -190,6 +192,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 actions = uiActions,
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeNavigationRawLog(intent)
     }
 
     override fun onResume() {
@@ -245,6 +253,13 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     private fun appendRaw(value: String) {
         rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value)
+    }
+
+    private fun consumeNavigationRawLog(sourceIntent: Intent?) {
+        val entries = sourceIntent?.getStringArrayListExtra(NavigationShareActivity.EXTRA_NAVIGATION_RAW_LOG)
+            ?: return
+        entries.forEach(::appendRaw)
+        sourceIntent.removeExtra(NavigationShareActivity.EXTRA_NAVIGATION_RAW_LOG)
     }
 
     private fun rawLogText(): String = buildString {
