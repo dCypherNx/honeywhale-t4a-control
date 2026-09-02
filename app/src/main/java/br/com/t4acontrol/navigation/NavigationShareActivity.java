@@ -28,7 +28,7 @@ public final class NavigationShareActivity extends Activity {
     trace.add("[NAV] SHARE RECEIVED reference=" + reference);
     NavigationRouteImporter importer =
         new NavigationRouteImporter(
-            new GoogleMapsRouteReferenceResolver(trace::add),
+            new GoogleMapsRouteReferenceResolver(getApplicationContext(), trace::add),
             new GoogleMapsRouteParser(),
             new OsrmRoutePlanner(),
             new SharedPreferencesRouteReferenceStore(getApplicationContext()),
