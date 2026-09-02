@@ -9,7 +9,8 @@ public final class NavigationState {
     WAYPOINT_REACHED,
     ARRIVED,
     POSITION_UNAVAILABLE,
-    OFF_ROUTE
+    OFF_ROUTE,
+    RECALCULATING
   }
 
   public final Status status;
@@ -40,6 +41,16 @@ public final class NavigationState {
 
   public static NavigationState ready(Route route) {
     return new NavigationState(Status.READY, route.id, 0, 0, null, null);
+  }
+
+  public static NavigationState recalculating(Route route, NavigationState previous) {
+    return new NavigationState(
+        Status.RECALCULATING,
+        route.id,
+        previous == null ? 0 : Math.max(previous.legIndex, 0),
+        previous == null ? 0 : Math.max(previous.instructionIndex, 0),
+        previous == null ? null : previous.instruction,
+        null);
   }
 
   static NavigationState of(
