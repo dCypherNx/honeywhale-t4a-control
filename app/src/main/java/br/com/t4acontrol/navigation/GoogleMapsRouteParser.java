@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /** Parses expanded Google Maps /maps/dir URLs into the neutral route model. */
 public final class GoogleMapsRouteParser implements RouteParser {
@@ -29,7 +30,7 @@ public final class GoogleMapsRouteParser implements RouteParser {
     }
 
     String host = uri.getHost();
-    if (host == null || !(host.equalsIgnoreCase("google.com") || host.endsWith(".google.com"))) {
+    if (!isGoogleMapsHost(host)) {
       throw new RouteParseException("Unsupported Google Maps host");
     }
 
@@ -85,6 +86,14 @@ public final class GoogleMapsRouteParser implements RouteParser {
         parseRoutingProfile(uri, routeReference),
         waypoints,
         legs);
+  }
+
+  static boolean isGoogleMapsHost(String host) {
+    if (host == null) return false;
+    String value = host.toLowerCase(Locale.ROOT);
+    return value.equals("google.com")
+        || value.endsWith(".google.com")
+        || value.matches("(?:^|.*\\.)google\\.[a-z]{2,3}(?:\\.[a-z]{2})?");
   }
 
   static RoutingProfile parseRoutingProfile(URI uri, String routeReference) {
