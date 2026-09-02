@@ -77,6 +77,9 @@ internal fun NavigationCard(
                 status = presentation.status,
                 debugRouteUrl = debugRouteUrl,
                 context = context,
+                onPause = runtime::pause,
+                onResume = runtime::resume,
+                onEnd = { runtime.end(context) },
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
@@ -89,18 +92,21 @@ internal fun NavigationCard(
                 if (
                     detail != null &&
                     presentation.status != NavigationState.Status.RECALCULATING &&
+                    presentation.status != NavigationState.Status.PAUSED &&
                     instruction.maneuver != NavigationInstruction.Maneuver.WAYPOINT
                 ) {
                     Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
                 }
             }
-            presentation.distanceMeters?.let { distance ->
-                Text(
-                    text = formatDistance(distance),
-                    color = foreground,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+            if (presentation.status != NavigationState.Status.PAUSED) {
+                presentation.distanceMeters?.let { distance ->
+                    Text(
+                        text = formatDistance(distance),
+                        color = foreground,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
@@ -113,7 +119,7 @@ private data class NavigationPresentation(
 )
 
 private fun navigationPresentation(route: Route?, state: NavigationState, waypointsVisible: Boolean): NavigationPresentation {
-    if (waypointsVisible || route == null) {
+    if (state.status == NavigationState.Status.PAUSED || waypointsVisible || route == null) {
         return NavigationPresentation(state.status, state.instruction, state.distanceToInstructionMeters)
     }
 
@@ -156,18 +162,21 @@ private fun NavigationManeuverIcon(
     status: NavigationState.Status,
     debugRouteUrl: String?,
     context: Context,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onEnd: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val interactionModifier = if (debugRouteUrl != null) {
-        Modifier
-            .size(48.dp)
-            .combinedClickable(
-                onClick = {},
-                onLongClick = { menuExpanded = true },
-            )
-    } else {
-        Modifier.size(48.dp)
-    }
+    var actionMenuExpanded by remember { mutableStateOf(false) }
+    var debugMenuExpanded by remember { mutableStateOf(false) }
+    val interactionModifier = Modifier
+        .size(48.dp)
+        .combinedClickable(
+            onClick = { actionMenuExpanded = true },
+            onLongClick = {
+                if (debugRouteUrl != null) debugMenuExpanded = true
+                else actionMenuExpanded = true
+            },
+        )
 
     Box {
         MdiIcon(
@@ -179,22 +188,41 @@ private fun NavigationManeuverIcon(
             iconSize = 40.dp,
             modifier = interactionModifier,
         )
+        DropdownMenu(
+            expanded = actionMenuExpanded,
+            onDismissRequest = { actionMenuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(if (status == NavigationState.Status.PAUSED) "Retomar navegação" else "Pausar navegação") },
+                onClick = {
+                    actionMenuExpanded = false
+                    if (status == NavigationState.Status.PAUSED) onResume() else onPause()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Encerrar navegação") },
+                onClick = {
+                    actionMenuExpanded = false
+                    onEnd()
+                },
+            )
+        }
         if (debugRouteUrl != null) {
             DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
+                expanded = debugMenuExpanded,
+                onDismissRequest = { debugMenuExpanded = false },
             ) {
                 DropdownMenuItem(
                     text = { Text("Abrir rota planejada") },
                     onClick = {
-                        menuExpanded = false
+                        debugMenuExpanded = false
                         openPlannedRoute(context, debugRouteUrl)
                     },
                 )
                 DropdownMenuItem(
                     text = { Text("Copiar link da rota") },
                     onClick = {
-                        menuExpanded = false
+                        debugMenuExpanded = false
                         copyPlannedRoute(context, debugRouteUrl)
                     },
                 )
@@ -234,6 +262,7 @@ private fun plannedRouteDebugUrl(route: Route?): String? {
 
 private fun navigationTitle(status: NavigationState.Status, instruction: NavigationInstruction?): String = when (status) {
     NavigationState.Status.READY -> "Rota pronta"
+    NavigationState.Status.PAUSED -> "Navegação pausada"
     NavigationState.Status.POSITION_UNAVAILABLE -> "Aguardando GPS"
     NavigationState.Status.OFF_ROUTE -> "Fora da rota"
     NavigationState.Status.RECALCULATING -> "Recalculando rota…"
@@ -254,6 +283,7 @@ private fun navigationTitle(status: NavigationState.Status, instruction: Navigat
 
 private fun maneuverIcon(maneuver: NavigationInstruction.Maneuver?, status: NavigationState.Status): String {
     if (status == NavigationState.Status.OFF_ROUTE || status == NavigationState.Status.RECALCULATING) return "cmd-map-marker-alert"
+    if (status == NavigationState.Status.PAUSED) return "cmd-pause-circle-outline"
     if (status == NavigationState.Status.ARRIVED) return "cmd-map-marker-check"
     return when (maneuver) {
         NavigationInstruction.Maneuver.TURN_LEFT -> "cmd-arrow-left-top"
