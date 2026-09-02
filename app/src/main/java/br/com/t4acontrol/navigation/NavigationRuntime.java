@@ -33,6 +33,7 @@ public final class NavigationRuntime {
   private final AtomicBoolean recalculationRunning = new AtomicBoolean();
   private volatile Route route;
   private volatile NavigationState state = NavigationState.noRoute();
+  private volatile NavigationState pausedFromState;
   private volatile String lastLoggedStateSignature = "";
 
   private NavigationRuntime() {}
@@ -45,8 +46,10 @@ public final class NavigationRuntime {
     return state;
   }
 
+  /** A newly shared route is immediately active; READY lasts only until the next GPS fix. */
   public void setRoute(Route value) {
     route = value;
+    pausedFromState = null;
     state = value == null ? NavigationState.noRoute() : NavigationState.ready(value);
     deviationPolicy.reset();
     lastLoggedStateSignature = "";
@@ -54,18 +57,70 @@ public final class NavigationRuntime {
     logStateIfChanged(state);
   }
 
+  private void setRestoredRoutePaused(Route value) {
+    route = value;
+    pausedFromState = value == null ? null : NavigationState.ready(value);
+    state = value == null ? NavigationState.noRoute() : NavigationState.paused(value, pausedFromState);
+    deviationPolicy.reset();
+    lastLoggedStateSignature = "";
+    notifyListeners();
+    logStateIfChanged(state);
+    if (value != null) rawLog("[NAV] SESSION RESTORED paused route=" + value.id);
+  }
+
+  public void pause() {
+    Route active = route;
+    NavigationState current = state;
+    if (active == null || current.status == NavigationState.Status.PAUSED) return;
+    pausedFromState = current;
+    state = NavigationState.paused(active, current);
+    deviationPolicy.reset();
+    notifyListeners();
+    logStateIfChanged(state);
+    rawLog("[NAV] SESSION PAUSED route=" + active.id
+        + " leg=" + current.legIndex
+        + " instruction=" + current.instructionIndex);
+  }
+
+  public void resume() {
+    Route active = route;
+    if (active == null || state.status != NavigationState.Status.PAUSED) return;
+    NavigationState resumeFrom = pausedFromState;
+    state = resumeFrom == null ? NavigationState.ready(active) : resumeFrom;
+    pausedFromState = null;
+    deviationPolicy.reset();
+    notifyListeners();
+    logStateIfChanged(state);
+    rawLog("[NAV] SESSION RESUMED route=" + active.id);
+  }
+
+  /** Ends the navigation session and removes the navigation panel. Saved-route concepts are separate. */
+  public void end(Context context) {
+    Route active = route;
+    if (context != null) new SharedPreferencesRouteReferenceStore(context).clear();
+    route = null;
+    pausedFromState = null;
+    state = NavigationState.noRoute();
+    deviationPolicy.reset();
+    recalculationRunning.set(false);
+    restoreStarted.set(true);
+    lastLoggedStateSignature = "";
+    notifyListeners();
+    if (active != null) rawLog("[NAV] SESSION ENDED route=" + active.id);
+  }
+
   public void clear() {
     setRoute(null);
   }
 
-  /** Restores the canonical shared reference once per process and replans it off the UI thread. */
+  /** Restores a persisted route once per process, always paused until explicit user resume. */
   public void ensureRestored(Context context) {
     if (route != null || !restoreStarted.compareAndSet(false, true)) return;
     Context applicationContext = context.getApplicationContext();
     new Thread(() -> {
       try {
         Route restored = new NavigationRouteImporter(applicationContext).restore();
-        if (restored != null && route == null) setRoute(restored);
+        if (restored != null && route == null) setRestoredRoutePaused(restored);
       } catch (NavigationRouteImporter.ImportException ignored) {
         // Keep NO_ROUTE; the persisted reference remains available for a later explicit retry.
       }
@@ -75,7 +130,7 @@ public final class NavigationRuntime {
   /** Called by the existing AndroidLocationProvider; no second GPS source is created. */
   public void onLocation(LocationSnapshot snapshot) {
     Route active = route;
-    if (active == null) return;
+    if (active == null || state.status == NavigationState.Status.PAUSED) return;
 
     // Keep RECALCULATING stable while network planning is in flight. The location provider keeps
     // running normally; only navigation-state projection pauses until the replacement is known.
@@ -98,8 +153,6 @@ public final class NavigationRuntime {
         + " lon=" + snapshot.longitude
         + " accuracy=" + snapshot.accuracyMeters);
 
-    // Route planning performs network I/O and must never block AndroidLocationProvider's main
-    // executor. Keep an explicit RECALCULATING state visible until success or failure is known.
     new Thread(() -> {
       try {
         Route recalculated = routeRecalculator.recalculate(
@@ -107,8 +160,7 @@ public final class NavigationRuntime {
             next,
             snapshot,
             new OsrmRoutePlanner());
-        // Do not replace a route that the user imported while recalculation was in flight.
-        if (route == active) {
+        if (route == active && state.status != NavigationState.Status.PAUSED) {
           rawLog("[NAV] RECALC SUCCESS oldRoute=" + active.id
               + " newRoute=" + recalculated.id
               + " profile=" + recalculated.routingProfile
@@ -116,7 +168,7 @@ public final class NavigationRuntime {
           setRoute(recalculated);
         }
       } catch (Exception error) {
-        if (route == active) {
+        if (route == active && state.status != NavigationState.Status.PAUSED) {
           state = next;
           notifyListeners();
           logStateIfChanged(state);
