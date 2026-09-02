@@ -158,11 +158,10 @@ public final class NavigationRuntime {
     if (timestamp > 0L) lastNavigationLocationTimestampMs = timestamp;
     guidanceSpeedKmh = snapshot.gpsSpeedKmh;
 
-    // Keep RECALCULATING stable while network planning is in flight. The location provider keeps
-    // running normally; only navigation-state projection pauses until the replacement is known.
     if (recalculationRunning.get()) return;
 
-    NavigationState next = engine.update(active, state, snapshot);
+    NavigationState previousUiState = state;
+    NavigationState next = engine.update(active, previousUiState, snapshot);
 
     // OFF_ROUTE is evidence, not a user-facing step. Keep the last useful maneuver visible while
     // the deviation policy rejects GPS noise; when deviation is confirmed, jump directly to
@@ -180,7 +179,7 @@ public final class NavigationRuntime {
           + " lat=" + snapshot.latitude
           + " lon=" + snapshot.longitude
           + " accuracy=" + snapshot.accuracyMeters);
-      startRecalculation(active, next, snapshot);
+      startRecalculation(active, next, previousUiState, snapshot);
       return;
     }
 
@@ -190,7 +189,11 @@ public final class NavigationRuntime {
     deviationPolicy.shouldRecalculate(next, snapshot); // resets any previous deviation evidence
   }
 
-  private void startRecalculation(Route active, NavigationState offRouteState, LocationSnapshot snapshot) {
+  private void startRecalculation(
+      Route active,
+      NavigationState offRouteState,
+      NavigationState fallbackUiState,
+      LocationSnapshot snapshot) {
     new Thread(() -> {
       try {
         Route recalculated = routeRecalculator.recalculate(
@@ -207,7 +210,7 @@ public final class NavigationRuntime {
         }
       } catch (Exception error) {
         if (route == active && state.status != NavigationState.Status.PAUSED) {
-          state = offRouteState;
+          state = fallbackUiState;
           notifyListeners();
           logStateIfChanged(state);
         }
