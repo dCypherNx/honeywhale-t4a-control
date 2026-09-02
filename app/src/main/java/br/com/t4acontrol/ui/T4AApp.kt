@@ -42,6 +42,7 @@ internal fun T4AApp(
     showTotalOdometer: Boolean,
     keepScreenOn: Boolean,
     themeMode: String,
+    navigationWaypointsVisible: Boolean,
     eventHistory: List<String>,
     rawHistory: List<String>,
     rawLogFilter: String,
@@ -84,6 +85,7 @@ internal fun T4AApp(
                         foreground = foreground,
                         keepScreenOn = keepScreenOn,
                         themeMode = themeMode,
+                        navigationWaypointsVisible = navigationWaypointsVisible,
                         actions = actions,
                     )
                     RawLogCard(rawHistory, rawLogFilter, foreground, actions)
@@ -92,6 +94,7 @@ internal fun T4AApp(
                         state = T4ADashboardMapper.map(current, showTotalOdometer),
                         actions = actions,
                         darkMode = darkMode,
+                        navigationWaypointsVisible = navigationWaypointsVisible,
                     )
                     DashboardEvents(eventHistory, foreground, actions)
                 }
