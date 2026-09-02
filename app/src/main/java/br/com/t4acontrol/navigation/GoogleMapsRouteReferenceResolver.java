@@ -1,5 +1,15 @@
 package br.com.t4acontrol.navigation;
 
+import android.content.Context;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import br.com.t4acontrol.backend.navigation.RouteReferenceResolver;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -11,6 +21,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,6 +34,7 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   private static final int CONNECT_TIMEOUT_MS = 8_000;
   private static final int READ_TIMEOUT_MS = 8_000;
   private static final int MAX_HTML_CHARS = 256 * 1024;
+  private static final long WEBVIEW_TIMEOUT_MS = 12_000L;
   private static final Consumer<String> NOOP_DIAGNOSTICS = entry -> {};
   private static final String APP_USER_AGENT = "RideDash/1.0";
   private static final String BROWSER_USER_AGENT =
@@ -38,13 +52,19 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   private static final Pattern GOOGLE_ROUTE_URL = Pattern.compile(
       "(?is)https?://(?:www\\.)?google\\.[^\\s'\"<>]+/maps/dir/[^\\s'\"<>]+");
 
+  private final Context context;
   private final Consumer<String> diagnostics;
 
   public GoogleMapsRouteReferenceResolver() {
-    this(NOOP_DIAGNOSTICS);
+    this(null, NOOP_DIAGNOSTICS);
   }
 
   GoogleMapsRouteReferenceResolver(Consumer<String> diagnostics) {
+    this(null, diagnostics);
+  }
+
+  GoogleMapsRouteReferenceResolver(Context context, Consumer<String> diagnostics) {
+    this.context = context == null ? null : context.getApplicationContext();
     this.diagnostics = diagnostics == null ? NOOP_DIAGNOSTICS : diagnostics;
   }
 
@@ -100,6 +120,13 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
                   + status
                   + " url="
                   + safeUrl(current));
+
+          if (status == HttpURLConnection.HTTP_NOT_FOUND && context != null) {
+            connection.disconnect();
+            diagnostics.accept(
+                "[NAV] RESOLVE FALLBACK hop=" + hop + " reason=HTTP_404 mechanism=WEBVIEW");
+            return resolveWithWebView(routeReference.trim());
+          }
         }
 
         if (status >= 300 && status < 400) {
@@ -157,6 +184,145 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   static String extractRedirectTarget(String html) {
     RedirectTarget target = extractRedirectTargetWithSource(html);
     return target == null ? null : target.value;
+  }
+
+  static String extractExpandedRouteFromNavigationUrl(String value) {
+    if (value == null || value.isBlank()) return null;
+    if (looksLikeExpandedRoute(value)) return value;
+
+    try {
+      String candidate = value;
+      if (candidate.startsWith("intent://")) {
+        int intentMarker = candidate.indexOf("#Intent;");
+        if (intentMarker > 0) candidate = "https://" + candidate.substring(9, intentMarker);
+      }
+      Uri uri = Uri.parse(candidate);
+      String linked = uri.getQueryParameter("link");
+      if (linked != null && looksLikeExpandedRoute(linked)) return linked;
+      String fallback = uri.getQueryParameter("url");
+      if (fallback != null && looksLikeExpandedRoute(fallback)) return fallback;
+    } catch (RuntimeException ignored) {
+      // Malformed navigation URLs are ignored; the WebView may still expose a later usable URL.
+    }
+    return null;
+  }
+
+  private String resolveWithWebView(String routeReference) throws RouteResolutionException {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      throw new RouteResolutionException("WebView route resolution cannot block the main thread");
+    }
+
+    CountDownLatch finished = new CountDownLatch(1);
+    AtomicReference<String> resolved = new AtomicReference<>();
+    AtomicReference<String> failure = new AtomicReference<>();
+    Handler main = new Handler(Looper.getMainLooper());
+    AtomicReference<WebView> webViewRef = new AtomicReference<>();
+
+    main.post(
+        () -> {
+          try {
+            WebView webView = new WebView(context);
+            webViewRef.set(webView);
+            WebSettings settings = webView.getSettings();
+            settings.setJavaScriptEnabled(true);
+            settings.setDomStorageEnabled(false);
+            settings.setUserAgentString(BROWSER_USER_AGENT);
+            webView.setWebViewClient(
+                new WebViewClient() {
+                  private boolean inspect(String url, String source) {
+                    if (url == null || url.isBlank()) return false;
+                    diagnostics.accept("[NAV] RESOLVE WEBVIEW source=" + source + " url=" + safeText(url));
+                    String expanded = extractExpandedRouteFromNavigationUrl(url);
+                    if (expanded == null) return false;
+                    if (resolved.compareAndSet(null, expanded)) {
+                      diagnostics.accept("[NAV] RESOLVE SUCCESS mechanism=WEBVIEW url=" + safeText(expanded));
+                      finished.countDown();
+                    }
+                    return true;
+                  }
+
+                  @Override
+                  public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                    String url = request == null || request.getUrl() == null ? null : request.getUrl().toString();
+                    boolean captured = inspect(url, "OVERRIDE");
+                    return captured || (url != null && url.startsWith("intent://"));
+                  }
+
+                  @Override
+                  @SuppressWarnings("deprecation")
+                  public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                    boolean captured = inspect(url, "OVERRIDE_LEGACY");
+                    return captured || (url != null && url.startsWith("intent://"));
+                  }
+
+                  @Override
+                  public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    inspect(url, "PAGE_STARTED");
+                  }
+
+                  @Override
+                  public void onPageFinished(WebView view, String url) {
+                    inspect(url, "PAGE_FINISHED");
+                  }
+
+                  @Override
+                  public void onReceivedHttpError(
+                      WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                    if (request != null && request.isForMainFrame() && errorResponse != null) {
+                      diagnostics.accept(
+                          "[NAV] RESOLVE WEBVIEW HTTP_ERROR status="
+                              + errorResponse.getStatusCode()
+                              + " url="
+                              + safeText(request.getUrl() == null ? "" : request.getUrl().toString()));
+                    }
+                  }
+
+                  @Override
+                  public void onReceivedError(
+                      WebView view, WebResourceRequest request, WebResourceError error) {
+                    if (request != null && request.isForMainFrame() && resolved.get() == null) {
+                      failure.compareAndSet(
+                          null,
+                          error == null
+                              ? "WebView navigation error"
+                              : "WebView navigation error " + error.getErrorCode());
+                      finished.countDown();
+                    }
+                  }
+                });
+            diagnostics.accept("[NAV] RESOLVE WEBVIEW START url=" + safeText(routeReference));
+            webView.loadUrl(routeReference);
+          } catch (RuntimeException error) {
+            failure.set("WebView unavailable: " + error.getClass().getSimpleName());
+            finished.countDown();
+          }
+        });
+
+    boolean completed;
+    try {
+      completed = finished.await(WEBVIEW_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException error) {
+      Thread.currentThread().interrupt();
+      throw new RouteResolutionException("WebView route resolution interrupted", error);
+    } finally {
+      main.post(
+          () -> {
+            WebView webView = webViewRef.getAndSet(null);
+            if (webView != null) {
+              webView.stopLoading();
+              webView.destroy();
+            }
+          });
+    }
+
+    String result = resolved.get();
+    if (result != null) return result;
+    if (!completed) {
+      diagnostics.accept("[NAV] RESOLVE WEBVIEW TIMEOUT ms=" + WEBVIEW_TIMEOUT_MS);
+      throw new RouteResolutionException("Google Maps WebView resolution timed out");
+    }
+    throw new RouteResolutionException(
+        failure.get() == null ? "Google Maps WebView did not expose an expanded route" : failure.get());
   }
 
   private static HttpURLConnection openConnection(URL url, String userAgent) throws IOException {
@@ -243,8 +409,13 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   }
 
   private static String safeUrl(URL value) {
-    String text = value.toString();
-    return text.replace('\n', '_').replace('\r', '_');
+    return safeText(value.toString());
+  }
+
+  private static String safeText(String value) {
+    if (value == null) return "";
+    String text = value.replace('\n', '_').replace('\r', '_');
+    return text.length() <= 1200 ? text : text.substring(0, 1200) + "…";
   }
 
   private static String decodeHtml(String value) {
