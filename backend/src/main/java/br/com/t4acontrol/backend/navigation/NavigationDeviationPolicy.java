@@ -53,10 +53,10 @@ public final class NavigationDeviationPolicy {
       return false;
     }
 
-    // A poor fix must never contribute evidence. Reset instead of merely ignoring it so separated
-    // noisy samples cannot accumulate into a false confirmation.
+    // Accuracy 0 means unknown in the Android adapter. Unknown or poor fixes must never contribute
+    // evidence. Reset instead of merely ignoring them so separated noisy samples cannot accumulate.
     if (!Double.isFinite(location.accuracyMeters)
-        || location.accuracyMeters < 0.0
+        || location.accuracyMeters <= 0.0
         || location.accuracyMeters > maxAccuracyMeters) {
       resetEvidence();
       return false;
