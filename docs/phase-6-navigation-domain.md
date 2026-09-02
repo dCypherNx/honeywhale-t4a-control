@@ -19,9 +19,33 @@ Foram introduzidos em `backend/navigation`:
 - Navegação permanece fora de `T4ABackend`.
 - `LocationSnapshot` é a única entrada de posição; não existe segundo GPS.
 - O núcleo não depende de Android, Google Maps, Tuya ou MQTT.
-- O parser concreto de Google Maps não foi implementado neste corte. O formato definitivo será guiado por uma URL real compartilhada pelo Google Maps para evitar contrato especulativo.
 - Waypoints preservam ordem e distinguem origem, pontos intermediários e destino; um waypoint intermediário não é tratado como destino final.
 - Persistência e UI permanecem para fases posteriores, conforme o plano de endurecimento arquitetural.
+
+## Evidência real do compartilhamento Google Maps
+
+A primeira rota fornecida para a Fase 6 foi compartilhada como:
+
+`https://maps.app.goo.gl/LGtVxynCV4YpAZze7?g_st=ac`
+
+Isso confirma que o contrato de entrada do aplicativo precisa aceitar short links `maps.app.goo.gl`; eles não contêm diretamente a estrutura da rota. A expansão do short link é uma responsabilidade de infraestrutura e não pertence ao parser neutro.
+
+Foi introduzido `RouteReferenceResolver` no backend como fronteira neutra e `GoogleMapsRouteReferenceResolver` no módulo Android como adaptador HTTP. O adaptador apenas expande redirecionamentos do short link e devolve a referência final. `RouteParser` continua responsável exclusivamente por converter a referência já resolvida em `Route`.
+
+Fluxo atualizado:
+
+```text
+URL compartilhada
+  -> RouteReferenceResolver (infraestrutura)
+  -> referência expandida
+  -> RouteParser (formato da rota)
+  -> Route
+  -> NavigationEngine
+  <- LocationSnapshot
+  -> NavigationState
+```
+
+Nenhum SDK Google foi introduzido.
 
 ## Critério coberto
 
@@ -31,8 +55,10 @@ Os testes verificam que:
 - `NavigationEngine` recebe `LocationSnapshot` diretamente;
 - uma instrução corrente pode ser produzida sem conhecimento do provedor;
 - atingir uma instrução avança para a próxima;
-- ausência de localização é um estado explícito.
+- ausência de localização é um estado explícito;
+- referências já expandidas passam pelo resolver sem modificação;
+- referência vazia é rejeitada antes de qualquer acesso de rede.
 
 ## Próximo corte
 
-Usar uma URL real de rota compartilhada do Google Maps, com pelo menos um ponto intermediário, para definir e implementar o primeiro `RouteParser` concreto sem vazar detalhes do Google para os modelos neutros.
+Capturar a URL final resultante do redirecionamento `maps.app.goo.gl` no Android real ou em um ambiente capaz de seguir o short link. Essa URL expandida determinará a implementação concreta do primeiro `RouteParser` sem inferir um formato que ainda não foi observado.
