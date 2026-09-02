@@ -3,7 +3,6 @@ build/
 app/build/
 local.properties
 tuya.properties
-maps.properties
 /app/src/main/assets/t_s.bmp
 app/libs/
 *.jks
