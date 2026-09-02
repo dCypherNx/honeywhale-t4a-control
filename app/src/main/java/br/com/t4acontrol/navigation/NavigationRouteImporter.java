@@ -23,7 +23,7 @@ public final class NavigationRouteImporter {
 
   public NavigationRouteImporter(Context context) {
     this(
-        new GoogleMapsRouteReferenceResolver(),
+        new GoogleMapsRouteReferenceResolver(context, DiagnosticSink.NOOP::log),
         new GoogleMapsRouteParser(),
         new OsrmRoutePlanner(),
         new SharedPreferencesRouteReferenceStore(context),
@@ -75,8 +75,6 @@ public final class NavigationRouteImporter {
               + imported.waypoints.size());
 
       stage = "PERSIST";
-      // Persist the user's original shared reference after it is proven parseable. This lets a
-      // temporarily unavailable routing service be retried without depending on provider geometry.
       store.save(canonicalInput);
       diagnostics.log("[NAV] IMPORT PERSISTED reference=" + canonicalInput);
 
