@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 /** Parses expanded Google Maps /maps/dir URLs into the neutral route model. */
 public final class GoogleMapsRouteParser implements RouteParser {
@@ -64,10 +63,10 @@ public final class GoogleMapsRouteParser implements RouteParser {
       ParsedPoint point = parsePoint(segments.get(index));
       waypoints.add(new Waypoint(
           "google-" + index,
-          role,
           point.label,
           point.latitude,
-          point.longitude));
+          point.longitude,
+          role));
     }
 
     List<RouteLeg> legs = new ArrayList<>();
@@ -93,7 +92,7 @@ public final class GoogleMapsRouteParser implements RouteParser {
         // Fall through to label-only waypoint.
       }
     }
-    return new ParsedPoint(value.replace('+', ' '), null, null);
+    return new ParsedPoint(value, null, null);
   }
 
   private static String decode(String value) throws RouteParseException {
