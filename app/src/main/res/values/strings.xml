@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">RideDash</string>
     <string name="checking_account">Verificando conta…</string>
-    <string name="session_initializing">Inicializando sessão T4A…</string>
+    <string name="session_initializing">Inicializando RideDash…</string>
     <string name="authentication">Autenticação</string>
     <string name="email_hint">E-mail</string>
     <string name="password_hint">Senha</string>
