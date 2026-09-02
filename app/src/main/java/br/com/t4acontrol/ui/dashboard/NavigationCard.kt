@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,11 +33,14 @@ internal fun NavigationCard(
     foreground: Color,
     muted: Color,
 ) {
+    val context = LocalContext.current
     var state by remember { mutableStateOf(NavigationRuntime.get().state()) }
     DisposableEffect(Unit) {
+        val runtime = NavigationRuntime.get()
+        runtime.ensureRestored(context)
         val listener = NavigationRuntime.Listener { _, next -> state = next }
-        NavigationRuntime.get().addListener(listener)
-        onDispose { NavigationRuntime.get().removeListener(listener) }
+        runtime.addListener(listener)
+        onDispose { runtime.removeListener(listener) }
     }
 
     if (state.status == NavigationState.Status.NO_ROUTE) return
