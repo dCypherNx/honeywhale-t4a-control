@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,18 +20,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.backend.navigation.NavigationInstruction
 import br.com.t4acontrol.backend.navigation.NavigationState
+import br.com.t4acontrol.navigation.NavigationRuntime
 import br.com.t4acontrol.ui.MdiIcon
 import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
 internal fun NavigationCard(
-    state: NavigationState,
     surface: Color,
     outline: Color,
     foreground: Color,
     muted: Color,
 ) {
+    var state by remember { mutableStateOf(NavigationRuntime.get().state()) }
+    DisposableEffect(Unit) {
+        val listener = NavigationRuntime.Listener { _, next -> state = next }
+        NavigationRuntime.get().addListener(listener)
+        onDispose { NavigationRuntime.get().removeListener(listener) }
+    }
+
     if (state.status == NavigationState.Status.NO_ROUTE) return
     val instruction = state.instruction
     DashboardCard(surface = surface, outline = outline) {
@@ -49,9 +61,7 @@ internal fun NavigationCard(
                     fontWeight = FontWeight.Bold,
                 )
                 val detail = instruction?.text?.takeIf { it.isNotBlank() }
-                if (detail != null) {
-                    Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
-                }
+                if (detail != null) Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
             }
             state.distanceToInstructionMeters?.let { distance ->
                 Text(
@@ -83,10 +93,7 @@ private fun navigationTitle(state: NavigationState): String = when (state.status
     else -> "Navegação"
 }
 
-private fun maneuverIcon(
-    maneuver: NavigationInstruction.Maneuver?,
-    status: NavigationState.Status,
-): String {
+private fun maneuverIcon(maneuver: NavigationInstruction.Maneuver?, status: NavigationState.Status): String {
     if (status == NavigationState.Status.OFF_ROUTE) return "cmd-map-marker-alert"
     if (status == NavigationState.Status.ARRIVED) return "cmd-map-marker-check"
     return when (maneuver) {
