@@ -39,10 +39,11 @@ import br.com.t4acontrol.ui.MdiIcon
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private const val GUIDANCE_TARGET_SECONDS = 10.0
-private const val GUIDANCE_MIN_METERS = 45.0
-private const val GUIDANCE_MAX_METERS = 140.0
-private const val GUIDANCE_DEFAULT_METERS = 70.0
+private const val GUIDANCE_MIN_SECONDS = 10.0
+private const val GUIDANCE_MAX_SECONDS = 30.0
+private const val GUIDANCE_MIN_METERS = 15.0
+private const val GUIDANCE_MAX_METERS = 75.0
+private const val GUIDANCE_DEFAULT_METERS = 30.0
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -147,9 +148,9 @@ private fun navigationPresentation(route: Route?, state: NavigationState, waypoi
 }
 
 /**
- * Keep the route engine's next maneuver known internally, but only turn it into an instruction when
- * it becomes operationally useful. The window is about 10 seconds at current GPS speed, clamped so
- * slow riding does not warn too late and high speed does not announce the next turn excessively early.
+ * The directional command is activated from GPS speed instead of a fixed distance. Ten seconds is
+ * the normal target. At very low speed the time window can grow, up to 30 seconds, to avoid a
+ * warning closer than 15 m. At higher speed the command is never exposed farther than 75 m.
  */
 private fun timedNavigationPresentation(
     presentation: NavigationPresentation,
@@ -161,7 +162,6 @@ private fun timedNavigationPresentation(
     val distance = presentation.distanceMeters ?: return presentation
     if (distance <= guidanceActivationMeters(gpsSpeedKmh)) return presentation
 
-    // Far from the next maneuver, distance remains useful but the visual command is simply forward.
     return NavigationPresentation(
         NavigationState.Status.NAVIGATING,
         null,
@@ -169,11 +169,21 @@ private fun timedNavigationPresentation(
     )
 }
 
+internal fun guidanceLeadSeconds(gpsSpeedKmh: Double?): Double {
+    if (gpsSpeedKmh == null || !gpsSpeedKmh.isFinite() || gpsSpeedKmh <= 0.0) {
+        return GUIDANCE_MIN_SECONDS
+    }
+    val metersPerSecond = gpsSpeedKmh / 3.6
+    val secondsNeededForMinimumDistance = GUIDANCE_MIN_METERS / metersPerSecond
+    return secondsNeededForMinimumDistance.coerceIn(GUIDANCE_MIN_SECONDS, GUIDANCE_MAX_SECONDS)
+}
+
 internal fun guidanceActivationMeters(gpsSpeedKmh: Double?): Double {
     if (gpsSpeedKmh == null || !gpsSpeedKmh.isFinite() || gpsSpeedKmh <= 1.0) {
         return GUIDANCE_DEFAULT_METERS
     }
-    return ((gpsSpeedKmh / 3.6) * GUIDANCE_TARGET_SECONDS)
+    val metersPerSecond = gpsSpeedKmh / 3.6
+    return (metersPerSecond * guidanceLeadSeconds(gpsSpeedKmh))
         .coerceIn(GUIDANCE_MIN_METERS, GUIDANCE_MAX_METERS)
 }
 
