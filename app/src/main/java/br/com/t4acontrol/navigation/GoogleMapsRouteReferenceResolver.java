@@ -9,6 +9,9 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,6 +21,7 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   private static final int CONNECT_TIMEOUT_MS = 8_000;
   private static final int READ_TIMEOUT_MS = 8_000;
   private static final int MAX_HTML_CHARS = 256 * 1024;
+  private static final Consumer<String> NOOP_DIAGNOSTICS = entry -> {};
 
   private static final Pattern META_REFRESH = Pattern.compile(
       "(?is)<meta[^>]+http-equiv\\s*=\\s*['\"]?refresh['\"]?[^>]+content\\s*=\\s*['\"][^'\"]*?url\\s*=\\s*([^'\">]+)");
@@ -29,6 +33,16 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
       "(?is)(?:window\\.)?location\\.replace\\(\\s*['\"]([^'\"]+)['\"]\\s*\\)");
   private static final Pattern GOOGLE_ROUTE_URL = Pattern.compile(
       "(?is)https?://(?:www\\.)?google\\.[^\\s'\"<>]+/maps/dir/[^\\s'\"<>]+");
+
+  private final Consumer<String> diagnostics;
+
+  public GoogleMapsRouteReferenceResolver() {
+    this(NOOP_DIAGNOSTICS);
+  }
+
+  GoogleMapsRouteReferenceResolver(Consumer<String> diagnostics) {
+    this.diagnostics = diagnostics == null ? NOOP_DIAGNOSTICS : diagnostics;
+  }
 
   @Override
   public String resolve(String routeReference) throws RouteResolutionException {
@@ -48,9 +62,16 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
       return routeReference.trim();
     }
 
+    Set<String> visited = new LinkedHashSet<>();
     try {
       URL current = input.toURL();
-      for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+      for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        String currentKey = normalizeForCycleDetection(current);
+        if (!visited.add(currentKey)) {
+          diagnostics.accept("[NAV] RESOLVE CYCLE hop=" + hop + " url=" + safeUrl(current));
+          throw new RouteResolutionException("Google Maps redirect cycle detected at " + safeUrl(current));
+        }
+
         HttpURLConnection connection = (HttpURLConnection) current.openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -60,13 +81,18 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
         connection.setRequestProperty("Accept", "text/html,application/xhtml+xml");
 
         int status = connection.getResponseCode();
+        diagnostics.accept("[NAV] RESOLVE HOP " + hop + " status=" + status + " url=" + safeUrl(current));
+
         if (status >= 300 && status < 400) {
           String location = connection.getHeaderField("Location");
           connection.disconnect();
           if (location == null || location.trim().isEmpty()) {
             throw new RouteResolutionException("Google Maps redirect has no Location header");
           }
-          current = current.toURI().resolve(location).toURL();
+          URL next = current.toURI().resolve(location.trim()).toURL();
+          diagnostics.accept(
+              "[NAV] RESOLVE NEXT hop=" + hop + " source=HTTP_LOCATION url=" + safeUrl(next));
+          current = next;
           continue;
         }
 
@@ -75,9 +101,16 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
           String html = readBody(connection);
           connection.disconnect();
 
-          String embedded = extractRedirectTarget(html);
+          RedirectTarget embedded = extractRedirectTargetWithSource(html);
           if (embedded != null) {
-            URL next = responseUrl.toURI().resolve(decodeHtml(embedded.trim())).toURL();
+            URL next = responseUrl.toURI().resolve(decodeHtml(embedded.value.trim())).toURL();
+            diagnostics.accept(
+                "[NAV] RESOLVE NEXT hop="
+                    + hop
+                    + " source="
+                    + embedded.source
+                    + " url="
+                    + safeUrl(next));
             if (!sameUrl(current, next)) {
               current = next;
               continue;
@@ -85,7 +118,10 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
           }
 
           String resolved = responseUrl.toString();
-          if (looksLikeExpandedRoute(resolved)) return resolved;
+          if (looksLikeExpandedRoute(resolved)) {
+            diagnostics.accept("[NAV] RESOLVE SUCCESS hop=" + hop + " url=" + safeUrl(responseUrl));
+            return resolved;
+          }
           throw new RouteResolutionException(
               "Google Maps short link returned HTTP " + status + " without an expanded /maps/dir route");
         }
@@ -100,6 +136,11 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   }
 
   static String extractRedirectTarget(String html) {
+    RedirectTarget target = extractRedirectTargetWithSource(html);
+    return target == null ? null : target.value;
+  }
+
+  private static RedirectTarget extractRedirectTargetWithSource(String html) {
     if (html == null || html.isEmpty()) return null;
     String normalized = html
         .replace("\\u003d", "=")
@@ -111,14 +152,15 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
         .replace("\\'", "'");
 
     String value = firstGroup(META_REFRESH, normalized);
-    if (value != null) return value;
+    if (value != null) return new RedirectTarget("META_REFRESH", value);
     value = firstGroup(META_REFRESH_REVERSED, normalized);
-    if (value != null) return value;
+    if (value != null) return new RedirectTarget("META_REFRESH", value);
     value = firstGroup(JS_REPLACE, normalized);
-    if (value != null) return value;
+    if (value != null) return new RedirectTarget("JS_REPLACE", value);
     value = firstGroup(JS_LOCATION, normalized);
-    if (value != null) return value;
-    return firstMatch(GOOGLE_ROUTE_URL, normalized);
+    if (value != null) return new RedirectTarget("JS_LOCATION", value);
+    value = firstMatch(GOOGLE_ROUTE_URL, normalized);
+    return value == null ? null : new RedirectTarget("EMBEDDED_ROUTE", value);
   }
 
   private static String readBody(HttpURLConnection connection) throws IOException {
@@ -160,7 +202,18 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
   }
 
   private static boolean sameUrl(URL first, URL second) {
-    return first.toString().equals(second.toString());
+    return normalizeForCycleDetection(first).equals(normalizeForCycleDetection(second));
+  }
+
+  private static String normalizeForCycleDetection(URL value) {
+    String text = value.toString();
+    int fragment = text.indexOf('#');
+    return fragment >= 0 ? text.substring(0, fragment) : text;
+  }
+
+  private static String safeUrl(URL value) {
+    String text = value.toString();
+    return text.replace('\n', '_').replace('\r', '_');
   }
 
   private static String decodeHtml(String value) {
@@ -170,5 +223,15 @@ public final class GoogleMapsRouteReferenceResolver implements RouteReferenceRes
         .replace("&#x26;", "&")
         .replace("&quot;", "\"")
         .replace("&#39;", "'");
+  }
+
+  private static final class RedirectTarget {
+    final String source;
+    final String value;
+
+    RedirectTarget(String source, String value) {
+      this.source = source;
+      this.value = value;
+    }
   }
 }
