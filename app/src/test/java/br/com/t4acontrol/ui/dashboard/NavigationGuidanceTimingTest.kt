@@ -1,26 +1,58 @@
 package br.com.t4acontrol.ui.dashboard
 
+import br.com.t4acontrol.backend.navigation.NavigationInstruction
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class NavigationGuidanceTimingTest {
     @Test
-    fun `guidance window respects time and distance bounds`() {
-        assertEquals(30.0, guidanceActivationMeters(null), 0.001)
+    fun `normal turn keeps at least ten second projected lead at scooter speeds`() {
+        assertEquals(
+            76.389,
+            guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.TURN_LEFT),
+            0.01,
+        )
+        assertEquals(
+            97.222,
+            guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.TURN_RIGHT),
+            0.01,
+        )
+    }
 
-        assertEquals(27.0, guidanceLeadSeconds(2.0), 0.001)
-        assertEquals(15.0, guidanceActivationMeters(2.0), 0.001)
+    @Test
+    fun `roundabout anticipates stronger speed reduction without exceeding one hundred meters`() {
+        assertEquals(
+            75.0,
+            guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.ROUNDABOUT),
+            0.01,
+        )
+        assertEquals(
+            100.0,
+            guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.ROUNDABOUT),
+            0.01,
+        )
+    }
 
-        assertEquals(10.8, guidanceLeadSeconds(5.0), 0.001)
-        assertEquals(15.0, guidanceActivationMeters(5.0), 0.001)
+    @Test
+    fun `u turn models near stop and fifteen second lead`() {
+        assertEquals(
+            62.5,
+            guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.U_TURN),
+            0.01,
+        )
+        assertEquals(
+            93.75,
+            guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.U_TURN),
+            0.01,
+        )
+    }
 
-        assertEquals(10.0, guidanceLeadSeconds(10.0), 0.001)
-        assertEquals(27.778, guidanceActivationMeters(10.0), 0.01)
-
-        assertEquals(10.0, guidanceLeadSeconds(30.0), 0.001)
-        assertEquals(75.0, guidanceActivationMeters(30.0), 0.001)
-
-        assertEquals(10.0, guidanceLeadSeconds(45.0), 0.001)
-        assertEquals(75.0, guidanceActivationMeters(45.0), 0.001)
+    @Test
+    fun `unknown speed uses conservative fallback`() {
+        assertEquals(
+            30.0,
+            guidanceActivationMeters(null, NavigationInstruction.Maneuver.TURN_LEFT),
+            0.001,
+        )
     }
 }
