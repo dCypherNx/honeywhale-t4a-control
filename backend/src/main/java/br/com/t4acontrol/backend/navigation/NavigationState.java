@@ -6,6 +6,7 @@ public final class NavigationState {
     NO_ROUTE,
     READY,
     NAVIGATING,
+    PAUSED,
     WAYPOINT_REACHED,
     ARRIVED,
     POSITION_UNAVAILABLE,
@@ -41,6 +42,16 @@ public final class NavigationState {
 
   public static NavigationState ready(Route route) {
     return new NavigationState(Status.READY, route.id, 0, 0, null, null);
+  }
+
+  public static NavigationState paused(Route route, NavigationState previous) {
+    return new NavigationState(
+        Status.PAUSED,
+        route.id,
+        previous == null ? 0 : Math.max(previous.legIndex, 0),
+        previous == null ? 0 : Math.max(previous.instructionIndex, 0),
+        previous == null ? null : previous.instruction,
+        previous == null ? null : previous.distanceToInstructionMeters);
   }
 
   public static NavigationState recalculating(Route route, NavigationState previous) {
