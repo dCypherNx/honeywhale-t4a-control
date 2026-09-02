@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class NavigationRuntime {
   public interface Listener {
     void onNavigationChanged(Route route, NavigationState state);
+
+    default void onNavigationRawLog(String value) {}
   }
 
   private static final NavigationRuntime INSTANCE = new NavigationRuntime();
@@ -72,6 +74,10 @@ public final class NavigationRuntime {
     Route active = route;
     if (active == null) return;
 
+    // Keep RECALCULATING stable while network planning is in flight. The location provider keeps
+    // running normally; only navigation-state projection pauses until the replacement is known.
+    if (recalculationRunning.get()) return;
+
     NavigationState next = engine.update(active, state, snapshot);
     state = next;
     notifyListeners();
@@ -79,8 +85,16 @@ public final class NavigationRuntime {
     if (!deviationPolicy.shouldRecalculate(next, snapshot)) return;
     if (!recalculationRunning.compareAndSet(false, true)) return;
 
+    state = NavigationState.recalculating(active, next);
+    notifyListeners();
+    rawLog("[NAV] RECALC START route=" + active.id
+        + " leg=" + next.legIndex
+        + " lat=" + snapshot.latitude
+        + " lon=" + snapshot.longitude
+        + " accuracy=" + snapshot.accuracyMeters);
+
     // Route planning performs network I/O and must never block AndroidLocationProvider's main
-    // executor. Keep the current OFF_ROUTE state visible until a replacement route is ready.
+    // executor. Keep an explicit RECALCULATING state visible until success or failure is known.
     new Thread(() -> {
       try {
         Route recalculated = routeRecalculator.recalculate(
@@ -89,10 +103,21 @@ public final class NavigationRuntime {
             snapshot,
             new OsrmRoutePlanner());
         // Do not replace a route that the user imported while recalculation was in flight.
-        if (route == active) setRoute(recalculated);
-      } catch (Exception ignored) {
-        // Keep the current route and OFF_ROUTE state. The policy cooldown prevents request storms;
-        // a later sequence of valid fixes can trigger another attempt.
+        if (route == active) {
+          rawLog("[NAV] RECALC SUCCESS oldRoute=" + active.id
+              + " newRoute=" + recalculated.id
+              + " profile=" + recalculated.routingProfile
+              + " waypoints=" + recalculated.waypoints.size());
+          setRoute(recalculated);
+        }
+      } catch (Exception error) {
+        if (route == active) {
+          state = next;
+          notifyListeners();
+        }
+        rawLog("[NAV] RECALC FAIL route=" + active.id
+            + " type=" + error.getClass().getSimpleName()
+            + " message=" + String.valueOf(error.getMessage()));
       } finally {
         recalculationRunning.set(false);
       }
@@ -113,5 +138,9 @@ public final class NavigationRuntime {
     Route currentRoute = route;
     NavigationState currentState = state;
     for (Listener listener : listeners) listener.onNavigationChanged(currentRoute, currentState);
+  }
+
+  private void rawLog(String value) {
+    for (Listener listener : listeners) listener.onNavigationRawLog(value);
   }
 }
