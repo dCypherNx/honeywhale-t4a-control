@@ -41,16 +41,12 @@ public final class GoogleMapsRouteParser implements RouteParser {
     }
 
     String routePath = rawPath.substring(dirIndex + "/maps/dir/".length());
-    int viewportIndex = routePath.indexOf("/@");
-    if (viewportIndex >= 0) {
-      routePath = routePath.substring(0, viewportIndex);
-    }
-
     List<String> segments = new ArrayList<>();
     for (String raw : routePath.split("/")) {
-      if (!raw.isEmpty()) {
-        segments.add(decode(raw));
-      }
+      if (raw.isEmpty()) continue;
+      String decoded = decode(raw);
+      if (isMetadataSegment(decoded)) break;
+      segments.add(decoded);
     }
 
     if (segments.size() < 2) {
@@ -110,13 +106,19 @@ public final class GoogleMapsRouteParser implements RouteParser {
       }
     }
 
-    // Google shared /maps/dir URLs currently encode the selected mode inside an undocumented
-    // /data= block. Keep this only as a tested compatibility fallback; official Maps URLs use
-    // travelmode=driving|walking|bicycling.
     if (routeReference.contains("!3e0")) return RoutingProfile.CAR;
     if (routeReference.contains("!3e1")) return RoutingProfile.BICYCLE;
     if (routeReference.contains("!3e2")) return RoutingProfile.FOOT;
     return null;
+  }
+
+  private static boolean isMetadataSegment(String value) {
+    if (value == null || value.isEmpty()) return false;
+    String lower = value.toLowerCase(Locale.ROOT);
+    return lower.startsWith("data=")
+        || lower.startsWith("@")
+        || lower.startsWith("dir_action=")
+        || lower.startsWith("entry=");
   }
 
   private static RoutingProfile fromTravelMode(String travelMode) {
