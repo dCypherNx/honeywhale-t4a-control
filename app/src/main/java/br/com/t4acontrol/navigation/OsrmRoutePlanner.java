@@ -6,6 +6,7 @@ import br.com.t4acontrol.backend.navigation.NavigationStepMetadata;
 import br.com.t4acontrol.backend.navigation.Route;
 import br.com.t4acontrol.backend.navigation.RouteLeg;
 import br.com.t4acontrol.backend.navigation.RouteLegMetadata;
+import br.com.t4acontrol.backend.navigation.RouteMetadata;
 import br.com.t4acontrol.backend.navigation.RoutePlanner;
 import br.com.t4acontrol.backend.navigation.RoutingProfile;
 import br.com.t4acontrol.backend.navigation.Waypoint;
@@ -105,7 +106,8 @@ public final class OsrmRoutePlanner implements RoutePlanner {
     if (!"Ok".equals(response.optString("code"))) throw new RoutePlanningException("OSRM returned " + response.optString("code", "unknown error"));
     JSONArray routes = response.optJSONArray("routes");
     if (routes == null || routes.length() == 0) throw new RoutePlanningException("OSRM returned no route");
-    JSONArray legsJson = routes.getJSONObject(0).optJSONArray("legs");
+    JSONObject routeJson = routes.getJSONObject(0);
+    JSONArray legsJson = routeJson.optJSONArray("legs");
     if (legsJson == null || legsJson.length() != waypoints.size() - 1) throw new RoutePlanningException("OSRM returned an unexpected number of route legs");
 
     List<RouteLeg> legs = new ArrayList<>();
@@ -143,7 +145,14 @@ public final class OsrmRoutePlanner implements RoutePlanner {
           geometry,
           parseLegMetadata(legJson)));
     }
-    return new Route(importedRoute.id, "osrm", importedRoute.originalReference, selectedProfile, waypoints, legs);
+    return new Route(
+        importedRoute.id,
+        "osrm",
+        importedRoute.originalReference,
+        selectedProfile,
+        waypoints,
+        legs,
+        parseRouteMetadata(response, routeJson));
   }
 
   private static NavigationStepMetadata parseStepMetadata(JSONObject step, JSONObject maneuver) throws JSONException {
@@ -220,6 +229,35 @@ public final class OsrmRoutePlanner implements RoutePlanner {
         intList(annotation == null ? null : annotation.optJSONArray("datasources")),
         stringList(metadata == null ? null : metadata.optJSONArray("datasource_names")),
         longList(annotation == null ? null : annotation.optJSONArray("nodes")));
+  }
+
+  private static RouteMetadata parseRouteMetadata(JSONObject response, JSONObject route) {
+    return new RouteMetadata(
+        route.has("distance") ? route.optDouble("distance", Double.NaN) : Double.NaN,
+        route.has("duration") ? route.optDouble("duration", Double.NaN) : Double.NaN,
+        route.has("weight") ? route.optDouble("weight", Double.NaN) : Double.NaN,
+        optionalString(route, "weight_name"),
+        optionalString(response, "data_version"),
+        parseSnappedWaypoints(response.optJSONArray("waypoints")));
+  }
+
+  private static List<RouteMetadata.SnappedWaypoint> parseSnappedWaypoints(JSONArray array) {
+    if (array == null) return Collections.emptyList();
+    List<RouteMetadata.SnappedWaypoint> result = new ArrayList<>();
+    for (int i = 0; i < array.length(); i++) {
+      JSONObject waypoint = array.optJSONObject(i);
+      if (waypoint == null) continue;
+      JSONArray location = waypoint.optJSONArray("location");
+      double longitude = location != null && location.length() > 0 ? location.optDouble(0, Double.NaN) : Double.NaN;
+      double latitude = location != null && location.length() > 1 ? location.optDouble(1, Double.NaN) : Double.NaN;
+      result.add(new RouteMetadata.SnappedWaypoint(
+          optionalString(waypoint, "name"),
+          latitude,
+          longitude,
+          waypoint.has("distance") ? waypoint.optDouble("distance", Double.NaN) : Double.NaN,
+          optionalString(waypoint, "hint")));
+    }
+    return result;
   }
 
   static NavigationStepMetadata.Context mapContext(String type) {
