@@ -9,16 +9,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import br.com.t4acontrol.backend.navigation.NavigationState
 
 @Composable
-fun T4ADashboard(
-    state: T4ADashboardState,
-    navigationState: NavigationState,
-    actions: T4ADashboardActions,
-    darkMode: Boolean,
-    modifier: Modifier = Modifier,
-) {
+fun T4ADashboard(state: T4ADashboardState, actions: T4ADashboardActions, darkMode: Boolean, modifier: Modifier = Modifier) {
     val background = if (darkMode) T4ADashboardTokens.DarkBackground else T4ADashboardTokens.LightBackground
     val surface = if (darkMode) T4ADashboardTokens.DarkSurface else T4ADashboardTokens.LightSurface
     val outline = if (darkMode) T4ADashboardTokens.DarkOutline else T4ADashboardTokens.LightOutline
@@ -26,7 +19,7 @@ fun T4ADashboard(
     val muted = if (darkMode) T4ADashboardTokens.DarkMuted else T4ADashboardTokens.LightMuted
     Column(modifier.fillMaxWidth().background(background), verticalArrangement = Arrangement.spacedBy(T4ADashboardTokens.CardSpacing)) {
         ConnectionCard(state, surface, outline, foreground, muted)
-        NavigationCard(navigationState, surface, outline, foreground, muted)
+        NavigationCard(surface, outline, foreground, muted)
         SpeedCard(state, surface, outline, foreground, darkMode)
         MetricsCard(state, surface, outline, foreground, muted, actions)
         RidingControls(state, surface, outline, foreground, muted, darkMode, actions)
@@ -62,7 +55,6 @@ private fun DashboardPreview() {
             modeEnabled = true,
             lockEnabled = true,
         ),
-        NavigationState.noRoute(),
         NoOpT4ADashboardActions,
         false,
         Modifier.padding(16.dp),
