@@ -46,6 +46,7 @@ internal fun NavigationCard(
     outline: Color,
     foreground: Color,
     muted: Color,
+    waypointsVisible: Boolean,
 ) {
     val context = LocalContext.current
     val runtime = NavigationRuntime.get()
@@ -62,7 +63,8 @@ internal fun NavigationCard(
     }
 
     if (state.status == NavigationState.Status.NO_ROUTE) return
-    val instruction = state.instruction
+    val presentation = navigationPresentation(route, state, waypointsVisible)
+    val instruction = presentation.instruction
     val debugRouteUrl = if (BuildConfig.DEBUG) plannedRouteDebugUrl(route) else null
     DashboardCard(surface = surface, outline = outline) {
         Row(
@@ -72,13 +74,13 @@ internal fun NavigationCard(
         ) {
             NavigationManeuverIcon(
                 instruction = instruction,
-                status = state.status,
+                status = presentation.status,
                 debugRouteUrl = debugRouteUrl,
                 context = context,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = navigationTitle(state),
+                    text = navigationTitle(presentation.status, instruction),
                     color = foreground,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
@@ -86,13 +88,13 @@ internal fun NavigationCard(
                 val detail = instruction?.text?.takeIf { it.isNotBlank() }
                 if (
                     detail != null &&
-                    state.status != NavigationState.Status.RECALCULATING &&
+                    presentation.status != NavigationState.Status.RECALCULATING &&
                     instruction.maneuver != NavigationInstruction.Maneuver.WAYPOINT
                 ) {
                     Text(detail, color = muted, fontSize = 12.sp, maxLines = 1)
                 }
             }
-            state.distanceToInstructionMeters?.let { distance ->
+            presentation.distanceMeters?.let { distance ->
                 Text(
                     text = formatDistance(distance),
                     color = foreground,
@@ -102,6 +104,49 @@ internal fun NavigationCard(
             }
         }
     }
+}
+
+private data class NavigationPresentation(
+    val status: NavigationState.Status,
+    val instruction: NavigationInstruction?,
+    val distanceMeters: Double?,
+)
+
+private fun navigationPresentation(route: Route?, state: NavigationState, waypointsVisible: Boolean): NavigationPresentation {
+    if (waypointsVisible || route == null) {
+        return NavigationPresentation(state.status, state.instruction, state.distanceToInstructionMeters)
+    }
+
+    val hidesWaypoint = state.status == NavigationState.Status.WAYPOINT_REACHED ||
+        state.instruction?.maneuver == NavigationInstruction.Maneuver.WAYPOINT
+    if (!hidesWaypoint) return NavigationPresentation(state.status, state.instruction, state.distanceToInstructionMeters)
+
+    val next = nextVisibleInstruction(route, state.legIndex, state.instructionIndex)
+        ?: return NavigationPresentation(NavigationState.Status.NAVIGATING, null, null)
+    val baseDistance = state.distanceToInstructionMeters ?: 0.0
+    val extraDistance = if (next.instruction.routeOffsetMeters.isFinite()) next.instruction.routeOffsetMeters else 0.0
+    return NavigationPresentation(
+        NavigationState.Status.NAVIGATING,
+        next.instruction,
+        (baseDistance + extraDistance).coerceAtLeast(0.0),
+    )
+}
+
+private data class VisibleInstruction(val instruction: NavigationInstruction)
+
+private fun nextVisibleInstruction(route: Route, legIndex: Int, instructionIndex: Int): VisibleInstruction? {
+    for (leg in legIndex.coerceAtLeast(0) until route.legs.size) {
+        val instructions = route.legs[leg].instructions
+        val start = if (leg == legIndex) (instructionIndex + 1).coerceAtLeast(0) else 0
+        for (index in start until instructions.size) {
+            val instruction = instructions[index]
+            if (
+                instruction.maneuver != NavigationInstruction.Maneuver.WAYPOINT &&
+                instruction.maneuver != NavigationInstruction.Maneuver.START
+            ) return VisibleInstruction(instruction)
+        }
+    }
+    return null
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -172,39 +217,29 @@ private fun copyPlannedRoute(context: Context, url: String) {
     Toast.makeText(context, "Link da rota copiado", Toast.LENGTH_SHORT).show()
 }
 
-/**
- * Builds a diagnostic browser URL from the exact geometry already returned by OSRM.
- * GeoJSON.io renders the LineString directly; it does not calculate a new route.
- */
 private fun plannedRouteDebugUrl(route: Route?): String? {
     if (route == null || route.source != "osrm") return null
-
     val points = route.legs
         .flatMap { it.geometry }
         .fold(mutableListOf<br.com.t4acontrol.backend.navigation.GeoPoint>()) { result, point ->
             val last = result.lastOrNull()
-            if (last == null || last.latitude != point.latitude || last.longitude != point.longitude) {
-                result.add(point)
-            }
+            if (last == null || last.latitude != point.latitude || last.longitude != point.longitude) result.add(point)
             result
         }
     if (points.size < 2) return null
-
-    val coordinates = points.joinToString(separator = ",") { point ->
-        "[${point.longitude},${point.latitude}]"
-    }
+    val coordinates = points.joinToString(separator = ",") { point -> "[${point.longitude},${point.latitude}]" }
     val geoJson = "{\"type\":\"LineString\",\"coordinates\":[$coordinates]}"
     return "https://geojson.io/#data=data:application/json,${Uri.encode(geoJson)}"
 }
 
-private fun navigationTitle(state: NavigationState): String = when (state.status) {
+private fun navigationTitle(status: NavigationState.Status, instruction: NavigationInstruction?): String = when (status) {
     NavigationState.Status.READY -> "Rota pronta"
     NavigationState.Status.POSITION_UNAVAILABLE -> "Aguardando GPS"
     NavigationState.Status.OFF_ROUTE -> "Fora da rota"
     NavigationState.Status.RECALCULATING -> "Recalculando rota…"
     NavigationState.Status.WAYPOINT_REACHED -> "Parada alcançada"
     NavigationState.Status.ARRIVED -> "Destino alcançado"
-    NavigationState.Status.NAVIGATING -> when (state.instruction?.maneuver) {
+    NavigationState.Status.NAVIGATING -> when (instruction?.maneuver) {
         NavigationInstruction.Maneuver.TURN_LEFT -> "Vire à esquerda"
         NavigationInstruction.Maneuver.TURN_RIGHT -> "Vire à direita"
         NavigationInstruction.Maneuver.U_TURN -> "Faça o retorno"
