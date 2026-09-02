@@ -13,7 +13,8 @@ Foram introduzidos em `backend/navigation`:
 - `NavigationState` — estado atual da navegação;
 - `RouteParser` — contrato para importadores de rotas externas;
 - `RouteReferenceResolver` — fronteira neutra para resolver referências externas antes do parsing;
-- `RoutePlanner` — fronteira neutra para um futuro motor de roteamento;
+- `RoutePlanner` — fronteira neutra para enriquecer uma rota importada com geometria e instruções;
+- `RoutingProfile` — preferência escolhida pelo usuário (`BICYCLE`, `FOOT`, `CAR`), sem vínculo com o modo físico do T4A;
 - `NavigationEngine` — avanço mínimo de instruções consumindo exclusivamente `LocationSnapshot`.
 
 ## Decisões arquiteturais
@@ -25,47 +26,54 @@ Foram introduzidos em `backend/navigation`:
 - Um waypoint importado pode existir temporariamente sem coordenadas quando a URL fornece apenas endereço/label.
 - Importar uma rota e planejá-la são operações distintas.
 - O projeto não dependerá de chave Google para navegação.
-- Persistência e UI permanecem para cortes posteriores.
+- O perfil de roteamento é preferência do usuário, não limitação imposta pelo veículo.
 
 ## Evidência real do compartilhamento Google Maps
 
-A primeira rota fornecida para a Fase 6 foi compartilhada como:
+A primeira rota fornecida para a Fase 6 foi compartilhada como short link:
 
 `https://maps.app.goo.gl/LGtVxynCV4YpAZze7?g_st=ac`
 
 A URL expandida observada contém, em ordem:
 
-1. origem `-23.6377584,-46.658869`;
-2. waypoint intermediário `-23.6133508,-46.6884184`;
-3. destino textual `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
+1. origem em coordenadas `-23.6377584,-46.658869`;
+2. waypoint intermediário em coordenadas `-23.6133508,-46.6884184`;
+3. destino como endereço `Av. Brig. Faria Lima, 4400 - Itaim Bibi, São Paulo - SP, 04538-132, Brasil`.
 
-Fluxo preservado:
+## Planejamento sem chave — decisão atual
+
+Valhalla foi experimentado e descartado porque não conseguiu calcular adequadamente a rota real usada como caso de validação da Fase 6.
+
+OSRM passa a ser o candidato atual porque o perfil de bicicleta conseguiu reproduzir adequadamente o percurso observado. O adapter usa os grafos separados oferecidos por `routing.openstreetmap.de`:
+
+- `routed-bike` para `BICYCLE`;
+- `routed-foot` para `FOOT`;
+- `routed-car` para `CAR`.
+
+O trecho `/route/v1/driving/` permanece na URL desses endpoints porque o perfil efetivo já está determinado pelo grafo preparado no servidor. O aplicativo não deve interpretar `driving` como modo carro nesse caso.
+
+A rota escolhida pelo usuário pode ser recalculada em qualquer um dos três perfis. `BICYCLE` pode ser apresentado inicialmente como opção conveniente para o T4A, mas não deve bloquear nem esconder `FOOT` ou `CAR`.
+
+Quando um waypoint importado não contém coordenadas, Nominatim é usado apenas para resolver o endereço textual antes do planejamento.
+
+Fluxo atual:
 
 ```text
-Google Maps shared URL
+Google Maps compartilhado
   -> RouteReferenceResolver
   -> GoogleMapsRouteParser
-  -> Route neutra com waypoints ordenados
-  -> RoutePlanner (implementação ainda não escolhida)
+  -> Route neutra
+  -> escolha do RoutingProfile pelo usuário
+  -> Nominatim para coordenadas faltantes
+  -> OsrmRoutePlanner
+       -> routed-bike | routed-foot | routed-car
+  -> NavigationInstruction
   -> NavigationEngine
   <- LocationSnapshot
-  -> NavigationState
 ```
 
-## Valhalla — tentativa descartada
+## Limites atuais
 
-Foi implementado e avaliado um `RoutePlanner` baseado em Valhalla/OpenStreetMap usando o perfil `motor_scooter`, sem chave de API. O caso real fornecido pelo usuário não conseguiu ser roteado entre os pontos esperados na instância avaliada. Como o primeiro caso real já falhou, essa implementação foi removida do PR e não é considerada solução válida para o T4A.
-
-Não será feita troca cega para outro serviço público apenas para obter sucesso técnico. O próximo motor deve atender ao caso real, não exigir credencial e permitir um perfil de circulação coerente com o T4A.
-
-## Alternativas avaliadas
-
-- Google Routes API: descartada porque exige chave/billing.
-- GraphHopper hosted API: descartada porque exige chave.
-- openrouteservice hosted API: descartada porque exige chave.
-- OSRM público: sem chave, porém os perfis públicos são pré-processados e não oferecem um perfil próprio para o T4A.
-- BRouter: aberto, executável localmente/Android e com perfis configuráveis. O perfil `moped` distribuído pelo projeto é explicitamente experimental e não deve ser usado diretamente para navegação real. Continua candidato apenas com perfil próprio e validação real.
-
-## Próximo critério
-
-O próximo experimento deve partir da mesma rota real e só será incorporado ao PR se conseguir roteá-la de forma plausível. A direção preferida é um motor OSM sob nosso controle, com perfil específico do T4A e sem dependência de credenciais externas.
+- O percurso é recalculado a partir dos waypoints; não há promessa de reprodução da geometria interna opaca do Google Maps.
+- Servidores públicos são adequados para desenvolvimento e uso leve, mas permanecem substituíveis por infraestrutura própria.
+- Persistência, UI de seleção de perfil, detecção de saída da rota e recálculo continuam fora deste corte.
