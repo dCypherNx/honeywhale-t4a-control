@@ -69,13 +69,17 @@ public final class NavigationCadencePolicy {
         return decision(1_000L, 1_000L, true, 1.0, speedKmh);
       case OFF_ROUTE:
       case RECALCULATING:
-        return decision(MIN_LOCATION_INTERVAL_MS, 0L, true, 0.0, speedKmh);
       case WAYPOINT_REACHED:
-        return decision(MIN_LOCATION_INTERVAL_MS, 0L, true, 0.0, speedKmh);
+        return critical(speedKmh);
       case NAVIGATING:
       default:
         return navigating(state, speedKmh);
     }
+  }
+
+  /** Maximum-urgency demand used as soon as a credible deviation episode begins. */
+  public Decision critical(Double speedKmh) {
+    return decision(MIN_LOCATION_INTERVAL_MS, 0L, true, 0.0, speedKmh);
   }
 
   private Decision navigating(NavigationState state, Double speedKmh) {
@@ -107,7 +111,7 @@ public final class NavigationCadencePolicy {
     double slackSeconds = etaSeconds - criticalHorizonSeconds;
 
     if (slackSeconds <= 0.0) {
-      return decision(MIN_LOCATION_INTERVAL_MS, 0L, true, 0.0, speedKmh);
+      return critical(speedKmh);
     }
 
     // Consume at most half of the time still available before the critical maneuver horizon. This
