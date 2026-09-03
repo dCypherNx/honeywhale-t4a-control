@@ -27,7 +27,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private static final long MOVING_INTERVAL_MS = 2_000L;
   private static final float MOVING_MIN_DISTANCE_M = 2f;
   private static final long MAX_CACHED_AGE_MS = 30_000L;
-  private static final double RECONFIGURE_INTERVAL_RATIO = 1.35;
+  private static final double RECONFIGURE_INTERVAL_RATIO = 1.20;
 
   private final Context context;
   private final LocationManager manager;
@@ -182,7 +182,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
     long smaller = Math.max(1L, Math.min(current.intervalMs, desired.intervalMs));
     long larger = Math.max(current.intervalMs, desired.intervalMs);
     if ((double) larger / smaller >= RECONFIGURE_INTERVAL_RATIO) return true;
-    return Math.abs(current.minDistanceMeters - desired.minDistanceMeters) >= 10f;
+    return Math.abs(current.minDistanceMeters - desired.minDistanceMeters) >= 5f;
   }
 
   private static LocationRequest request(RequestSpec spec) {
