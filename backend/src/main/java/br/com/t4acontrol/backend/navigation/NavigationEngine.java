@@ -11,37 +11,76 @@ public final class NavigationEngine {
   private static final double MAX_ACCURACY_MARGIN_METERS = 25.0;
   private static final double MANEUVER_PASS_THRESHOLD_METERS = 8.0;
   private static final double MANEUVER_FALLBACK_THRESHOLD_METERS = 8.0;
+  private static final double OUTGOING_STEP_MIN_PROGRESS_METERS = 3.0;
+  private static final double OUTGOING_STEP_BASE_CORRIDOR_METERS = 8.0;
+  private static final double OUTGOING_BEARING_TOLERANCE_DEGREES = 50.0;
   private final double reachedThresholdMeters;
   private final double offRouteBaseThresholdMeters;
 
-  public NavigationEngine() { this(DEFAULT_REACHED_THRESHOLD_METERS, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS); }
-  public NavigationEngine(double reachedThresholdMeters) { this(reachedThresholdMeters, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS); }
+  public NavigationEngine() {
+    this(DEFAULT_REACHED_THRESHOLD_METERS, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS);
+  }
+
+  public NavigationEngine(double reachedThresholdMeters) {
+    this(reachedThresholdMeters, DEFAULT_OFF_ROUTE_BASE_THRESHOLD_METERS);
+  }
+
   public NavigationEngine(double reachedThresholdMeters, double offRouteBaseThresholdMeters) {
-    if (reachedThresholdMeters <= 0 || offRouteBaseThresholdMeters <= 0) throw new IllegalArgumentException("navigation thresholds must be positive");
+    if (reachedThresholdMeters <= 0 || offRouteBaseThresholdMeters <= 0) {
+      throw new IllegalArgumentException("navigation thresholds must be positive");
+    }
     this.reachedThresholdMeters = reachedThresholdMeters;
     this.offRouteBaseThresholdMeters = offRouteBaseThresholdMeters;
   }
 
   public NavigationState update(Route route, NavigationState previous, LocationSnapshot location) {
     Objects.requireNonNull(route, "route");
-    if (location == null) return NavigationState.of(NavigationState.Status.POSITION_UNAVAILABLE, route,
-        previous == null ? 0 : Math.max(previous.legIndex, 0), previous == null ? 0 : Math.max(previous.instructionIndex, 0), previous == null ? null : previous.instruction, null);
+    if (location == null) {
+      return NavigationState.of(
+          NavigationState.Status.POSITION_UNAVAILABLE,
+          route,
+          previous == null ? 0 : Math.max(previous.legIndex, 0),
+          previous == null ? 0 : Math.max(previous.instructionIndex, 0),
+          previous == null ? null : previous.instruction,
+          null);
+    }
 
     Cursor cursor = resolveCursor(route, previous);
-    if (cursor == null) return NavigationState.of(NavigationState.Status.ARRIVED, route, Math.max(route.legs.size() - 1, 0), -1, null, 0.0);
+    if (cursor == null) {
+      return NavigationState.of(
+          NavigationState.Status.ARRIVED,
+          route,
+          Math.max(route.legs.size() - 1, 0),
+          -1,
+          null,
+          0.0);
+    }
 
     RouteLeg leg = route.legs.get(cursor.legIndex);
     Progress progress = project(leg.geometry, location.latitude, location.longitude);
-    double offRouteThreshold = effectiveOffRouteThreshold(offRouteBaseThresholdMeters, location.accuracyMeters);
+    double offRouteThreshold =
+        effectiveOffRouteThreshold(offRouteBaseThresholdMeters, location.accuracyMeters);
     if (progress != null && progress.distanceFromRouteMeters > offRouteThreshold) {
-      return NavigationState.of(NavigationState.Status.OFF_ROUTE, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, null);
+      return NavigationState.of(
+          NavigationState.Status.OFF_ROUTE,
+          route,
+          cursor.legIndex,
+          cursor.instructionIndex,
+          cursor.instruction,
+          null);
     }
 
     double distance = distanceToInstruction(cursor.instruction, progress, location);
-    if (instructionCompleted(cursor.instruction, progress, distance)) {
+    if (instructionCompleted(cursor.instruction, progress, distance, location)) {
       if (cursor.instruction.maneuver == NavigationInstruction.Maneuver.ARRIVE) {
         if (cursor.legIndex >= route.legs.size() - 1) {
-          return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+          return NavigationState.of(
+              NavigationState.Status.ARRIVED,
+              route,
+              cursor.legIndex,
+              cursor.instructionIndex,
+              cursor.instruction,
+              distance);
         }
 
         // OSRM ends every leg with ARRIVE. Intermediate arrivals are VIA stops, not the final
@@ -49,7 +88,13 @@ public final class NavigationEngine {
         // route order (important for loop-shaped routes whose destination is near the origin).
         Cursor nextLeg = cursorAtOrAfter(route, cursor.legIndex + 1, 0);
         if (nextLeg == null) {
-          return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+          return NavigationState.of(
+              NavigationState.Status.ARRIVED,
+              route,
+              cursor.legIndex,
+              cursor.instructionIndex,
+              cursor.instruction,
+              distance);
         }
         RouteLeg nextRouteLeg = route.legs.get(nextLeg.legIndex);
         Progress nextProgress = project(nextRouteLeg.geometry, location.latitude, location.longitude);
@@ -63,23 +108,55 @@ public final class NavigationEngine {
       }
 
       Cursor next = nextCursor(route, cursor.legIndex, cursor.instructionIndex);
-      if (next == null) return NavigationState.of(NavigationState.Status.ARRIVED, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
-      NavigationState.Status status = cursor.instruction.maneuver == NavigationInstruction.Maneuver.WAYPOINT
-          ? NavigationState.Status.WAYPOINT_REACHED : NavigationState.Status.NAVIGATING;
+      if (next == null) {
+        return NavigationState.of(
+            NavigationState.Status.ARRIVED,
+            route,
+            cursor.legIndex,
+            cursor.instructionIndex,
+            cursor.instruction,
+            distance);
+      }
+      NavigationState.Status status =
+          cursor.instruction.maneuver == NavigationInstruction.Maneuver.WAYPOINT
+              ? NavigationState.Status.WAYPOINT_REACHED
+              : NavigationState.Status.NAVIGATING;
       RouteLeg nextLeg = route.legs.get(next.legIndex);
-      Progress nextProgress = next.legIndex == cursor.legIndex ? progress : project(nextLeg.geometry, location.latitude, location.longitude);
-      return NavigationState.of(status, route, next.legIndex, next.instructionIndex, next.instruction,
+      Progress nextProgress =
+          next.legIndex == cursor.legIndex
+              ? progress
+              : project(nextLeg.geometry, location.latitude, location.longitude);
+      return NavigationState.of(
+          status,
+          route,
+          next.legIndex,
+          next.instructionIndex,
+          next.instruction,
           distanceToInstruction(next.instruction, nextProgress, location));
     }
-    return NavigationState.of(NavigationState.Status.NAVIGATING, route, cursor.legIndex, cursor.instructionIndex, cursor.instruction, distance);
+
+    return NavigationState.of(
+        NavigationState.Status.NAVIGATING,
+        route,
+        cursor.legIndex,
+        cursor.instructionIndex,
+        cursor.instruction,
+        distance);
   }
 
   /**
    * Arrival/waypoint proximity and maneuver completion are intentionally different concepts.
-   * A turn must remain visible while approaching it and until the rider has actually passed the
-   * maneuver point; using the 25 m waypoint radius for turns made guidance disappear too early.
+   *
+   * <p>For an OSRM-backed maneuver, the instruction metadata geometry is the outgoing step that
+   * starts at the maneuver. Once a moving fix is clearly on that outgoing geometry and its bearing
+   * agrees with bearing_after, the maneuver is complete immediately. The old +8 m route-offset
+   * rule remains as a provider-neutral fallback when rich step evidence is unavailable.
    */
-  private boolean instructionCompleted(NavigationInstruction instruction, Progress progress, double distance) {
+  private boolean instructionCompleted(
+      NavigationInstruction instruction,
+      Progress progress,
+      double distance,
+      LocationSnapshot location) {
     if (instruction.maneuver == NavigationInstruction.Maneuver.ARRIVE
         || instruction.maneuver == NavigationInstruction.Maneuver.WAYPOINT) {
       return distance <= reachedThresholdMeters;
@@ -87,40 +164,102 @@ public final class NavigationEngine {
     if (instruction.maneuver == NavigationInstruction.Maneuver.START) {
       return distance <= reachedThresholdMeters;
     }
+    if (completedOnOutgoingStep(instruction, location)) return true;
     if (progress != null && Double.isFinite(instruction.routeOffsetMeters)) {
-      return progress.offsetMeters >= instruction.routeOffsetMeters + MANEUVER_PASS_THRESHOLD_METERS;
+      return progress.offsetMeters
+          >= instruction.routeOffsetMeters + MANEUVER_PASS_THRESHOLD_METERS;
     }
     return distance <= MANEUVER_FALLBACK_THRESHOLD_METERS;
   }
 
+  private static boolean completedOnOutgoingStep(
+      NavigationInstruction instruction, LocationSnapshot location) {
+    if (!isDirectionalManeuver(instruction.maneuver) || instruction.metadata == null) return false;
+    List<GeoPoint> outgoingGeometry = instruction.metadata.geometry;
+    if (outgoingGeometry == null || outgoingGeometry.size() < 2) return false;
+
+    Progress outgoing = project(outgoingGeometry, location.latitude, location.longitude);
+    if (outgoing == null || outgoing.offsetMeters < OUTGOING_STEP_MIN_PROGRESS_METERS) return false;
+
+    double accuracyMargin =
+        !Double.isFinite(location.accuracyMeters) || location.accuracyMeters <= 0.0
+            ? 0.0
+            : Math.min(location.accuracyMeters, 8.0);
+    if (outgoing.distanceFromRouteMeters > OUTGOING_STEP_BASE_CORRIDOR_METERS + accuracyMargin) {
+      return false;
+    }
+
+    int bearingAfter = instruction.metadata.bearingAfter;
+    if (bearingAfter < 0 || location.bearingDegrees == null
+        || !Double.isFinite(location.bearingDegrees)) return false;
+    return angularDifferenceDegrees(location.bearingDegrees, bearingAfter)
+        <= OUTGOING_BEARING_TOLERANCE_DEGREES;
+  }
+
+  private static boolean isDirectionalManeuver(NavigationInstruction.Maneuver maneuver) {
+    return maneuver == NavigationInstruction.Maneuver.TURN_LEFT
+        || maneuver == NavigationInstruction.Maneuver.TURN_RIGHT
+        || maneuver == NavigationInstruction.Maneuver.U_TURN
+        || maneuver == NavigationInstruction.Maneuver.ROUNDABOUT;
+  }
+
+  private static double angularDifferenceDegrees(double a, double b) {
+    double normalizedA = ((a % 360.0) + 360.0) % 360.0;
+    double normalizedB = ((b % 360.0) + 360.0) % 360.0;
+    double difference = Math.abs(normalizedA - normalizedB);
+    return Math.min(difference, 360.0 - difference);
+  }
+
   /** Base route corridor plus a bounded GPS uncertainty margin. Accuracy 0 is unknown in Android. */
   static double effectiveOffRouteThreshold(double baseThresholdMeters, double accuracyMeters) {
-    double margin = (!Double.isFinite(accuracyMeters) || accuracyMeters <= 0.0)
-        ? MAX_ACCURACY_MARGIN_METERS
-        : Math.min(accuracyMeters, MAX_ACCURACY_MARGIN_METERS);
+    double margin =
+        (!Double.isFinite(accuracyMeters) || accuracyMeters <= 0.0)
+            ? MAX_ACCURACY_MARGIN_METERS
+            : Math.min(accuracyMeters, MAX_ACCURACY_MARGIN_METERS);
     return baseThresholdMeters + margin;
   }
 
-  private static double distanceToInstruction(NavigationInstruction instruction, Progress progress, LocationSnapshot location) {
-    if (progress != null && !Double.isNaN(instruction.routeOffsetMeters)) return Math.max(0.0, instruction.routeOffsetMeters - progress.offsetMeters);
-    return distanceMeters(location.latitude, location.longitude, instruction.latitude, instruction.longitude);
+  private static double distanceToInstruction(
+      NavigationInstruction instruction, Progress progress, LocationSnapshot location) {
+    if (progress != null && !Double.isNaN(instruction.routeOffsetMeters)) {
+      return Math.max(0.0, instruction.routeOffsetMeters - progress.offsetMeters);
+    }
+    return distanceMeters(
+        location.latitude,
+        location.longitude,
+        instruction.latitude,
+        instruction.longitude);
   }
 
-  private static Progress project(List<GeoPoint> geometry, double latitude, double longitude) {
+  private static Progress project(
+      List<GeoPoint> geometry, double latitude, double longitude) {
     if (geometry == null || geometry.size() < 2) return null;
-    double bestDistance = Double.POSITIVE_INFINITY, bestOffset = 0.0, cumulative = 0.0;
+    double bestDistance = Double.POSITIVE_INFINITY;
+    double bestOffset = 0.0;
+    double cumulative = 0.0;
     for (int i = 0; i < geometry.size() - 1; i++) {
-      GeoPoint a = geometry.get(i), b = geometry.get(i + 1);
+      GeoPoint a = geometry.get(i);
+      GeoPoint b = geometry.get(i + 1);
       double segment = distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
       double refLat = Math.toRadians(latitude);
       double ax = Math.toRadians(a.longitude - longitude) * Math.cos(refLat) * 6_371_000.0;
       double ay = Math.toRadians(a.latitude - latitude) * 6_371_000.0;
       double bx = Math.toRadians(b.longitude - longitude) * Math.cos(refLat) * 6_371_000.0;
       double by = Math.toRadians(b.latitude - latitude) * 6_371_000.0;
-      double dx = bx - ax, dy = by - ay, denom = dx * dx + dy * dy;
-      double t = denom == 0.0 ? 0.0 : Math.max(0.0, Math.min(1.0, -(ax * dx + ay * dy) / denom));
-      double px = ax + t * dx, py = ay + t * dy, distance = Math.sqrt(px * px + py * py);
-      if (distance < bestDistance) { bestDistance = distance; bestOffset = cumulative + t * segment; }
+      double dx = bx - ax;
+      double dy = by - ay;
+      double denom = dx * dx + dy * dy;
+      double t =
+          denom == 0.0
+              ? 0.0
+              : Math.max(0.0, Math.min(1.0, -(ax * dx + ay * dy) / denom));
+      double px = ax + t * dx;
+      double py = ay + t * dy;
+      double distance = Math.sqrt(px * px + py * py);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestOffset = cumulative + t * segment;
+      }
       cumulative += segment;
     }
     return new Progress(bestOffset, bestDistance);
@@ -128,24 +267,60 @@ public final class NavigationEngine {
 
   private static Cursor resolveCursor(Route route, NavigationState previous) {
     int legIndex = previous == null || previous.legIndex < 0 ? 0 : previous.legIndex;
-    int instructionIndex = previous == null || previous.instructionIndex < 0 ? 0 : previous.instructionIndex;
+    int instructionIndex =
+        previous == null || previous.instructionIndex < 0 ? 0 : previous.instructionIndex;
     return cursorAtOrAfter(route, legIndex, instructionIndex);
   }
-  private static Cursor nextCursor(Route route, int legIndex, int instructionIndex) { return cursorAtOrAfter(route, legIndex, instructionIndex + 1); }
+
+  private static Cursor nextCursor(Route route, int legIndex, int instructionIndex) {
+    return cursorAtOrAfter(route, legIndex, instructionIndex + 1);
+  }
+
   private static Cursor cursorAtOrAfter(Route route, int legIndex, int instructionIndex) {
     for (int leg = legIndex; leg < route.legs.size(); leg++) {
-      List<NavigationInstruction> instructions = route.legs.get(leg).instructions; int start = leg == legIndex ? instructionIndex : 0;
-      if (start < instructions.size()) return new Cursor(leg, start, instructions.get(start));
+      List<NavigationInstruction> instructions = route.legs.get(leg).instructions;
+      int start = leg == legIndex ? instructionIndex : 0;
+      if (start < instructions.size()) {
+        return new Cursor(leg, start, instructions.get(start));
+      }
     }
     return null;
   }
 
   static double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
-    double earthRadiusMeters = 6_371_000.0, phi1 = Math.toRadians(lat1), phi2 = Math.toRadians(lat2), deltaPhi = Math.toRadians(lat2 - lat1), deltaLambda = Math.toRadians(lon2 - lon1);
-    double a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    double earthRadiusMeters = 6_371_000.0;
+    double phi1 = Math.toRadians(lat1);
+    double phi2 = Math.toRadians(lat2);
+    double deltaPhi = Math.toRadians(lat2 - lat1);
+    double deltaLambda = Math.toRadians(lon2 - lon1);
+    double a =
+        Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2)
+            + Math.cos(phi1)
+                * Math.cos(phi2)
+                * Math.sin(deltaLambda / 2)
+                * Math.sin(deltaLambda / 2);
     return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  private static final class Progress { final double offsetMeters, distanceFromRouteMeters; Progress(double offsetMeters, double distanceFromRouteMeters) { this.offsetMeters = offsetMeters; this.distanceFromRouteMeters = distanceFromRouteMeters; } }
-  private static final class Cursor { final int legIndex, instructionIndex; final NavigationInstruction instruction; Cursor(int legIndex, int instructionIndex, NavigationInstruction instruction) { this.legIndex = legIndex; this.instructionIndex = instructionIndex; this.instruction = instruction; } }
+  private static final class Progress {
+    final double offsetMeters;
+    final double distanceFromRouteMeters;
+
+    Progress(double offsetMeters, double distanceFromRouteMeters) {
+      this.offsetMeters = offsetMeters;
+      this.distanceFromRouteMeters = distanceFromRouteMeters;
+    }
+  }
+
+  private static final class Cursor {
+    final int legIndex;
+    final int instructionIndex;
+    final NavigationInstruction instruction;
+
+    Cursor(int legIndex, int instructionIndex, NavigationInstruction instruction) {
+      this.legIndex = legIndex;
+      this.instructionIndex = instructionIndex;
+      this.instruction = instruction;
+    }
+  }
 }
