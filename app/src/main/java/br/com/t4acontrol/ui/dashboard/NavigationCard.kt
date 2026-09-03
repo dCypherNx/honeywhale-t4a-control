@@ -31,23 +31,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.t4acontrol.BuildConfig
+import br.com.t4acontrol.backend.location.LocationSnapshot
+import br.com.t4acontrol.backend.navigation.GeoPoint
 import br.com.t4acontrol.backend.navigation.NavigationInstruction
 import br.com.t4acontrol.backend.navigation.NavigationState
+import br.com.t4acontrol.backend.navigation.NavigationStepMetadata
 import br.com.t4acontrol.backend.navigation.Route
 import br.com.t4acontrol.navigation.NavigationRuntime
 import br.com.t4acontrol.ui.MdiIcon
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val GUIDANCE_MIN_METERS = 15.0
-private const val GUIDANCE_MAX_METERS = 100.0
 private const val GUIDANCE_DEFAULT_METERS = 30.0
 private const val NORMAL_TURN_SECONDS = 10.0
-private const val NORMAL_TURN_TARGET_KMH = 25.0
 private const val ROUNDABOUT_SECONDS = 12.0
-private const val ROUNDABOUT_TARGET_KMH = 15.0
 private const val U_TURN_SECONDS = 15.0
-private const val U_TURN_TARGET_KMH = 0.0
+private const val AMBIGUOUS_INTERSECTION_PASS_METERS = 8.0
+private const val TARGET_INTERSECTION_IGNORE_METERS = 12.0
+private const val TURN_BRANCH_MIN_DEGREES = 25.0
+private const val TURN_BRANCH_MAX_DEGREES = 155.0
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,6 +85,8 @@ internal fun NavigationCard(
     val presentation = timedNavigationPresentation(
         navigationPresentation(route, state, waypointsVisible),
         runtime.guidanceSpeedKmh(),
+        route,
+        runtime.guidanceLocation(),
     )
     val instruction = presentation.instruction
     val debugRouteUrl = if (BuildConfig.DEBUG) plannedRouteDebugUrl(route) else null
@@ -129,16 +140,32 @@ private data class NavigationPresentation(
     val status: NavigationState.Status,
     val instruction: NavigationInstruction?,
     val distanceMeters: Double?,
+    val legIndex: Int = -1,
+    val instructionIndex: Int = -1,
 )
 
 private fun navigationPresentation(route: Route?, state: NavigationState, waypointsVisible: Boolean): NavigationPresentation {
     if (state.status == NavigationState.Status.PAUSED || waypointsVisible || route == null) {
-        return NavigationPresentation(state.status, state.instruction, state.distanceToInstructionMeters)
+        return NavigationPresentation(
+            state.status,
+            state.instruction,
+            state.distanceToInstructionMeters,
+            state.legIndex,
+            state.instructionIndex,
+        )
     }
 
     val hidesWaypoint = state.status == NavigationState.Status.WAYPOINT_REACHED ||
         state.instruction?.maneuver == NavigationInstruction.Maneuver.WAYPOINT
-    if (!hidesWaypoint) return NavigationPresentation(state.status, state.instruction, state.distanceToInstructionMeters)
+    if (!hidesWaypoint) {
+        return NavigationPresentation(
+            state.status,
+            state.instruction,
+            state.distanceToInstructionMeters,
+            state.legIndex,
+            state.instructionIndex,
+        )
+    }
 
     val next = nextVisibleInstruction(route, state.legIndex, state.instructionIndex)
         ?: return NavigationPresentation(NavigationState.Status.NAVIGATING, null, null)
@@ -148,44 +175,57 @@ private fun navigationPresentation(route: Route?, state: NavigationState, waypoi
         NavigationState.Status.NAVIGATING,
         next.instruction,
         (baseDistance + extraDistance).coerceAtLeast(0.0),
+        next.legIndex,
+        next.instructionIndex,
     )
 }
 
 /**
- * Guidance distance is derived from current speed and the speed reduction expected for the maneuver.
- * We model progressive, approximately linear deceleration after the command appears. A normal turn
- * targets at least 10 s, a roundabout 12 s, and a U-turn 15 s. Distances are bounded to 15..100 m.
- * The current OSRM adapter does not preserve slight/sharp/fork detail, so left/right are conservatively
- * treated as normal turns until the domain exposes richer maneuver semantics.
+ * A directional command appears with a real minimum time margin at the current speed: 10 s for a
+ * normal turn, 12 s for a roundabout and 15 s for a U-turn. There is deliberately no fixed maximum
+ * distance; at 40 km/h a normal 90-degree turn therefore starts at about 111 m, and at 45 km/h at
+ * about 125 m. Actual deceleration only increases the remaining time after the command appears.
+ *
+ * OSRM remains authoritative for route choice and maneuver order. The ambiguity gate changes only
+ * when the already-selected OSRM maneuver becomes visible: a left/right command stays hidden while
+ * an earlier, still-unpassed intersection offers another physically enterable branch on the same
+ * side. Once that branch is passed, the original OSRM command is shown normally.
  */
 private fun timedNavigationPresentation(
     presentation: NavigationPresentation,
     gpsSpeedKmh: Double?,
+    route: Route?,
+    location: LocationSnapshot?,
 ): NavigationPresentation {
     if (presentation.status != NavigationState.Status.NAVIGATING) return presentation
     val maneuver = presentation.instruction?.maneuver ?: return presentation
     if (!isDirectionalManeuver(maneuver)) return presentation
     val distance = presentation.distanceMeters ?: return presentation
-    if (distance <= guidanceActivationMeters(gpsSpeedKmh, maneuver)) return presentation
-
-    return NavigationPresentation(
-        NavigationState.Status.NAVIGATING,
-        null,
-        distance,
-    )
+    if (distance > guidanceActivationMeters(gpsSpeedKmh, maneuver)) {
+        return presentation.withInstructionHidden()
+    }
+    if (hasAmbiguousTurnAhead(route, presentation, location)) {
+        return presentation.withInstructionHidden()
+    }
+    return presentation
 }
 
-private data class GuidanceProfile(
-    val leadSeconds: Double,
-    val targetSpeedKmh: Double,
+private fun NavigationPresentation.withInstructionHidden(): NavigationPresentation = NavigationPresentation(
+    status = NavigationState.Status.NAVIGATING,
+    instruction = null,
+    distanceMeters = distanceMeters,
+    legIndex = legIndex,
+    instructionIndex = instructionIndex,
 )
 
+private data class GuidanceProfile(val leadSeconds: Double)
+
 private fun guidanceProfile(maneuver: NavigationInstruction.Maneuver): GuidanceProfile = when (maneuver) {
-    NavigationInstruction.Maneuver.U_TURN -> GuidanceProfile(U_TURN_SECONDS, U_TURN_TARGET_KMH)
-    NavigationInstruction.Maneuver.ROUNDABOUT -> GuidanceProfile(ROUNDABOUT_SECONDS, ROUNDABOUT_TARGET_KMH)
+    NavigationInstruction.Maneuver.U_TURN -> GuidanceProfile(U_TURN_SECONDS)
+    NavigationInstruction.Maneuver.ROUNDABOUT -> GuidanceProfile(ROUNDABOUT_SECONDS)
     NavigationInstruction.Maneuver.TURN_LEFT,
-    NavigationInstruction.Maneuver.TURN_RIGHT -> GuidanceProfile(NORMAL_TURN_SECONDS, NORMAL_TURN_TARGET_KMH)
-    else -> GuidanceProfile(NORMAL_TURN_SECONDS, NORMAL_TURN_TARGET_KMH)
+    NavigationInstruction.Maneuver.TURN_RIGHT -> GuidanceProfile(NORMAL_TURN_SECONDS)
+    else -> GuidanceProfile(NORMAL_TURN_SECONDS)
 }
 
 internal fun guidanceActivationMeters(
@@ -196,13 +236,114 @@ internal fun guidanceActivationMeters(
         return GUIDANCE_DEFAULT_METERS
     }
 
-    val profile = guidanceProfile(maneuver)
     val currentMps = gpsSpeedKmh / 3.6
-    val targetMps = minOf(currentMps, profile.targetSpeedKmh / 3.6)
-    val projectedAverageMps = (currentMps + targetMps) / 2.0
-    return (projectedAverageMps * profile.leadSeconds)
-        .coerceIn(GUIDANCE_MIN_METERS, GUIDANCE_MAX_METERS)
+    return (currentMps * guidanceProfile(maneuver).leadSeconds)
+        .coerceAtLeast(GUIDANCE_MIN_METERS)
 }
+
+private fun hasAmbiguousTurnAhead(
+    route: Route?,
+    presentation: NavigationPresentation,
+    location: LocationSnapshot?,
+): Boolean {
+    val maneuver = presentation.instruction?.maneuver ?: return false
+    if (maneuver != NavigationInstruction.Maneuver.TURN_LEFT &&
+        maneuver != NavigationInstruction.Maneuver.TURN_RIGHT
+    ) return false
+    if (route == null || location == null || presentation.legIndex !in route.legs.indices) return false
+
+    val instructions = route.legs[presentation.legIndex].instructions
+    if (presentation.instructionIndex !in instructions.indices || presentation.instructionIndex <= 0) return false
+    val approach = instructions[presentation.instructionIndex - 1]
+    val metadata = approach.metadata ?: return false
+    val geometry = metadata.geometry
+    if (geometry.size < 2 || metadata.intersections.isEmpty()) return false
+
+    val currentOffset = projectOffsetMeters(geometry, location.latitude, location.longitude) ?: return false
+    val target = presentation.instruction
+    for (intersection in metadata.intersections) {
+        if (distanceMeters(
+                intersection.latitude,
+                intersection.longitude,
+                target.latitude,
+                target.longitude,
+            ) <= TARGET_INTERSECTION_IGNORE_METERS
+        ) continue
+        val intersectionOffset = projectOffsetMeters(geometry, intersection.latitude, intersection.longitude) ?: continue
+        if (intersectionOffset <= currentOffset + AMBIGUOUS_INTERSECTION_PASS_METERS) continue
+        if (offersAlternativeTurn(intersection, maneuver)) return true
+    }
+    return false
+}
+
+private fun offersAlternativeTurn(
+    intersection: NavigationStepMetadata.Intersection,
+    maneuver: NavigationInstruction.Maneuver,
+): Boolean {
+    val bearings = intersection.bearings
+    if (intersection.inIndex !in bearings.indices) return false
+    val incomingTravelBearing = normalizeBearing(bearings[intersection.inIndex].toDouble() + 180.0)
+
+    for (index in bearings.indices) {
+        if (index == intersection.inIndex || index == intersection.outIndex) continue
+        if (index >= intersection.entry.size || !intersection.entry[index]) continue
+        val delta = signedBearingDelta(incomingTravelBearing, bearings[index].toDouble())
+        if (maneuver == NavigationInstruction.Maneuver.TURN_RIGHT &&
+            delta in TURN_BRANCH_MIN_DEGREES..TURN_BRANCH_MAX_DEGREES
+        ) return true
+        if (maneuver == NavigationInstruction.Maneuver.TURN_LEFT &&
+            delta in -TURN_BRANCH_MAX_DEGREES..-TURN_BRANCH_MIN_DEGREES
+        ) return true
+    }
+    return false
+}
+
+private fun projectOffsetMeters(geometry: List<GeoPoint>, latitude: Double, longitude: Double): Double? {
+    if (geometry.size < 2) return null
+    var bestDistance = Double.POSITIVE_INFINITY
+    var bestOffset = 0.0
+    var cumulative = 0.0
+    val refLat = Math.toRadians(latitude)
+
+    for (index in 0 until geometry.lastIndex) {
+        val a = geometry[index]
+        val b = geometry[index + 1]
+        val segment = distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+        val ax = Math.toRadians(a.longitude - longitude) * cos(refLat) * 6_371_000.0
+        val ay = Math.toRadians(a.latitude - latitude) * 6_371_000.0
+        val bx = Math.toRadians(b.longitude - longitude) * cos(refLat) * 6_371_000.0
+        val by = Math.toRadians(b.latitude - latitude) * 6_371_000.0
+        val dx = bx - ax
+        val dy = by - ay
+        val denominator = dx * dx + dy * dy
+        val t = if (denominator == 0.0) 0.0 else max(0.0, min(1.0, -(ax * dx + ay * dy) / denominator))
+        val px = ax + t * dx
+        val py = ay + t * dy
+        val distance = sqrt(px * px + py * py)
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestOffset = cumulative + t * segment
+        }
+        cumulative += segment
+    }
+    return bestOffset
+}
+
+private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadiusMeters = 6_371_000.0
+    val phi1 = Math.toRadians(lat1)
+    val phi2 = Math.toRadians(lat2)
+    val deltaPhi = Math.toRadians(lat2 - lat1)
+    val deltaLambda = Math.toRadians(lon2 - lon1)
+    val a = sin(deltaPhi / 2) * sin(deltaPhi / 2) +
+        cos(phi1) * cos(phi2) * sin(deltaLambda / 2) * sin(deltaLambda / 2)
+    return earthRadiusMeters * 2 * atan2(sqrt(a), sqrt(1 - a))
+}
+
+private fun normalizeBearing(value: Double): Double = ((value % 360.0) + 360.0) % 360.0
+
+private fun signedBearingDelta(from: Double, to: Double): Double =
+    ((normalizeBearing(to) - normalizeBearing(from) + 540.0) % 360.0) - 180.0
 
 private fun isDirectionalManeuver(maneuver: NavigationInstruction.Maneuver): Boolean = when (maneuver) {
     NavigationInstruction.Maneuver.TURN_LEFT,
@@ -212,7 +353,11 @@ private fun isDirectionalManeuver(maneuver: NavigationInstruction.Maneuver): Boo
     else -> false
 }
 
-private data class VisibleInstruction(val instruction: NavigationInstruction)
+private data class VisibleInstruction(
+    val instruction: NavigationInstruction,
+    val legIndex: Int,
+    val instructionIndex: Int,
+)
 
 private fun nextVisibleInstruction(route: Route, legIndex: Int, instructionIndex: Int): VisibleInstruction? {
     for (leg in legIndex.coerceAtLeast(0) until route.legs.size) {
@@ -223,7 +368,7 @@ private fun nextVisibleInstruction(route: Route, legIndex: Int, instructionIndex
             if (
                 instruction.maneuver != NavigationInstruction.Maneuver.WAYPOINT &&
                 instruction.maneuver != NavigationInstruction.Maneuver.START
-            ) return VisibleInstruction(instruction)
+            ) return VisibleInstruction(instruction, leg, index)
         }
     }
     return null
