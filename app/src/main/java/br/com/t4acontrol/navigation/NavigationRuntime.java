@@ -74,7 +74,7 @@ public final class NavigationRuntime {
   /** Current provider-neutral location demand; null means navigation has no active demand. */
   public NavigationCadencePolicy.Decision locationDemand() {
     if (deviationSuspected) return cadencePolicy.critical(guidanceSpeedKmh);
-    return cadencePolicy.evaluate(state, guidanceSpeedKmh);
+    return cadencePolicy.evaluate(route, state, guidanceSpeedKmh);
   }
 
   /** A newly shared route is immediately active; READY lasts only until the next GPS fix. */
@@ -191,7 +191,7 @@ public final class NavigationRuntime {
     NavigationCadencePolicy.Decision processingDemand =
         deviationSuspected
             ? cadencePolicy.critical(snapshot.gpsSpeedKmh)
-            : cadencePolicy.evaluate(state, snapshot.gpsSpeedKmh);
+            : cadencePolicy.evaluate(active, state, snapshot.gpsSpeedKmh);
     long processingIntervalMs = processingDemand == null ? 0L : processingDemand.processingIntervalMs;
     long timestamp = snapshot.timestampMs;
     if (processingIntervalMs > 0L
