@@ -38,6 +38,7 @@ public final class NavigationRuntime {
   private volatile String lastLoggedStateSignature = "";
   private volatile long lastNavigationLocationTimestampMs = Long.MIN_VALUE;
   private volatile Double guidanceSpeedKmh;
+  private volatile LocationSnapshot guidanceLocation;
 
   private NavigationRuntime() {}
 
@@ -54,6 +55,11 @@ public final class NavigationRuntime {
     return guidanceSpeedKmh;
   }
 
+  /** Last GPS fix accepted by the navigation cadence, used only to disambiguate visual guidance. */
+  public LocationSnapshot guidanceLocation() {
+    return guidanceLocation;
+  }
+
   /** A newly shared route is immediately active; READY lasts only until the next GPS fix. */
   public void setRoute(Route value) {
     route = value;
@@ -63,6 +69,7 @@ public final class NavigationRuntime {
     lastLoggedStateSignature = "";
     lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
+    guidanceLocation = null;
     notifyListeners();
     logStateIfChanged(state);
   }
@@ -75,6 +82,7 @@ public final class NavigationRuntime {
     lastLoggedStateSignature = "";
     lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
+    guidanceLocation = null;
     notifyListeners();
     logStateIfChanged(state);
     if (value != null) rawLog("[NAV] SESSION RESTORED paused route=" + value.id);
@@ -120,6 +128,7 @@ public final class NavigationRuntime {
     lastLoggedStateSignature = "";
     lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
+    guidanceLocation = null;
     notifyListeners();
     if (active != null) rawLog("[NAV] SESSION ENDED route=" + active.id);
   }
@@ -157,6 +166,7 @@ public final class NavigationRuntime {
     }
     if (timestamp > 0L) lastNavigationLocationTimestampMs = timestamp;
     guidanceSpeedKmh = snapshot.gpsSpeedKmh;
+    guidanceLocation = snapshot;
 
     if (recalculationRunning.get()) return;
 
