@@ -6,42 +6,47 @@ import org.junit.Test
 
 class NavigationGuidanceTimingTest {
     @Test
-    fun `normal turn keeps at least ten second projected lead at scooter speeds`() {
+    fun `normal turn keeps a real ten second minimum lead at current speed`() {
         assertEquals(
-            76.389,
+            83.333,
             guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.TURN_LEFT),
             0.01,
         )
         assertEquals(
-            97.222,
+            111.111,
+            guidanceActivationMeters(40.0, NavigationInstruction.Maneuver.TURN_RIGHT),
+            0.01,
+        )
+        assertEquals(
+            125.0,
             guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.TURN_RIGHT),
             0.01,
         )
     }
 
     @Test
-    fun `roundabout anticipates stronger speed reduction without exceeding one hundred meters`() {
+    fun `roundabout uses twelve seconds without a fixed distance ceiling`() {
         assertEquals(
-            75.0,
+            100.0,
             guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.ROUNDABOUT),
             0.01,
         )
         assertEquals(
-            100.0,
+            150.0,
             guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.ROUNDABOUT),
             0.01,
         )
     }
 
     @Test
-    fun `u turn models near stop and fifteen second lead`() {
+    fun `u turn keeps fifteen second minimum lead without a fixed distance ceiling`() {
         assertEquals(
-            62.5,
+            125.0,
             guidanceActivationMeters(30.0, NavigationInstruction.Maneuver.U_TURN),
             0.01,
         )
         assertEquals(
-            93.75,
+            187.5,
             guidanceActivationMeters(45.0, NavigationInstruction.Maneuver.U_TURN),
             0.01,
         )
