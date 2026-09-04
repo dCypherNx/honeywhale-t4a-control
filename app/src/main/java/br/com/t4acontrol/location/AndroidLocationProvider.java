@@ -28,14 +28,6 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private static final float MOVING_MIN_DISTANCE_M = 2f;
   private static final long MAX_CACHED_AGE_MS = 30_000L;
 
-  // Mapbox Navigation v3 uses 1 s desired / 500 ms minimum with high accuracy as its default
-  // active-navigation request. These are Android adapter capabilities, not maneuver horizons.
-  private static final long ACTIVE_NAV_INTERVAL_MS = 1_000L;
-  private static final long ACTIVE_NAV_MIN_INTERVAL_MS = 500L;
-  // Valhalla/Meili recommends approximately 1 point/s to 1 point/10 s for map-matching quality.
-  private static final long RELAXED_NAV_INTERVAL_MS =
-      NavigationObservationPolicy.TRACE_DENSITY_MAX_GAP_MS;
-
   private final Context context;
   private final LocationManager manager;
   private final Executor executor;
@@ -83,7 +75,6 @@ public final class AndroidLocationProvider implements AutoCloseable {
     if (active) reconfigureIfNeeded();
   }
 
-  /** Re-evaluates runtime permission/provider state after an Activity permission result. */
   public void refreshPermissions() {
     if (active) register(true);
   }
@@ -154,26 +145,35 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private RequestSpec desiredRequest() {
     NavigationObservationPolicy.ProviderDemand demand = navigationDemand;
     if (demand != null && demand.level != NavigationObservationPolicy.DemandLevel.NONE) {
+      long interval = requestedInterval(demand);
       switch (demand.level) {
         case CONTINUOUS:
+          // Zero asks Android for the fastest practical delivery without inventing an app-level floor.
+          return new RequestSpec(
+              0L,
+              0L,
+              0f,
+              hasFineLocationPermission()
+                  ? LocationRequest.QUALITY_HIGH_ACCURACY
+                  : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
         case PRECISE:
           return new RequestSpec(
-              ACTIVE_NAV_INTERVAL_MS,
-              ACTIVE_NAV_MIN_INTERVAL_MS,
+              interval,
+              0L,
               0f,
               hasFineLocationPermission()
                   ? LocationRequest.QUALITY_HIGH_ACCURACY
                   : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
         case BALANCED:
           return new RequestSpec(
-              RELAXED_NAV_INTERVAL_MS,
-              ACTIVE_NAV_MIN_INTERVAL_MS,
+              interval,
+              0L,
               0f,
               LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
         case RELAXED:
           return new RequestSpec(
-              RELAXED_NAV_INTERVAL_MS,
-              ACTIVE_NAV_MIN_INTERVAL_MS,
+              interval,
+              0L,
               0f,
               LocationRequest.QUALITY_LOW_POWER);
         case NONE:
@@ -196,6 +196,17 @@ public final class AndroidLocationProvider implements AutoCloseable {
         IDLE_INTERVAL_MS,
         IDLE_MIN_DISTANCE_M,
         LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+  }
+
+  /**
+   * The navigation domain supplies the live geometric budget. Infinite budget falls back only to the
+   * existing session baseline; finite values are not replaced by arbitrary navigation bands.
+   */
+  private long requestedInterval(NavigationObservationPolicy.ProviderDemand demand) {
+    if (demand.maxSafeGapMs == Long.MAX_VALUE) {
+      return moving ? MOVING_INTERVAL_MS : IDLE_INTERVAL_MS;
+    }
+    return Math.max(1L, demand.maxSafeGapMs);
   }
 
   private static LocationRequest request(RequestSpec spec) {
@@ -228,8 +239,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
         || longitude < -180d
         || longitude > 180d) return;
 
-    Double gpsSpeedKmh =
-        location.hasSpeed() ? Math.max(0d, location.getSpeed() * 3.6d) : null;
+    Double gpsSpeedKmh = location.hasSpeed() ? Math.max(0d, location.getSpeed() * 3.6d) : null;
     Double bearing = location.hasBearing() ? (double) location.getBearing() : null;
     Double altitude = location.hasAltitude() ? location.getAltitude() : null;
     double accuracy = location.hasAccuracy() ? Math.max(0d, location.getAccuracy()) : 0d;
