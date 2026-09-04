@@ -6,21 +6,14 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Stateful, provider-neutral assessment of how much location observation the current navigation
- * context needs.
+ * Provider-neutral assessment of how much physical observation navigation needs.
  *
- * <p>This policy deliberately does not encode maneuver time horizons or fixed navigation cadence
- * bands. It observes every supplied fix, derives confidence and geometric clearance from the live
- * route context, and exposes a maximum safe observation gap. Android-specific request frequencies
- * are chosen later by the platform adapter.
+ * <p>No maneuver time horizon or fixed navigation cadence is encoded here. The policy consumes one
+ * shared route-progress interpretation and derives confidence, geometric clearance and a continuous
+ * maximum safe observation gap. Platform adapters decide how to translate that demand into real
+ * location-provider capabilities.
  */
 public final class NavigationObservationPolicy {
-  /**
-   * Valhalla/Meili recommends trace density between roughly one point/second and one point/10 s for
-   * reliable map matching. This is a sampling-quality guard, not a maneuver horizon.
-   */
-  public static final long TRACE_DENSITY_MAX_GAP_MS = 10_000L;
-
   public enum DemandLevel {
     NONE,
     RELAXED,
@@ -37,7 +30,6 @@ public final class NavigationObservationPolicy {
 
   public static final class ProviderDemand {
     public final DemandLevel level;
-    /** Maximum geometrically safe gap inferred from the current state; may be Long.MAX_VALUE. */
     public final long maxSafeGapMs;
 
     ProviderDemand(DemandLevel level, long maxSafeGapMs) {
@@ -59,7 +51,6 @@ public final class NavigationObservationPolicy {
     }
   }
 
-  /** Immutable diagnostic snapshot produced for every observed location. */
   public static final class Observation {
     public final Confidence locationConfidence;
     public final Confidence routeConfidence;
@@ -129,10 +120,11 @@ public final class NavigationObservationPolicy {
     }
   }
 
-  private Sample previous;
+  // Compatibility only for isolated callers/tests. Production shares one tracker through runtime.
+  private final RouteProgressTracker compatibilityTracker = new RouteProgressTracker();
 
   public void reset() {
-    previous = null;
+    compatibilityTracker.reset();
   }
 
   public ProviderDemand initialDemand(Route route, NavigationState state) {
@@ -150,7 +142,7 @@ public final class NavigationObservationPolicy {
       case POSITION_UNAVAILABLE:
       case NAVIGATING:
       default:
-        return new ProviderDemand(DemandLevel.PRECISE, TRACE_DENSITY_MAX_GAP_MS);
+        return new ProviderDemand(DemandLevel.PRECISE, Long.MAX_VALUE);
     }
   }
 
@@ -159,30 +151,44 @@ public final class NavigationObservationPolicy {
       NavigationState state,
       LocationSnapshot location,
       boolean deviationSuspected) {
-    if (route == null || state == null || location == null) {
-      return unavailable("missing_context");
-    }
+    RouteProgressSnapshot progress =
+        route == null || state == null || location == null
+            ? null
+            : compatibilityTracker.observe(route, state, location);
+    return observe(route, state, location, progress, deviationSuspected);
+  }
 
-    Projection projection = projectCurrentLeg(route, state, location);
+  public Observation observe(
+      Route route,
+      NavigationState state,
+      LocationSnapshot location,
+      RouteProgressSnapshot progress,
+      boolean deviationSuspected) {
+    if (route == null || state == null || location == null) return unavailable("missing_context");
+
     double accuracy = usableAccuracy(location.accuracyMeters);
-    double lateral = projection == null ? Double.NaN : projection.lateralMeters;
+    double lateral = progress == null || !progress.available()
+        ? Double.NaN
+        : progress.lateralErrorMeters;
+    double routeOffset = progress == null || !progress.available()
+        ? Double.NaN
+        : progress.routeOffsetMeters;
+    boolean progressConsistent = progress != null && progress.available() && progress.progressConsistent;
     double uncertainty = uncertaintyMeters(accuracy, lateral);
 
-    boolean progressConsistent = progressConsistent(projection, accuracy, location.timestampMs);
-    Confidence locationConfidence =
-        accuracy > 0.0
-            ? (progressConsistent || previous == null ? Confidence.STABLE : Confidence.DEGRADED)
-            : Confidence.UNKNOWN;
-    Confidence routeConfidence =
-        projection == null
-            ? Confidence.UNKNOWN
-            : (progressConsistent ? Confidence.STABLE : Confidence.DEGRADED);
+    Confidence locationConfidence = accuracy <= 0.0
+        ? Confidence.UNKNOWN
+        : (progress == null || !progress.available() || progressConsistent
+            ? Confidence.STABLE
+            : Confidence.DEGRADED);
+    Confidence routeConfidence = progress == null || !progress.available()
+        ? Confidence.UNKNOWN
+        : (progressConsistent ? Confidence.STABLE : Confidence.DEGRADED);
 
     Corridor corridor = corridor(route, state);
-    double instructionDistance = finiteNonNegative(state.distanceToInstructionMeters)
+    double decisionDistance = finiteNonNegative(state.distanceToInstructionMeters)
         ? state.distanceToInstructionMeters
         : Double.NaN;
-    double decisionDistance = instructionDistance;
     boolean branchAhead = false;
     if (corridor.known
         && Double.isFinite(corridor.nearestAlternativeBranchMeters)
@@ -210,16 +216,12 @@ public final class NavigationObservationPolicy {
         || clearance <= 0.0) {
       demand = continuous();
       reason = deviationSuspected ? "deviation_evidence" : "decision_clearance_exhausted";
-    } else if (locationConfidence != Confidence.STABLE
-        || routeConfidence != Confidence.STABLE) {
+    } else if (locationConfidence != Confidence.STABLE || routeConfidence != Confidence.STABLE) {
       demand = new ProviderDemand(DemandLevel.PRECISE, maxSafeGapMs);
       reason = "confidence_not_stable";
     } else if (!corridor.known) {
       demand = new ProviderDemand(DemandLevel.PRECISE, maxSafeGapMs);
       reason = "corridor_unknown";
-    } else if (budgetSeconds <= TRACE_DENSITY_MAX_GAP_MS / 1_000.0) {
-      demand = new ProviderDemand(DemandLevel.PRECISE, maxSafeGapMs);
-      reason = branchAhead ? "branch_within_trace_window" : "decision_within_trace_window";
     } else if (branchAhead) {
       demand = new ProviderDemand(DemandLevel.BALANCED, maxSafeGapMs);
       reason = "alternative_branch_ahead";
@@ -228,18 +230,12 @@ public final class NavigationObservationPolicy {
       reason = "stable_simple_corridor";
     }
 
-    Sample current = new Sample(
-        location.timestampMs,
-        accuracy,
-        projection == null ? Double.NaN : projection.offsetMeters);
-    previous = current;
-
     return new Observation(
         locationConfidence,
         routeConfidence,
         uncertainty,
         lateral,
-        projection == null ? Double.NaN : projection.offsetMeters,
+        routeOffset,
         decisionDistance,
         clearance,
         budgetSeconds,
@@ -250,7 +246,7 @@ public final class NavigationObservationPolicy {
         reason);
   }
 
-  private Observation unavailable(String reason) {
+  private static Observation unavailable(String reason) {
     return new Observation(
         Confidence.UNKNOWN,
         Confidence.UNKNOWN,
@@ -263,16 +259,8 @@ public final class NavigationObservationPolicy {
         false,
         false,
         false,
-        new ProviderDemand(DemandLevel.PRECISE, TRACE_DENSITY_MAX_GAP_MS),
+        new ProviderDemand(DemandLevel.PRECISE, 0L),
         reason);
-  }
-
-  private boolean progressConsistent(Projection projection, double accuracy, long timestampMs) {
-    Sample last = previous;
-    if (projection == null || last == null || !Double.isFinite(last.routeOffsetMeters)) return true;
-    if (timestampMs > 0L && last.timestampMs > 0L && timestampMs <= last.timestampMs) return false;
-    double uncertaintyAllowance = Math.max(accuracy, last.accuracyMeters);
-    return projection.offsetMeters + uncertaintyAllowance >= last.routeOffsetMeters;
   }
 
   private static double uncertaintyMeters(double accuracy, double lateral) {
@@ -282,43 +270,31 @@ public final class NavigationObservationPolicy {
     return Math.max(accuracy, Math.max(0.0, lateral));
   }
 
-  private static Projection projectCurrentLeg(
-      Route route, NavigationState state, LocationSnapshot location) {
-    if (state.legIndex < 0 || state.legIndex >= route.legs.size()) return null;
-    return project(route.legs.get(state.legIndex).geometry, location.latitude, location.longitude);
-  }
-
-  /**
-   * Locates an enterable branch before the currently active instruction using the outgoing geometry
-   * of the previous OSRM step. Missing rich metadata is explicitly unknown rather than guessed.
-   */
   private static Corridor corridor(Route route, NavigationState state) {
-    if (state.legIndex < 0
-        || state.legIndex >= route.legs.size()
-        || state.instructionIndex <= 0) {
+    if (state.legIndex < 0 || state.legIndex >= route.legs.size() || state.instructionIndex <= 0) {
       return Corridor.unknown();
     }
     RouteLeg leg = route.legs.get(state.legIndex);
     int previousIndex = state.instructionIndex - 1;
     if (previousIndex >= leg.instructions.size()) return Corridor.unknown();
-    NavigationInstruction previousInstruction = leg.instructions.get(previousIndex);
-    NavigationStepMetadata metadata = previousInstruction.metadata;
+    NavigationStepMetadata metadata = leg.instructions.get(previousIndex).metadata;
     if (metadata == null || metadata.geometry == null || metadata.geometry.size() < 2) {
       return Corridor.unknown();
     }
 
-    double stepLength = geometryLength(metadata.geometry);
+    double stepLength = RouteGeometry.lengthMeters(metadata.geometry);
     double distanceToInstruction = finiteNonNegative(state.distanceToInstructionMeters)
         ? state.distanceToInstructionMeters
         : Double.NaN;
     if (!Double.isFinite(stepLength) || !Double.isFinite(distanceToInstruction)) {
       return Corridor.unknown();
     }
+
     double travelled = Math.max(0.0, stepLength - distanceToInstruction);
     double nearest = Double.POSITIVE_INFINITY;
     for (NavigationStepMetadata.Intersection intersection : metadata.intersections) {
       if (!hasAlternativeExit(intersection)) continue;
-      double offset = projectedOffsetMeters(
+      double offset = RouteGeometry.projectedOffsetMeters(
           metadata.geometry, intersection.latitude, intersection.longitude);
       if (!Double.isFinite(offset) || offset <= travelled) continue;
       nearest = Math.min(nearest, offset - travelled);
@@ -336,72 +312,15 @@ public final class NavigationObservationPolicy {
     return false;
   }
 
-  private static Projection project(List<GeoPoint> geometry, double latitude, double longitude) {
-    if (geometry == null || geometry.size() < 2) return null;
-    double bestDistance = Double.POSITIVE_INFINITY;
-    double bestOffset = Double.NaN;
-    double cumulative = 0.0;
-    double refLat = Math.toRadians(latitude);
-    for (int index = 0; index < geometry.size() - 1; index++) {
-      GeoPoint a = geometry.get(index);
-      GeoPoint b = geometry.get(index + 1);
-      double segment = distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
-      double ax = Math.toRadians(a.longitude - longitude) * Math.cos(refLat) * 6_371_000.0;
-      double ay = Math.toRadians(a.latitude - latitude) * 6_371_000.0;
-      double bx = Math.toRadians(b.longitude - longitude) * Math.cos(refLat) * 6_371_000.0;
-      double by = Math.toRadians(b.latitude - latitude) * 6_371_000.0;
-      double dx = bx - ax;
-      double dy = by - ay;
-      double denominator = dx * dx + dy * dy;
-      double t = denominator == 0.0
-          ? 0.0
-          : Math.max(0.0, Math.min(1.0, -(ax * dx + ay * dy) / denominator));
-      double px = ax + t * dx;
-      double py = ay + t * dy;
-      double lateral = Math.sqrt(px * px + py * py);
-      if (lateral < bestDistance) {
-        bestDistance = lateral;
-        bestOffset = cumulative + t * segment;
-      }
-      cumulative += segment;
-    }
-    return Double.isFinite(bestOffset) ? new Projection(bestOffset, bestDistance) : null;
-  }
-
-  private static double projectedOffsetMeters(
-      List<GeoPoint> geometry, double latitude, double longitude) {
-    Projection projection = project(geometry, latitude, longitude);
-    return projection == null ? Double.NaN : projection.offsetMeters;
-  }
-
-  private static double geometryLength(List<GeoPoint> geometry) {
-    if (geometry == null || geometry.size() < 2) return Double.NaN;
-    double total = 0.0;
-    for (int index = 0; index < geometry.size() - 1; index++) {
-      GeoPoint a = geometry.get(index);
-      GeoPoint b = geometry.get(index + 1);
-      total += distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude);
-    }
-    return total;
-  }
-
-  private static double distanceMeters(double lat1, double lon1, double lat2, double lon2) {
-    double earthRadiusMeters = 6_371_000.0;
-    double phi1 = Math.toRadians(lat1);
-    double phi2 = Math.toRadians(lat2);
-    double deltaPhi = Math.toRadians(lat2 - lat1);
-    double deltaLambda = Math.toRadians(lon2 - lon1);
-    double a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2)
-        + Math.cos(phi1) * Math.cos(phi2)
-            * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-    return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
   private static long toGapMs(double budgetSeconds) {
     if (!Double.isFinite(budgetSeconds)) return Long.MAX_VALUE;
     if (budgetSeconds <= 0.0) return 0L;
     double millis = budgetSeconds * 1_000.0;
     return millis >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(millis));
+  }
+
+  private static boolean finiteNonNegative(Double value) {
+    return value != null && Double.isFinite(value) && value >= 0.0;
   }
 
   private static double usableAccuracy(double value) {
@@ -414,26 +333,12 @@ public final class NavigationObservationPolicy {
         : 0.0;
   }
 
-  private static boolean finiteNonNegative(Double value) {
-    return value != null && Double.isFinite(value) && value >= 0.0;
-  }
-
   private static ProviderDemand none() {
     return new ProviderDemand(DemandLevel.NONE, Long.MAX_VALUE);
   }
 
   private static ProviderDemand continuous() {
     return new ProviderDemand(DemandLevel.CONTINUOUS, 0L);
-  }
-
-  private static final class Projection {
-    final double offsetMeters;
-    final double lateralMeters;
-
-    Projection(double offsetMeters, double lateralMeters) {
-      this.offsetMeters = offsetMeters;
-      this.lateralMeters = lateralMeters;
-    }
   }
 
   private static final class Corridor {
@@ -451,18 +356,6 @@ public final class NavigationObservationPolicy {
 
     static Corridor known(double nearestAlternativeBranchMeters) {
       return new Corridor(true, nearestAlternativeBranchMeters);
-    }
-  }
-
-  private static final class Sample {
-    final long timestampMs;
-    final double accuracyMeters;
-    final double routeOffsetMeters;
-
-    Sample(long timestampMs, double accuracyMeters, double routeOffsetMeters) {
-      this.timestampMs = timestampMs;
-      this.accuracyMeters = accuracyMeters;
-      this.routeOffsetMeters = routeOffsetMeters;
     }
   }
 }
