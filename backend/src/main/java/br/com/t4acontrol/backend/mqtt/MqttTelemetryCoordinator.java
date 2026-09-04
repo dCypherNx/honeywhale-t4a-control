@@ -255,6 +255,7 @@ public final class MqttTelemetryCoordinator implements MqttTransport.Listener {
     out.put("connected", state.connected);
     if (state.deviceName != null && !state.deviceName.isBlank()) out.put("device_name", state.deviceName);
     if (state.mac != null && !state.mac.isBlank()) out.put("mac", state.mac);
+    if (state.rssi != 0) out.put("rssi", state.rssi);
     String rssiRange = rssiRange(state.rssi);
     if (!rssiRange.isEmpty()) out.put("rssi_range", rssiRange);
 
