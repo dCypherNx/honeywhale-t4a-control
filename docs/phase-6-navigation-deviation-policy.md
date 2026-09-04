@@ -55,7 +55,7 @@ Para confirmar a saída da rota são necessárias simultaneamente:
 - 3 leituras consecutivas válidas em `OFF_ROUTE`;
 - pelo menos 6 segundos entre a primeira e a leitura que confirma o desvio.
 
-Qualquer retorno à rota ou leitura de baixa qualidade zera a sequência. O processamento de navegação usa cadência nominal de 2 s; portanto, o requisito temporal de 6 s continua sendo a barreira determinante mesmo que três amostras sejam obtidas antes disso.
+Qualquer retorno à rota ou leitura de baixa qualidade zera a sequência. Não existe mais cadência nominal fixa no `NavigationRuntime`: todo fix fornecido pelo Android é processado. Na primeira evidência confiável de `OFF_ROUTE`, a `NavigationObservationPolicy` muda imediatamente a demanda para `CONTINUOUS`, fazendo o adaptador Android solicitar a forma mais densa de observação disponível. A barreira temporal de 6 s continua pertencendo apenas à confirmação conservadora do desvio, não à frequência de processamento.
 
 ## 5. Recálculo confirmado
 
