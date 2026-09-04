@@ -5,15 +5,15 @@ import br.com.t4acontrol.backend.location.LocationSnapshot;
 import br.com.t4acontrol.backend.navigation.NavigationDeviationPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationEngine;
 import br.com.t4acontrol.backend.navigation.NavigationObservationPolicy;
-import br.com.t4acontrol.backend.navigation.NavigationRecoveryPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationState;
 import br.com.t4acontrol.backend.navigation.Route;
-import br.com.t4acontrol.backend.navigation.RouteRecalculator;
+import br.com.t4acontrol.backend.navigation.RouteProgressSnapshot;
+import br.com.t4acontrol.backend.navigation.RouteProgressTracker;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Process-local holder for the active planned route and navigation progress. */
+/** Process-local Android adapter around one navigation session. */
 public final class NavigationRuntime {
   public interface Listener {
     void onNavigationChanged(Route route, NavigationState state);
@@ -33,23 +33,59 @@ public final class NavigationRuntime {
 
   private final NavigationEngine engine = new NavigationEngine();
   private final NavigationDeviationPolicy deviationPolicy = new NavigationDeviationPolicy();
-  private final NavigationRecoveryPolicy recoveryPolicy = new NavigationRecoveryPolicy();
   private final NavigationObservationPolicy observationPolicy = new NavigationObservationPolicy();
-  private final RouteRecalculator routeRecalculator = new RouteRecalculator();
+  private final RouteProgressTracker progressTracker = new RouteProgressTracker();
+  private final NavigationRecoveryCoordinator recoveryCoordinator =
+      new NavigationRecoveryCoordinator(new OsrmRoutePlanner());
   private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
   private final Set<LocationDemandListener> locationDemandListeners = new CopyOnWriteArraySet<>();
   private final AtomicBoolean restoreStarted = new AtomicBoolean();
-  private final AtomicBoolean recalculationRunning = new AtomicBoolean();
+
   private volatile Route route;
   private volatile NavigationState state = NavigationState.noRoute();
   private volatile NavigationState pausedFromState;
-  private volatile SpeculativeRecovery speculativeRecovery;
   private volatile String lastLoggedStateSignature = "";
   private volatile Double guidanceSpeedKmh;
   private volatile LocationSnapshot guidanceLocation;
   private volatile boolean deviationSuspected;
   private volatile NavigationObservationPolicy.Observation latestObservation;
   private volatile NavigationObservationPolicy.ProviderDemand lastLocationDemand;
+
+  private final NavigationRecoveryCoordinator.Host recoveryHost =
+      new NavigationRecoveryCoordinator.Host() {
+        @Override
+        public boolean isEligible(Route activeRoute) {
+          return route == activeRoute && state.status != NavigationState.Status.PAUSED;
+        }
+
+        @Override
+        public void log(String value) {
+          rawLog(value);
+        }
+
+        @Override
+        public void recovered(Route activeRoute, Route candidate) {
+          if (!isEligible(activeRoute)) return;
+          setRoute(candidate);
+        }
+
+        @Override
+        public void failed(
+            Route activeRoute, NavigationState fallbackUiState, Exception error) {
+          if (!isEligible(activeRoute)) return;
+          deviationSuspected = false;
+          state = fallbackUiState;
+          observationPolicy.reset();
+          progressTracker.reset();
+          latestObservation = null;
+          notifyListeners();
+          notifyLocationDemandIfChanged();
+          logStateIfChanged(state);
+          rawLog("[NAV] RECALC FAIL route=" + activeRoute.id
+              + " type=" + error.getClass().getSimpleName()
+              + " message=" + String.valueOf(error.getMessage()));
+        }
+      };
 
   private NavigationRuntime() {}
 
@@ -61,17 +97,16 @@ public final class NavigationRuntime {
     return state;
   }
 
-  /** Last GPS speed observed by navigation, used to time visual guidance. */
+  /** Last GPS speed observed by navigation; retained for UI API compatibility. */
   public Double guidanceSpeedKmh() {
     return guidanceSpeedKmh;
   }
 
-  /** Last GPS fix observed by navigation, used to disambiguate visual guidance. */
+  /** Last GPS fix observed by navigation, used by guidance disambiguation. */
   public LocationSnapshot guidanceLocation() {
     return guidanceLocation;
   }
 
-  /** Latest provider-neutral observation demand. */
   public NavigationObservationPolicy.ProviderDemand locationDemand() {
     NavigationObservationPolicy.ProviderDemand initial = observationPolicy.initialDemand(route, state);
     if (initial.level == NavigationObservationPolicy.DemandLevel.NONE
@@ -86,12 +121,8 @@ public final class NavigationRuntime {
   public void setRoute(Route value) {
     route = value;
     pausedFromState = null;
-    speculativeRecovery = null;
     state = value == null ? NavigationState.noRoute() : NavigationState.ready(value);
-    deviationPolicy.reset();
-    observationPolicy.reset();
-    latestObservation = null;
-    deviationSuspected = false;
+    resetLivePolicies();
     lastLoggedStateSignature = "";
     guidanceSpeedKmh = null;
     guidanceLocation = null;
@@ -103,12 +134,8 @@ public final class NavigationRuntime {
   private void setRestoredRoutePaused(Route value) {
     route = value;
     pausedFromState = value == null ? null : NavigationState.ready(value);
-    speculativeRecovery = null;
     state = value == null ? NavigationState.noRoute() : NavigationState.paused(value, pausedFromState);
-    deviationPolicy.reset();
-    observationPolicy.reset();
-    latestObservation = null;
-    deviationSuspected = false;
+    resetLivePolicies();
     lastLoggedStateSignature = "";
     guidanceSpeedKmh = null;
     guidanceLocation = null;
@@ -123,12 +150,8 @@ public final class NavigationRuntime {
     NavigationState current = state;
     if (active == null || current.status == NavigationState.Status.PAUSED) return;
     pausedFromState = current;
-    speculativeRecovery = null;
     state = NavigationState.paused(active, current);
-    deviationPolicy.reset();
-    observationPolicy.reset();
-    latestObservation = null;
-    deviationSuspected = false;
+    resetLivePolicies();
     notifyListeners();
     notifyLocationDemandIfChanged();
     logStateIfChanged(state);
@@ -143,30 +166,20 @@ public final class NavigationRuntime {
     NavigationState resumeFrom = pausedFromState;
     state = resumeFrom == null ? NavigationState.ready(active) : resumeFrom;
     pausedFromState = null;
-    speculativeRecovery = null;
-    deviationPolicy.reset();
-    observationPolicy.reset();
-    latestObservation = null;
-    deviationSuspected = false;
+    resetLivePolicies();
     notifyListeners();
     notifyLocationDemandIfChanged();
     logStateIfChanged(state);
     rawLog("[NAV] SESSION RESUMED route=" + active.id);
   }
 
-  /** Ends the navigation session and removes the navigation panel. Saved-route concepts are separate. */
   public void end(Context context) {
     Route active = route;
     if (context != null) new SharedPreferencesRouteReferenceStore(context).clear();
     route = null;
     pausedFromState = null;
-    speculativeRecovery = null;
     state = NavigationState.noRoute();
-    deviationPolicy.reset();
-    observationPolicy.reset();
-    latestObservation = null;
-    deviationSuspected = false;
-    recalculationRunning.set(false);
+    resetLivePolicies();
     restoreStarted.set(true);
     lastLoggedStateSignature = "";
     guidanceSpeedKmh = null;
@@ -180,7 +193,6 @@ public final class NavigationRuntime {
     setRoute(null);
   }
 
-  /** Restores a persisted route once per process, always paused until explicit user resume. */
   public void ensureRestored(Context context) {
     if (route != null || !restoreStarted.compareAndSet(false, true)) return;
     Context applicationContext = context.getApplicationContext();
@@ -197,212 +209,80 @@ public final class NavigationRuntime {
   /** Called by the existing AndroidLocationProvider; no second GPS source is created. */
   public void onLocation(LocationSnapshot snapshot) {
     Route active = route;
-    if (active == null || state.status == NavigationState.Status.PAUSED || snapshot == null) return;
+    NavigationState current = state;
+    if (active == null || current.status == NavigationState.Status.PAUSED || snapshot == null) return;
 
-    // Every supplied fix is observed and processed. Sampling economy belongs to the provider demand;
-    // runtime no longer invents an independent fixed-time throttle that can hide useful evidence.
     guidanceSpeedKmh = snapshot.gpsSpeedKmh;
     guidanceLocation = snapshot;
 
-    if (recalculationRunning.get()) {
-      observe(active, state, snapshot, true);
+    RouteProgressSnapshot progress = progressTracker.observe(active, current, snapshot);
+    if (recoveryCoordinator.isRunning()) {
+      observe(active, current, snapshot, progress, true);
       return;
     }
 
-    NavigationState previousUiState = state;
-    NavigationState next = engine.update(active, previousUiState, snapshot);
+    NavigationState next = engine.update(active, current, snapshot, progress);
+    RouteProgressSnapshot nextProgress = progress;
+    if (progress == null || progress.legIndex != next.legIndex) {
+      nextProgress = progressTracker.observe(active, next, snapshot);
+    }
 
-    // OFF_ROUTE is evidence, not a user-facing step. The first credible episode immediately pushes
-    // observation demand to CONTINUOUS while the normal multi-sample policy still controls when a
-    // visible reroute is committed.
     if (next.status == NavigationState.Status.OFF_ROUTE) {
       deviationSuspected = true;
-      observe(active, next, snapshot, true);
+      observe(active, next, snapshot, nextProgress, true);
       logStateIfChanged(next);
       boolean confirmed = deviationPolicy.shouldRecalculate(next, snapshot);
       if (!confirmed) {
-        if (recoveryPolicy.shouldPrefetch(previousUiState, next, snapshot)) {
-          startSpeculativeRecovery(active, next, snapshot);
-        }
+        recoveryCoordinator.considerPrefetch(active, current, next, snapshot, recoveryHost);
         return;
       }
-      if (!recalculationRunning.compareAndSet(false, true)) return;
+      if (recoveryCoordinator.isRunning()) return;
 
       state = NavigationState.recalculating(active, next);
       notifyListeners();
-      observe(active, state, snapshot, true);
+      observe(active, state, snapshot, nextProgress, true);
       logStateIfChanged(state);
       rawLog("[NAV] RECALC START route=" + active.id
           + " leg=" + next.legIndex
           + " lat=" + snapshot.latitude
           + " lon=" + snapshot.longitude
           + " accuracy=" + snapshot.accuracyMeters);
-      startConfirmedRecovery(active, next, previousUiState, snapshot);
+      if (!recoveryCoordinator.beginConfirmed(active, next, current, snapshot, recoveryHost)) {
+        state = current;
+        notifyListeners();
+      }
       return;
     }
 
     deviationSuspected = false;
-    speculativeRecovery = null;
+    recoveryCoordinator.reset();
     state = next;
     notifyListeners();
-    observe(active, next, snapshot, false);
+    observe(active, next, snapshot, nextProgress, false);
     logStateIfChanged(next);
-    deviationPolicy.shouldRecalculate(next, snapshot); // resets any previous deviation evidence
+    deviationPolicy.shouldRecalculate(next, snapshot);
   }
 
   private void observe(
       Route active,
       NavigationState navigationState,
       LocationSnapshot snapshot,
+      RouteProgressSnapshot progress,
       boolean deviationEvidence) {
     NavigationObservationPolicy.Observation observation =
-        observationPolicy.observe(active, navigationState, snapshot, deviationEvidence);
+        observationPolicy.observe(active, navigationState, snapshot, progress, deviationEvidence);
     latestObservation = observation;
     rawLog("[NAV] OBS " + observation.debugSummary());
     notifyLocationDemandIfChanged();
   }
 
-  /**
-   * Starts one speculative OSRM request for the current deviation episode. It never changes visible
-   * navigation by itself. If the rider returns to the route, the candidate is discarded.
-   */
-  private void startSpeculativeRecovery(
-      Route active,
-      NavigationState offRouteState,
-      LocationSnapshot snapshot) {
-    SpeculativeRecovery current = speculativeRecovery;
-    if (current != null
-        && current.activeRoute == active
-        && current.legIndex == offRouteState.legIndex
-        && !current.failed) {
-      return;
-    }
-
-    SpeculativeRecovery task = new SpeculativeRecovery(
-        active,
-        offRouteState,
-        snapshot,
-        offRouteState.legIndex,
-        snapshot.timestampMs);
-    speculativeRecovery = task;
-    rawLog("[NAV] RECOVERY PREWARM START route=" + active.id
-        + " leg=" + offRouteState.legIndex
-        + " lat=" + snapshot.latitude
-        + " lon=" + snapshot.longitude);
-
-    new Thread(() -> {
-      try {
-        Route candidate = routeRecalculator.recalculate(
-            active,
-            offRouteState,
-            snapshot,
-            new OsrmRoutePlanner());
-        if (speculativeRecovery != task || route != active) return;
-        task.result = candidate;
-        rawLog("[NAV] RECOVERY PREWARM READY route=" + active.id
-            + " candidate=" + candidate.id);
-        if (task.confirmed) promoteSpeculativeRecovery(task);
-      } catch (Exception error) {
-        if (speculativeRecovery != task || route != active) return;
-        task.failed = true;
-        rawLog("[NAV] RECOVERY PREWARM FAIL route=" + active.id
-            + " type=" + error.getClass().getSimpleName()
-            + " message=" + String.valueOf(error.getMessage()));
-        if (task.confirmed) {
-          speculativeRecovery = null;
-          startRecalculation(active, task.offRouteState, task.fallbackUiState, task.confirmedLocation);
-        }
-      }
-    }, "navigation-route-prewarm").start();
-  }
-
-  private void startConfirmedRecovery(
-      Route active,
-      NavigationState offRouteState,
-      NavigationState fallbackUiState,
-      LocationSnapshot snapshot) {
-    SpeculativeRecovery task = speculativeRecovery;
-    if (task != null
-        && !task.failed
-        && task.activeRoute == active
-        && recoveryPolicy.canPromote(
-            active.id,
-            task.legIndex,
-            task.startedAtMs,
-            task.origin,
-            offRouteState,
-            snapshot)) {
-      task.confirmed = true;
-      task.offRouteState = offRouteState;
-      task.fallbackUiState = fallbackUiState;
-      task.confirmedLocation = snapshot;
-      if (task.result != null) {
-        promoteSpeculativeRecovery(task);
-      } else {
-        rawLog("[NAV] RECOVERY PREWARM WAIT route=" + active.id
-            + " leg=" + offRouteState.legIndex);
-      }
-      return;
-    }
-
-    speculativeRecovery = null;
-    startRecalculation(active, offRouteState, fallbackUiState, snapshot);
-  }
-
-  private void promoteSpeculativeRecovery(SpeculativeRecovery task) {
-    Route active = task.activeRoute;
-    Route candidate = task.result;
-    if (candidate == null
-        || speculativeRecovery != task
-        || route != active
-        || !task.confirmed
-        || state.status == NavigationState.Status.PAUSED) {
-      return;
-    }
-    rawLog("[NAV] RECOVERY PREWARM PROMOTE oldRoute=" + active.id
-        + " newRoute=" + candidate.id
-        + " savedNetworkWait=true");
-    speculativeRecovery = null;
-    setRoute(candidate);
-    recalculationRunning.set(false);
-  }
-
-  private void startRecalculation(
-      Route active,
-      NavigationState offRouteState,
-      NavigationState fallbackUiState,
-      LocationSnapshot snapshot) {
-    new Thread(() -> {
-      try {
-        Route recalculated = routeRecalculator.recalculate(
-            active,
-            offRouteState,
-            snapshot,
-            new OsrmRoutePlanner());
-        if (route == active && state.status != NavigationState.Status.PAUSED) {
-          rawLog("[NAV] RECALC SUCCESS oldRoute=" + active.id
-              + " newRoute=" + recalculated.id
-              + " profile=" + recalculated.routingProfile
-              + " waypoints=" + recalculated.waypoints.size());
-          setRoute(recalculated);
-        }
-      } catch (Exception error) {
-        if (route == active && state.status != NavigationState.Status.PAUSED) {
-          deviationSuspected = false;
-          state = fallbackUiState;
-          observationPolicy.reset();
-          latestObservation = null;
-          notifyListeners();
-          notifyLocationDemandIfChanged();
-          logStateIfChanged(state);
-        }
-        rawLog("[NAV] RECALC FAIL route=" + active.id
-            + " type=" + error.getClass().getSimpleName()
-            + " message=" + String.valueOf(error.getMessage()));
-      } finally {
-        recalculationRunning.set(false);
-      }
-    }, "navigation-route-recalculate").start();
+  private void resetLivePolicies() {
+    deviationPolicy.reset();
+    observationPolicy.reset();
+    progressTracker.reset();
+    recoveryCoordinator.reset();
+    latestObservation = null;
+    deviationSuspected = false;
   }
 
   public void addListener(Listener listener) {
@@ -462,33 +342,5 @@ public final class NavigationRuntime {
 
   private void rawLog(String value) {
     for (Listener listener : listeners) listener.onNavigationRawLog(value);
-  }
-
-  private static final class SpeculativeRecovery {
-    final Route activeRoute;
-    final LocationSnapshot origin;
-    final int legIndex;
-    final long startedAtMs;
-    volatile NavigationState offRouteState;
-    volatile NavigationState fallbackUiState;
-    volatile LocationSnapshot confirmedLocation;
-    volatile Route result;
-    volatile boolean confirmed;
-    volatile boolean failed;
-
-    SpeculativeRecovery(
-        Route activeRoute,
-        NavigationState offRouteState,
-        LocationSnapshot origin,
-        int legIndex,
-        long startedAtMs) {
-      this.activeRoute = activeRoute;
-      this.offRouteState = offRouteState;
-      this.fallbackUiState = offRouteState;
-      this.origin = origin;
-      this.confirmedLocation = origin;
-      this.legIndex = legIndex;
-      this.startedAtMs = startedAtMs;
-    }
   }
 }
