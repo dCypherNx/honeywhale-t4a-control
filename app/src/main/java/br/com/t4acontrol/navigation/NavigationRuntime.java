@@ -2,9 +2,9 @@ package br.com.t4acontrol.navigation;
 
 import android.content.Context;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
-import br.com.t4acontrol.backend.navigation.NavigationCadencePolicy;
 import br.com.t4acontrol.backend.navigation.NavigationDeviationPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationEngine;
+import br.com.t4acontrol.backend.navigation.NavigationObservationPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationRecoveryPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationState;
 import br.com.t4acontrol.backend.navigation.Route;
@@ -22,7 +22,7 @@ public final class NavigationRuntime {
   }
 
   public interface LocationDemandListener {
-    void onNavigationLocationDemandChanged(NavigationCadencePolicy.Decision decision);
+    void onNavigationLocationDemandChanged(NavigationObservationPolicy.ProviderDemand demand);
   }
 
   private static final NavigationRuntime INSTANCE = new NavigationRuntime();
@@ -34,7 +34,7 @@ public final class NavigationRuntime {
   private final NavigationEngine engine = new NavigationEngine();
   private final NavigationDeviationPolicy deviationPolicy = new NavigationDeviationPolicy();
   private final NavigationRecoveryPolicy recoveryPolicy = new NavigationRecoveryPolicy();
-  private final NavigationCadencePolicy cadencePolicy = new NavigationCadencePolicy();
+  private final NavigationObservationPolicy observationPolicy = new NavigationObservationPolicy();
   private final RouteRecalculator routeRecalculator = new RouteRecalculator();
   private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
   private final Set<LocationDemandListener> locationDemandListeners = new CopyOnWriteArraySet<>();
@@ -45,11 +45,11 @@ public final class NavigationRuntime {
   private volatile NavigationState pausedFromState;
   private volatile SpeculativeRecovery speculativeRecovery;
   private volatile String lastLoggedStateSignature = "";
-  private volatile long lastNavigationLocationTimestampMs = Long.MIN_VALUE;
   private volatile Double guidanceSpeedKmh;
   private volatile LocationSnapshot guidanceLocation;
   private volatile boolean deviationSuspected;
-  private volatile NavigationCadencePolicy.Decision lastLocationDemand;
+  private volatile NavigationObservationPolicy.Observation latestObservation;
+  private volatile NavigationObservationPolicy.ProviderDemand lastLocationDemand;
 
   private NavigationRuntime() {}
 
@@ -61,20 +61,25 @@ public final class NavigationRuntime {
     return state;
   }
 
-  /** Last GPS speed accepted by the navigation cadence, used only to time visual guidance. */
+  /** Last GPS speed observed by navigation, used to time visual guidance. */
   public Double guidanceSpeedKmh() {
     return guidanceSpeedKmh;
   }
 
-  /** Last GPS fix accepted by the navigation cadence, used only to disambiguate visual guidance. */
+  /** Last GPS fix observed by navigation, used to disambiguate visual guidance. */
   public LocationSnapshot guidanceLocation() {
     return guidanceLocation;
   }
 
-  /** Current provider-neutral location demand; null means navigation has no active demand. */
-  public NavigationCadencePolicy.Decision locationDemand() {
-    if (deviationSuspected) return cadencePolicy.critical(guidanceSpeedKmh);
-    return cadencePolicy.evaluate(route, state, guidanceSpeedKmh);
+  /** Latest provider-neutral observation demand. */
+  public NavigationObservationPolicy.ProviderDemand locationDemand() {
+    NavigationObservationPolicy.ProviderDemand initial = observationPolicy.initialDemand(route, state);
+    if (initial.level == NavigationObservationPolicy.DemandLevel.NONE
+        || initial.level == NavigationObservationPolicy.DemandLevel.CONTINUOUS) {
+      return initial;
+    }
+    NavigationObservationPolicy.Observation observation = latestObservation;
+    return observation == null ? initial : observation.providerDemand;
   }
 
   /** A newly shared route is immediately active; READY lasts only until the next GPS fix. */
@@ -84,9 +89,10 @@ public final class NavigationRuntime {
     speculativeRecovery = null;
     state = value == null ? NavigationState.noRoute() : NavigationState.ready(value);
     deviationPolicy.reset();
+    observationPolicy.reset();
+    latestObservation = null;
     deviationSuspected = false;
     lastLoggedStateSignature = "";
-    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
     guidanceLocation = null;
     notifyListeners();
@@ -100,9 +106,10 @@ public final class NavigationRuntime {
     speculativeRecovery = null;
     state = value == null ? NavigationState.noRoute() : NavigationState.paused(value, pausedFromState);
     deviationPolicy.reset();
+    observationPolicy.reset();
+    latestObservation = null;
     deviationSuspected = false;
     lastLoggedStateSignature = "";
-    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
     guidanceLocation = null;
     notifyListeners();
@@ -119,6 +126,8 @@ public final class NavigationRuntime {
     speculativeRecovery = null;
     state = NavigationState.paused(active, current);
     deviationPolicy.reset();
+    observationPolicy.reset();
+    latestObservation = null;
     deviationSuspected = false;
     notifyListeners();
     notifyLocationDemandIfChanged();
@@ -136,8 +145,9 @@ public final class NavigationRuntime {
     pausedFromState = null;
     speculativeRecovery = null;
     deviationPolicy.reset();
+    observationPolicy.reset();
+    latestObservation = null;
     deviationSuspected = false;
-    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     notifyListeners();
     notifyLocationDemandIfChanged();
     logStateIfChanged(state);
@@ -153,11 +163,12 @@ public final class NavigationRuntime {
     speculativeRecovery = null;
     state = NavigationState.noRoute();
     deviationPolicy.reset();
+    observationPolicy.reset();
+    latestObservation = null;
     deviationSuspected = false;
     recalculationRunning.set(false);
     restoreStarted.set(true);
     lastLoggedStateSignature = "";
-    lastNavigationLocationTimestampMs = Long.MIN_VALUE;
     guidanceSpeedKmh = null;
     guidanceLocation = null;
     notifyListeners();
@@ -188,36 +199,25 @@ public final class NavigationRuntime {
     Route active = route;
     if (active == null || state.status == NavigationState.Status.PAUSED || snapshot == null) return;
 
-    NavigationCadencePolicy.Decision processingDemand =
-        deviationSuspected
-            ? cadencePolicy.critical(snapshot.gpsSpeedKmh)
-            : cadencePolicy.evaluate(active, state, snapshot.gpsSpeedKmh);
-    long processingIntervalMs = processingDemand == null ? 0L : processingDemand.processingIntervalMs;
-    long timestamp = snapshot.timestampMs;
-    if (processingIntervalMs > 0L
-        && timestamp > 0L
-        && lastNavigationLocationTimestampMs != Long.MIN_VALUE
-        && timestamp >= lastNavigationLocationTimestampMs
-        && timestamp - lastNavigationLocationTimestampMs < processingIntervalMs) {
-      return;
-    }
-    if (timestamp > 0L) lastNavigationLocationTimestampMs = timestamp;
+    // Every supplied fix is observed and processed. Sampling economy belongs to the provider demand;
+    // runtime no longer invents an independent fixed-time throttle that can hide useful evidence.
     guidanceSpeedKmh = snapshot.gpsSpeedKmh;
     guidanceLocation = snapshot;
 
     if (recalculationRunning.get()) {
-      notifyLocationDemandIfChanged();
+      observe(active, state, snapshot, true);
       return;
     }
 
     NavigationState previousUiState = state;
     NavigationState next = engine.update(active, previousUiState, snapshot);
 
-    // OFF_ROUTE is evidence, not a user-facing step. From the first credible episode onward the
-    // cadence is immediately critical so every useful fix can contribute to confirmation/recovery.
+    // OFF_ROUTE is evidence, not a user-facing step. The first credible episode immediately pushes
+    // observation demand to CONTINUOUS while the normal multi-sample policy still controls when a
+    // visible reroute is committed.
     if (next.status == NavigationState.Status.OFF_ROUTE) {
       deviationSuspected = true;
-      notifyLocationDemandIfChanged();
+      observe(active, next, snapshot, true);
       logStateIfChanged(next);
       boolean confirmed = deviationPolicy.shouldRecalculate(next, snapshot);
       if (!confirmed) {
@@ -230,7 +230,7 @@ public final class NavigationRuntime {
 
       state = NavigationState.recalculating(active, next);
       notifyListeners();
-      notifyLocationDemandIfChanged();
+      observe(active, state, snapshot, true);
       logStateIfChanged(state);
       rawLog("[NAV] RECALC START route=" + active.id
           + " leg=" + next.legIndex
@@ -245,9 +245,21 @@ public final class NavigationRuntime {
     speculativeRecovery = null;
     state = next;
     notifyListeners();
-    notifyLocationDemandIfChanged();
+    observe(active, next, snapshot, false);
     logStateIfChanged(next);
     deviationPolicy.shouldRecalculate(next, snapshot); // resets any previous deviation evidence
+  }
+
+  private void observe(
+      Route active,
+      NavigationState navigationState,
+      LocationSnapshot snapshot,
+      boolean deviationEvidence) {
+    NavigationObservationPolicy.Observation observation =
+        observationPolicy.observe(active, navigationState, snapshot, deviationEvidence);
+    latestObservation = observation;
+    rawLog("[NAV] OBS " + observation.debugSummary());
+    notifyLocationDemandIfChanged();
   }
 
   /**
@@ -378,6 +390,8 @@ public final class NavigationRuntime {
         if (route == active && state.status != NavigationState.Status.PAUSED) {
           deviationSuspected = false;
           state = fallbackUiState;
+          observationPolicy.reset();
+          latestObservation = null;
           notifyListeners();
           notifyLocationDemandIfChanged();
           logStateIfChanged(state);
@@ -418,19 +432,17 @@ public final class NavigationRuntime {
   }
 
   private void notifyLocationDemandIfChanged() {
-    NavigationCadencePolicy.Decision demand = locationDemand();
-    NavigationCadencePolicy.Decision previous = lastLocationDemand;
-    if (demand == null ? previous == null : demand.equals(previous)) return;
+    NavigationObservationPolicy.ProviderDemand demand = locationDemand();
+    NavigationObservationPolicy.ProviderDemand previous = lastLocationDemand;
+    if (demand.equals(previous)) return;
     lastLocationDemand = demand;
     for (LocationDemandListener listener : locationDemandListeners) {
       listener.onNavigationLocationDemandChanged(demand);
     }
-    if (demand != null) {
-      rawLog("[NAV] CADENCE locationMs=" + demand.locationIntervalMs
-          + " processingMs=" + demand.processingIntervalMs
-          + " highAccuracy=" + demand.highAccuracy
-          + " minDistance=" + demand.minDistanceMeters);
-    }
+    rawLog("[NAV] LOCATION_DEMAND level=" + demand.level
+        + " maxSafeGapMs=" + (demand.maxSafeGapMs == Long.MAX_VALUE
+            ? "inf"
+            : String.valueOf(demand.maxSafeGapMs)));
   }
 
   private void logStateIfChanged(NavigationState value) {
