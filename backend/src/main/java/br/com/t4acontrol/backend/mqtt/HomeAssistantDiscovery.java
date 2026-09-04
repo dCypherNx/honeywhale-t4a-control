@@ -100,6 +100,17 @@ public final class HomeAssistantDiscovery {
             "duration",
             "s",
             "measurement"));
+    Map<String, Object> rssi =
+        sensor(
+            "RSSI",
+            deviceId + "_rssi",
+            "{{ value_json.rssi }}",
+            "signal_strength",
+            "dBm",
+            "measurement");
+    rssi.put("entity_category", "diagnostic");
+    out.put("rssi", rssi);
+
     Map<String, Object> rssiRange =
         sensor(
             "Alcance Bluetooth",
