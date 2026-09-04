@@ -8,7 +8,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.location.LocationRequest;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
-import br.com.t4acontrol.backend.navigation.NavigationCadencePolicy;
+import br.com.t4acontrol.backend.navigation.NavigationObservationPolicy;
 import br.com.t4acontrol.navigation.NavigationRuntime;
 import java.util.List;
 import java.util.Objects;
@@ -27,7 +27,14 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private static final long MOVING_INTERVAL_MS = 2_000L;
   private static final float MOVING_MIN_DISTANCE_M = 2f;
   private static final long MAX_CACHED_AGE_MS = 30_000L;
-  private static final double RECONFIGURE_INTERVAL_RATIO = 1.20;
+
+  // Mapbox Navigation v3 uses 1 s desired / 500 ms minimum with high accuracy as its default
+  // active-navigation request. These are Android adapter capabilities, not maneuver horizons.
+  private static final long ACTIVE_NAV_INTERVAL_MS = 1_000L;
+  private static final long ACTIVE_NAV_MIN_INTERVAL_MS = 500L;
+  // Valhalla/Meili recommends approximately 1 point/s to 1 point/10 s for map-matching quality.
+  private static final long RELAXED_NAV_INTERVAL_MS =
+      NavigationObservationPolicy.TRACE_DENSITY_MAX_GAP_MS;
 
   private final Context context;
   private final LocationManager manager;
@@ -47,7 +54,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private boolean registered;
   private String provider = "";
   private String lastUnavailableReason = "";
-  private NavigationCadencePolicy.Decision navigationDemand;
+  private NavigationObservationPolicy.ProviderDemand navigationDemand;
   private RequestSpec appliedRequest;
 
   public AndroidLocationProvider(Context context, Listener listener) {
@@ -56,8 +63,8 @@ public final class AndroidLocationProvider implements AutoCloseable {
     this.manager = this.context.getSystemService(LocationManager.class);
     this.executor = this.context.getMainExecutor();
     this.navigationDemandListener =
-        decision -> executor.execute(() -> {
-          navigationDemand = decision;
+        demand -> executor.execute(() -> {
+          navigationDemand = demand;
           if (active) reconfigureIfNeeded();
         });
     NavigationRuntime.get().addLocationDemandListener(navigationDemandListener);
@@ -128,7 +135,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
 
   private void reconfigureIfNeeded() {
     RequestSpec desired = desiredRequest();
-    if (registered && !materiallyDifferent(appliedRequest, desired)) return;
+    if (registered && desired.equals(appliedRequest)) return;
     register(false);
   }
 
@@ -145,17 +152,34 @@ public final class AndroidLocationProvider implements AutoCloseable {
   }
 
   private RequestSpec desiredRequest() {
-    NavigationCadencePolicy.Decision demand = navigationDemand;
-    if (demand != null) {
-      int quality =
-          demand.highAccuracy && hasFineLocationPermission()
-              ? LocationRequest.QUALITY_HIGH_ACCURACY
-              : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY;
-      return new RequestSpec(
-          demand.locationIntervalMs,
-          demand.locationIntervalMs,
-          (float) demand.minDistanceMeters,
-          quality);
+    NavigationObservationPolicy.ProviderDemand demand = navigationDemand;
+    if (demand != null && demand.level != NavigationObservationPolicy.DemandLevel.NONE) {
+      switch (demand.level) {
+        case CONTINUOUS:
+        case PRECISE:
+          return new RequestSpec(
+              ACTIVE_NAV_INTERVAL_MS,
+              ACTIVE_NAV_MIN_INTERVAL_MS,
+              0f,
+              hasFineLocationPermission()
+                  ? LocationRequest.QUALITY_HIGH_ACCURACY
+                  : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+        case BALANCED:
+          return new RequestSpec(
+              RELAXED_NAV_INTERVAL_MS,
+              ACTIVE_NAV_MIN_INTERVAL_MS,
+              0f,
+              LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+        case RELAXED:
+          return new RequestSpec(
+              RELAXED_NAV_INTERVAL_MS,
+              ACTIVE_NAV_MIN_INTERVAL_MS,
+              0f,
+              LocationRequest.QUALITY_LOW_POWER);
+        case NONE:
+        default:
+          break;
+      }
     }
 
     if (moving) {
@@ -172,17 +196,6 @@ public final class AndroidLocationProvider implements AutoCloseable {
         IDLE_INTERVAL_MS,
         IDLE_MIN_DISTANCE_M,
         LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
-  }
-
-  private static boolean materiallyDifferent(RequestSpec current, RequestSpec desired) {
-    if (current == null) return true;
-    if (current.quality != desired.quality) return true;
-    if ((current.intervalMs <= NavigationCadencePolicy.MIN_LOCATION_INTERVAL_MS)
-        != (desired.intervalMs <= NavigationCadencePolicy.MIN_LOCATION_INTERVAL_MS)) return true;
-    long smaller = Math.max(1L, Math.min(current.intervalMs, desired.intervalMs));
-    long larger = Math.max(current.intervalMs, desired.intervalMs);
-    if ((double) larger / smaller >= RECONFIGURE_INTERVAL_RATIO) return true;
-    return Math.abs(current.minDistanceMeters - desired.minDistanceMeters) >= 5f;
   }
 
   private static LocationRequest request(RequestSpec spec) {
@@ -262,6 +275,22 @@ public final class AndroidLocationProvider implements AutoCloseable {
       this.minIntervalMs = minIntervalMs;
       this.minDistanceMeters = minDistanceMeters;
       this.quality = quality;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (!(other instanceof RequestSpec)) return false;
+      RequestSpec that = (RequestSpec) other;
+      return intervalMs == that.intervalMs
+          && minIntervalMs == that.minIntervalMs
+          && Float.compare(minDistanceMeters, that.minDistanceMeters) == 0
+          && quality == that.quality;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(intervalMs, minIntervalMs, minDistanceMeters, quality);
     }
   }
 }
