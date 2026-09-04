@@ -1,95 +1,52 @@
-# Phase 6 — Navigation guidance policy
+# Fase 6 — política de orientação
 
-## Goal
+## Objetivo
 
-Present the next actionable maneuver early enough for the rider to react naturally, without showing a future turn so early that an earlier physically possible conversion can be mistaken for the intended one.
+Apresentar a instrução ativa escolhida pela rota sem inventar outra rota e sem antecipar uma conversão de forma ambígua.
 
-The policy is intentionally based on riding behavior rather than a single fixed distance.
+OSRM continua sendo a autoridade sobre rota, ordem das manobras, branches escolhidos e metadados estruturados. `GuidanceEngine` não seleciona ruas nem recalcula progresso; ele somente decide se a instrução que já está ativa pode ser exposta com segurança.
 
-## Invariants
+## Modelo vigente
 
-- A normal directional instruction must provide at least 10 seconds of lead at the current GPS speed.
-- Current GPS speed is always part of the activation calculation.
-- There is no fixed maximum activation distance.
-- Roundabouts use 12 seconds and U-turns use 15 seconds of minimum lead.
-- The route, maneuver order and chosen branches remain exactly those supplied by OSRM; the guidance policy changes only when an already-selected maneuver becomes visible.
-- A left/right command must not be shown while an earlier, still-unpassed intersection offers another physically enterable branch on the same side that could reasonably be confused with the intended conversion.
-- Once the ambiguous intersection is passed, the original OSRM maneuver becomes eligible immediately, subject to the normal timing rule.
-- Straight/continue/new-name transitions do not replace `Siga em frente` with a directional command.
+A política anterior baseada em 10 s para curvas, 12 s para rotatórias, 15 s para retorno, pisos de distância e fallback de 30 m foi descartada. Esses valores não são mais invariantes nem critérios de ativação.
 
-## Current timing model
+Uma instrução direcional ativa fica elegível imediatamente, independentemente da velocidade, salvo quando os metadados OSRM mostram uma interseção anterior ainda não ultrapassada com uma saída fisicamente enterável no mesmo lado capaz de ser confundida com a conversão programada.
 
-The activation distance is the distance that would be covered if the rider maintained the current speed for the maneuver-specific minimum lead time:
+Nesse caso, a orientação direcional fica temporariamente oculta. Depois que a interseção ambígua é ultrapassada, a instrução OSRM original volta a ser elegível. O planejamento não muda.
 
-`distance = currentSpeed * leadTime`
+Essa regra resolve apenas a segurança semântica da apresentação. A qualidade temporal percebida depende da progressão correta da rota, da conclusão correta da manobra e da observação física; não deve ser recriada aqui por outro horizonte fixo.
 
-Speed is converted to m/s before applying the formula. A 15 m floor remains only for very low non-zero speeds. If GPS speed is unavailable or invalid, the conservative fallback remains 30 m.
+## Waypoints e apresentação como parada
 
-This deliberately treats 10 seconds as a real minimum before the maneuver. Any deceleration after the command appears increases the actual time available; it never shortens the requested lead.
+Waypoint é um conceito estrutural da rota. Ele continua sendo respeitado por planejamento, progressão, persistência e recálculo independentemente de sua apresentação visual.
 
-Current profiles:
+A preferência `waypointsVisible` controla somente a UX:
 
-| Domain maneuver | Minimum lead |
-| --- | ---: |
-| TURN_LEFT / TURN_RIGHT | 10 s |
-| ROUNDABOUT | 12 s |
-| U_TURN | 15 s |
+- habilitada: waypoint pode ser apresentado como parada e como parada alcançada;
+- desabilitada: o waypoint continua obrigatório, mas `GuidanceEngine` faz lookahead para a próxima instrução visível e não o apresenta como parada.
 
-Examples:
+A preferência não altera a rota nem a responsabilidade do OSRM.
 
-| Speed | Normal turn | Roundabout | U-turn |
-| --- | ---: | ---: | ---: |
-| 30 km/h | 83 m | 100 m | 125 m |
-| 40 km/h | 111 m | 133 m | 167 m |
-| 45 km/h | 125 m | 150 m | 188 m |
+## Ambiguidade de interseções
 
-The previous 100 m ceiling was removed after physical testing showed that a 90-degree turn at 40 km/h or more could require earlier preparation.
+Para `TURN_LEFT` e `TURN_RIGHT`, o approach step preservado do OSRM é consultado. Uma interseção anterior bloqueia a indicação somente quando:
 
-## Ambiguous-intersection gate
+- ainda está à frente da posição projetada;
+- não corresponde efetivamente à própria interseção alvo;
+- OSRM marca uma saída alternativa como enterável;
+- a saída alternativa fica no mesmo lado da instrução ativa;
+- não é a saída escolhida pela rota atual.
 
-OSRM remains authoritative for routing. The application does not choose an alternate street, reorder maneuvers or override the OSRM route.
+A geometria compartilhada é calculada por `RouteGeometry`; `GuidanceEngine` não mantém uma implementação paralela de projeção.
 
-For an upcoming `TURN_LEFT` or `TURN_RIGHT`, the UI inspects the rich OSRM intersection metadata preserved on the approach step. An earlier intersection blocks the directional command only when all of the following are true:
+Rotatórias e retornos não recebem regras topológicas inventadas enquanto não houver evidência/implementação suficientemente madura para isso.
 
-- it is still ahead of the current projected position on the OSRM step geometry;
-- it is not effectively the target maneuver intersection itself;
-- OSRM marks an alternative outgoing branch as enterable;
-- that alternative branch lies on the same turn side as the upcoming command;
-- the alternative is not the outgoing branch selected by OSRM for the current route.
+## Separação de responsabilidades
 
-While blocked, the panel continues with neutral forward guidance rather than showing the future left/right arrow. After the rider passes the ambiguous intersection, the OSRM-selected maneuver is shown without changing the planned route.
+`RouteProgressTracker` determina a interpretação física do fix sobre a rota. `NavigationEngine` determina qual instrução está ativa e quando ela foi cumprida. `GuidanceEngine` somente transforma esse estado em uma orientação apresentável. A UI consome o resultado e não contém regras de navegação.
 
-The current ambiguity gate is intentionally limited to ordinary left/right turns. Roundabout and U-turn ambiguity require topology-specific rules and are not inferred by this first implementation.
+Assim, uma futura melhoria no reconhecimento de uma curva ou na progressão não exige alterar componentes visuais.
 
-## OSRM enrichment
+## Validação
 
-The OSRM adapter requests `steps=true`, `annotations=true`, full overview geometry and GeoJSON geometry. The domain keeps the simple `NavigationInstruction.Maneuver` enum for stable UI/engine behavior while preserving richer routing semantics.
-
-For every instruction the adapter preserves, when supplied by OSRM:
-
-- maneuver type and modifier;
-- normalized maneuver context (`TURN`, `FORK`, `MERGE`, `END_OF_ROAD`, `ON_RAMP`, `OFF_RAMP`, `CONTINUE`, `ROUNDABOUT`, `ROTARY`, etc.);
-- normalized turn severity (`STRAIGHT`, `SLIGHT`, `NORMAL`, `SHARP`, `U_TURN`);
-- bearing before and after the maneuver;
-- roundabout/rotary exit number;
-- street name, reference, pronunciation, destinations and exit labels;
-- travel mode, driving side, rotary name/pronunciation;
-- step duration and weight;
-- per-step geometry;
-- every intersection reported inside the step, including location, bearings, legal-entry flags, incoming/outgoing indexes, road classes and lane indications/validity.
-
-For every route leg the adapter also preserves distance, duration, weight, summary and fine-grained annotation arrays. Route-level metadata preserves total metrics, OSRM data version and snapped waypoint information.
-
-Provider-neutral optional metadata objects (`NavigationStepMetadata`, `RouteLegMetadata`, `RouteMetadata`) keep the core domain independent of OSRM. Existing constructors remain valid for providers that cannot supply equivalent information.
-
-OSRM explicitly allows new maneuver types/properties to appear without an API version change. Unknown types remain representable through `rawType`/`rawModifier`; semantic use of future fields requires an explicit adapter update.
-
-## Guidance refinement still pending
-
-The richer metadata permits later physical calibration of slight, normal and sharp turns, forks, merges and end-of-road events. Until that calibration is validated, `TURN_LEFT` and `TURN_RIGHT` still share the normal-turn 10-second profile.
-
-The policy must not infer maneuver severity from localized instruction text; structured routing metadata is authoritative.
-
-## Validation scope
-
-The current timing constants target the operating range already tested with the present electric scooter, including approximately 45 km/h. Physical route testing remains authoritative for final calibration.
+A retirada dos horizontes fixos elimina uma abordagem já rejeitada, mas não equivale a validação física. O comportamento esperado precisa ser testado em percurso real, especialmente em sequências de conversões próximas, interseções ambíguas, rotatórias, retornos e manobras concluídas sob diferentes qualidades de GPS.
