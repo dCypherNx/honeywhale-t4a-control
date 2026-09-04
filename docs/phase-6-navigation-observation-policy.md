@@ -1,79 +1,83 @@
-# Phase 6 — Live navigation observation policy
+# Fase 6 — política viva de observação da navegação
 
-## Why this replaced cadence bands
+## Objetivo
 
-Navigation must not be driven by fixed maneuver horizons or by a table such as 500 ms / 2 s / 20 s. Those values turn a continuous physical problem into arbitrary timing bands and can hide relevant movement between samples.
+A navegação não é dirigida por uma tabela de intervalos nem por horizontes fixos de manobra. Ela mantém uma interpretação viva da posição sobre a rota e expressa quanto tempo a situação física atual ainda permite ficar sem nova observação antes de aumentar materialmente o risco de perder uma decisão.
 
-The runtime now uses a provider-neutral `NavigationObservationPolicy` that observes the live route context and expresses **how much observation is currently needed**.
+OSRM permanece a autoridade de roteamento: fornece rota, geometria, steps, bearings, intersections e annotations. Referências a Mapbox, Valhalla, Waze ou outros projetos servem apenas como comparação de práticas de engenharia; nenhum deles substitui o OSRM na implementação.
 
-## Professional references behind the design
+## Uma interpretação geométrica compartilhada
 
-- Mapbox Navigation separates raw location from enhanced/map-matched location and uses raw fixes to determine instruction timing, route matching and deviation. Its documented default Navigation SDK v3 location request is 1 s desired, 500 ms minimum, high accuracy. These are adapter capabilities, not maneuver rules.
-- Valhalla/Meili map-matching guidance recommends an approximate trace density between one point per second and one point per ten seconds because larger gaps increase matching ambiguity.
-- Android documents request interval and quality as provider hints. High accuracy can cost more power; balanced/low-power requests can reduce it. The platform may still deliver updates faster than the requested interval.
-- Organic Maps community discussion explicitly questions degrading navigation frequency for assumed battery savings without physical measurements. Battery gain must therefore be measured rather than presumed.
+`RouteProgressTracker` é o proprietário da continuidade da posição sobre a rota. Para cada fix ele produz um `RouteProgressSnapshot` contendo:
 
-## Live state
+- leg atual;
+- offset projetado sobre a geometria;
+- erro lateral;
+- consistência do progresso em relação à observação anterior;
+- timestamp.
 
-For every location supplied by Android the policy records or derives:
+O mesmo snapshot é consumido por `NavigationEngine` e `NavigationObservationPolicy`. Assim, progresso e confiança deixam de ser recalculados de formas ligeiramente diferentes por componentes distintos.
 
-- location uncertainty from the actual reported accuracy and route lateral error;
-- route projection and progress consistency against the preceding observation;
-- confidence in the current location and route match;
-- the nearest consequential decision boundary: the active maneuver or an earlier physically enterable branch exposed by OSRM intersection metadata;
-- geometric decision clearance after subtracting current uncertainty;
-- observation budget: how long the current speed would take to consume that clearance;
-- whether the forward corridor is actually known from rich OSRM metadata.
+Operações geométricas comuns ficam em `RouteGeometry`. Projeção, distância e utilidades de bearing não pertencem mais individualmente aos engines.
 
-No 10/12/15-second maneuver horizon exists in this policy. There is no navigation-specific 20-second ceiling and no navigation-specific 500 ms floor.
+## Estado de observação
 
-## Provider demand
+`NavigationObservationPolicy` combina o progresso compartilhado com a posição física, a precisão reportada, a velocidade e o contexto OSRM do trecho. Para cada fix ela deriva:
 
-The continuous state is translated to coarse platform demands only at the Android boundary:
+- confiança da localização;
+- confiança do encaixe/progresso na rota;
+- incerteza atual;
+- erro lateral e progresso;
+- próxima decisão física relevante;
+- presença de saída alternativa enterável antes da instrução programada;
+- clearance geométrico restante depois da incerteza;
+- `observationBudget`, calculado continuamente a partir do clearance e do movimento atual.
 
-- `CONTINUOUS`: deviation/recalculation or exhausted decision clearance;
-- `PRECISE`: confidence is not stable, corridor is unknown, or a consequential decision is within the trace-density window;
-- `BALANCED`: stable context but a real alternative branch is still ahead;
-- `RELAXED`: stable location, stable route progress, known corridor and no nearer alternative branch;
-- `NONE`: navigation does not currently request location.
+Não existem nessa política horizontes de 10/12/15 segundos, teto de 20 segundos ou piso de 500 ms.
 
-The Android adapter deliberately uses stable request profiles instead of constantly unregistering and registering a `LocationRequest` for tiny numerical changes in the observation budget.
+## Demanda ao provedor
 
-`PRECISE` and `CONTINUOUS` use the mature active-navigation request shape documented by Mapbox: 1 s desired, 500 ms minimum, high accuracy when fine permission exists.
+O resultado contínuo é traduzido semanticamente para o adaptador Android:
 
-`BALANCED` and `RELAXED` use a 10-second desired interval because that is the upper edge of Valhalla/Meili's recommended trace-density range. `BALANCED` requests balanced accuracy; `RELAXED` requests low power.
+- `CONTINUOUS`: desvio/recálculo em curso ou clearance esgotado;
+- `PRECISE`: confiança ainda não está estável ou o corredor não pode ser conhecido com segurança;
+- `BALANCED`: estado estável, mas há uma decisão física intermediária relevante à frente;
+- `RELAXED`: posição e progresso estáveis em corredor conhecido e simples;
+- `NONE`: navegação não exige localização.
 
-The 500 ms and 10 s values therefore belong to the **Android sampling adapter**, backed by external implementation guidance. They are not maneuver horizons and do not define when navigation decisions occur.
+Esses níveis não definem o momento da manobra. Eles apenas informam qualidade/urgência ao adaptador de aquisição.
 
-## Runtime processing
+Para um budget finito, `AndroidLocationProvider` usa esse próprio budget como hint de intervalo. Em `CONTINUOUS`, solicita a entrega mais rápida praticável pelo Android (`interval=0`, `minInterval=0`) em vez de inventar um piso de aplicação. Quando o domínio não encontra uma fronteira temporal finita, o adaptador recorre somente aos baselines já existentes da sessão: movimento 2 s/alta precisão e repouso 20 s/precisão balanceada. Dispositivo desconectado continua desregistrando o provedor.
 
-`NavigationRuntime` no longer has an independent fixed-time throttle. Every fix delivered by the provider is passed through route progress/deviation logic and through the observation policy.
+Essa tradução do budget para `LocationRequest` é **experimental** e precisa de teste físico. O fato de a arquitetura permitir um budget contínuo não prova que consumir 100% dele como intervalo seja a melhor calibração; logs reais devem determinar se é necessário preservar uma margem dinâmica. Essa margem, caso exista, não deve voltar a ser um horizonte fixo de navegação.
 
-This matters because a provider may deliver a useful update earlier than requested. Android explicitly allows that behavior, and navigation should not discard the information merely because an application timer has not expired.
+## Processamento
 
-## Diagnostics and calibration
+`NavigationRuntime` não aplica throttle temporal próprio. Todo fix entregue pelo Android é disponibilizado ao progresso, engine e política de observação. Economia de energia é buscada na aquisição física quando o contexto permite, e não descartando informação depois que o GPS já produziu o fix.
 
-Every observed fix emits a `[NAV] OBS` diagnostic containing:
+## Responsabilidades
 
-- location confidence;
-- route confidence;
-- uncertainty;
-- lateral route error;
-- route progress;
-- decision distance;
-- clearance;
-- observation budget;
-- corridor metadata availability;
-- alternative-branch presence;
-- progress consistency;
-- resulting demand level and reason.
+A divisão atual é:
 
-`[NAV] LOCATION_DEMAND` records actual demand transitions.
+- `RoutePlanner`: contrato provider-neutral de planejamento;
+- `OsrmRoutePlanner`: adaptador OSRM no módulo Android;
+- `RouteGeometry`: operações geométricas compartilhadas;
+- `RouteProgressTracker`: continuidade e projeção física da rota;
+- `NavigationEngine`: avanço lógico entre legs/instruções, conclusão e estado geométrico de rota;
+- `GuidanceEngine`: apresentação segura da instrução ativa;
+- `NavigationObservationPolicy`: confiança, risco e necessidade de observação;
+- `NavigationDeviationPolicy`: confirmação temporal de saída da rota;
+- `NavigationRecoveryCoordinator`: orquestra pré-aquecimento e recálculo em background;
+- `NavigationRuntime`: lifecycle process-local, integração dos componentes e publicação de estado/listeners.
 
-These fields are intentionally observable before introducing more sophisticated confidence weighting. Physical logs should determine future calibration. New constants must not be promoted to navigation rules merely because they appear to work in one route.
+`NavigationRuntime` não implementa mais diretamente o workflow de recuperação.
 
-## Energy validation
+## Diagnóstico
 
-The design creates a real opportunity for energy savings because `RELAXED` changes both requested frequency and Android quality, rather than only skipping CPU work after GPS has already produced a fix.
+Cada fix observado registra `[NAV] OBS` com confiança, incerteza, lateral, progresso, distância da decisão, clearance, budget, conhecimento do corredor, existência de branch, consistência e demanda. `[NAV] LOCATION_DEMAND` registra mudanças da demanda efetivamente enviada ao adaptador.
 
-The magnitude of the saving is not assumed. It must be measured on the target phone during comparable routes, alongside navigation quality and responsiveness.
+Esses dados existem para que a próxima calibração seja baseada em percurso físico, não em novos números escolhidos antecipadamente.
+
+## Fronteiras do projeto
+
+Esta política não altera telemetria Tuya, MQTT, controle BLE, `T4AState` ou layout do dashboard. O mesmo `AndroidLocationProvider` continua fornecendo a posição já utilizada pela sessão/telemetria; navegação apenas publica sua demanda para esse adaptador e recebe o mesmo `LocationSnapshot`.
