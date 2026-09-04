@@ -1,32 +1,72 @@
 package br.com.t4acontrol.ui.dashboard
 
+import br.com.t4acontrol.backend.navigation.GeoPoint
 import br.com.t4acontrol.backend.navigation.GuidanceEngine
 import br.com.t4acontrol.backend.navigation.NavigationInstruction
-import org.junit.Assert.assertEquals
+import br.com.t4acontrol.backend.navigation.NavigationState
+import br.com.t4acontrol.backend.navigation.Route
+import br.com.t4acontrol.backend.navigation.RouteLeg
+import br.com.t4acontrol.backend.navigation.RoutingProfile
+import br.com.t4acontrol.backend.navigation.Waypoint
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class NavigationGuidanceTimingTest {
     @Test
-    fun `normal turn keeps a real ten second minimum lead at current speed`() {
-        assertEquals(83.333, GuidanceEngine.activationDistanceMeters(30.0, NavigationInstruction.Maneuver.TURN_LEFT), 0.01)
-        assertEquals(111.111, GuidanceEngine.activationDistanceMeters(40.0, NavigationInstruction.Maneuver.TURN_RIGHT), 0.01)
-        assertEquals(125.0, GuidanceEngine.activationDistanceMeters(45.0, NavigationInstruction.Maneuver.TURN_RIGHT), 0.01)
+    fun `active maneuver is not hidden by discarded fixed time horizon`() {
+        val route = route()
+        val turn = route.legs[0].instructions[0]
+        val state = NavigationState.of(
+            NavigationState.Status.NAVIGATING,
+            route,
+            0,
+            0,
+            turn,
+            500.0,
+        )
+
+        val slow = GuidanceEngine.present(route, state, true, 5.0, null)
+        val fast = GuidanceEngine.present(route, state, true, 45.0, null)
+
+        assertSame(turn, slow.instruction)
+        assertSame(turn, fast.instruction)
     }
 
-    @Test
-    fun `roundabout uses twelve seconds without a fixed distance ceiling`() {
-        assertEquals(100.0, GuidanceEngine.activationDistanceMeters(30.0, NavigationInstruction.Maneuver.ROUNDABOUT), 0.01)
-        assertEquals(150.0, GuidanceEngine.activationDistanceMeters(45.0, NavigationInstruction.Maneuver.ROUNDABOUT), 0.01)
-    }
-
-    @Test
-    fun `u turn keeps fifteen second minimum lead without a fixed distance ceiling`() {
-        assertEquals(125.0, GuidanceEngine.activationDistanceMeters(30.0, NavigationInstruction.Maneuver.U_TURN), 0.01)
-        assertEquals(187.5, GuidanceEngine.activationDistanceMeters(45.0, NavigationInstruction.Maneuver.U_TURN), 0.01)
-    }
-
-    @Test
-    fun `unknown speed uses conservative fallback`() {
-        assertEquals(30.0, GuidanceEngine.activationDistanceMeters(null, NavigationInstruction.Maneuver.TURN_LEFT), 0.001)
+    private fun route(): Route {
+        val origin = Waypoint("o", "origin", 0.0, 0.0, Waypoint.Role.ORIGIN)
+        val destination = Waypoint("d", "destination", 0.0, 0.01, Waypoint.Role.DESTINATION)
+        val turn = NavigationInstruction(
+            "turn",
+            NavigationInstruction.Maneuver.TURN_RIGHT,
+            "turn",
+            0.0,
+            0.005,
+            500.0,
+            500.0,
+        )
+        val arrive = NavigationInstruction(
+            "arrive",
+            NavigationInstruction.Maneuver.ARRIVE,
+            "arrive",
+            0.0,
+            0.01,
+            1000.0,
+            0.0,
+        )
+        return Route(
+            "route",
+            "test",
+            "ref",
+            RoutingProfile.BICYCLE,
+            listOf(origin, destination),
+            listOf(
+                RouteLeg(
+                    origin,
+                    destination,
+                    listOf(turn, arrive),
+                    listOf(GeoPoint(0.0, 0.0), GeoPoint(0.0, 0.01)),
+                ),
+            ),
+        )
     }
 }
