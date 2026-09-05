@@ -17,6 +17,7 @@ import br.com.t4acontrol.mqtt.MqttSettings;
 import br.com.t4acontrol.mqtt.PahoMqttTransport;
 import br.com.t4acontrol.runtime.AndroidClock;
 import br.com.t4acontrol.runtime.AndroidScheduler;
+import br.com.t4acontrol.runtime.DebugT4ATransport;
 
 public final class T4AApplication extends Application {
   private MqttConfigurationStore mqttConfigurationStore;
@@ -31,6 +32,7 @@ public final class T4AApplication extends Application {
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
     T4ATransport transport = new TuyaT4APlatform();
+    if (BuildConfig.DEBUG) transport = new DebugT4ATransport(transport, listener);
     return new T4ABackend(
         new AndroidT4AStateStore(this),
         provisioner,
