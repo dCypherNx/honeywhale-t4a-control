@@ -8,11 +8,13 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.location.LocationRequest;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
+import br.com.t4acontrol.backend.navigation.NavigationObservationPolicy;
+import br.com.t4acontrol.navigation.NavigationRuntime;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
-/** Android location adapter. It is active only while the T4A session asks for tracking. */
+/** Android location adapter. It is active only while the scooter session asks for tracking. */
 public final class AndroidLocationProvider implements AutoCloseable {
   public interface Listener {
     void onLocation(LocationSnapshot snapshot);
@@ -21,10 +23,8 @@ public final class AndroidLocationProvider implements AutoCloseable {
   }
 
   private static final long IDLE_INTERVAL_MS = 20_000L;
-  private static final long IDLE_MIN_INTERVAL_MS = 20_000L;
   private static final float IDLE_MIN_DISTANCE_M = 10f;
-  private static final long MOVING_INTERVAL_MS = 3_000L;
-  private static final long MOVING_MIN_INTERVAL_MS = 3_000L;
+  private static final long MOVING_INTERVAL_MS = 2_000L;
   private static final float MOVING_MIN_DISTANCE_M = 2f;
   private static final long MAX_CACHED_AGE_MS = 30_000L;
 
@@ -32,6 +32,7 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private final LocationManager manager;
   private final Executor executor;
   private final Listener listener;
+  private final NavigationRuntime.LocationDemandListener navigationDemandListener;
   private final LocationListener locationListener =
       new LocationListener() {
         @Override
@@ -45,39 +46,47 @@ public final class AndroidLocationProvider implements AutoCloseable {
   private boolean registered;
   private String provider = "";
   private String lastUnavailableReason = "";
+  private NavigationObservationPolicy.ProviderDemand navigationDemand;
+  private RequestSpec appliedRequest;
 
   public AndroidLocationProvider(Context context, Listener listener) {
     this.context = Objects.requireNonNull(context).getApplicationContext();
     this.listener = Objects.requireNonNull(listener);
     this.manager = this.context.getSystemService(LocationManager.class);
     this.executor = this.context.getMainExecutor();
+    this.navigationDemandListener =
+        demand -> executor.execute(() -> {
+          navigationDemand = demand;
+          if (active) reconfigureIfNeeded();
+        });
+    NavigationRuntime.get().addLocationDemandListener(navigationDemandListener);
   }
 
   public void setActive(boolean value) {
     if (active == value) return;
     active = value;
-    if (active) register();
+    if (active) register(true);
     else unregister();
   }
 
   public void setMoving(boolean value) {
     if (moving == value) return;
     moving = value;
-    if (active) register();
+    if (active) reconfigureIfNeeded();
   }
 
-  /** Re-evaluates runtime permission/provider state after an Activity permission result. */
   public void refreshPermissions() {
-    if (active) register();
+    if (active) register(true);
   }
 
   @Override
   public void close() {
+    NavigationRuntime.get().removeLocationDemandListener(navigationDemandListener);
     active = false;
     unregister();
   }
 
-  private void register() {
+  private void register(boolean acceptCached) {
     unregister();
     if (!active) return;
     if (!hasAnyLocationPermission()) {
@@ -96,18 +105,29 @@ public final class AndroidLocationProvider implements AutoCloseable {
     }
 
     try {
-      LocationRequest request = request();
-      manager.requestLocationUpdates(provider, request, executor, locationListener);
+      RequestSpec spec = desiredRequest();
+      manager.requestLocationUpdates(provider, request(spec), executor, locationListener);
       registered = true;
+      appliedRequest = spec;
       lastUnavailableReason = "";
-      Location cached = manager.getLastKnownLocation(provider);
-      if (cached != null
-          && Math.abs(System.currentTimeMillis() - cached.getTime()) <= MAX_CACHED_AGE_MS) accept(cached);
+      if (acceptCached) {
+        Location cached = manager.getLastKnownLocation(provider);
+        if (cached != null
+            && Math.abs(System.currentTimeMillis() - cached.getTime()) <= MAX_CACHED_AGE_MS) {
+          accept(cached);
+        }
+      }
     } catch (SecurityException error) {
       unavailable("permissão de localização recusada");
     } catch (RuntimeException error) {
       unavailable("falha ao iniciar localização: " + error.getClass().getSimpleName());
     }
+  }
+
+  private void reconfigureIfNeeded() {
+    RequestSpec desired = desiredRequest();
+    if (registered && desired.equals(appliedRequest)) return;
+    register(false);
   }
 
   private void unregister() {
@@ -119,20 +139,81 @@ public final class AndroidLocationProvider implements AutoCloseable {
       }
     }
     registered = false;
+    appliedRequest = null;
   }
 
-  private LocationRequest request() {
-    long interval = moving ? MOVING_INTERVAL_MS : IDLE_INTERVAL_MS;
-    long minInterval = moving ? MOVING_MIN_INTERVAL_MS : IDLE_MIN_INTERVAL_MS;
-    float minDistance = moving ? MOVING_MIN_DISTANCE_M : IDLE_MIN_DISTANCE_M;
-    int quality =
-        moving && hasFineLocationPermission()
-            ? LocationRequest.QUALITY_HIGH_ACCURACY
-            : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY;
-    return new LocationRequest.Builder(interval)
-        .setMinUpdateIntervalMillis(minInterval)
-        .setMinUpdateDistanceMeters(minDistance)
-        .setQuality(quality)
+  private RequestSpec desiredRequest() {
+    NavigationObservationPolicy.ProviderDemand demand = navigationDemand;
+    if (demand != null && demand.level != NavigationObservationPolicy.DemandLevel.NONE) {
+      long interval = requestedInterval(demand);
+      switch (demand.level) {
+        case CONTINUOUS:
+          // Zero asks Android for the fastest practical delivery without inventing an app-level floor.
+          return new RequestSpec(
+              0L,
+              0L,
+              0f,
+              hasFineLocationPermission()
+                  ? LocationRequest.QUALITY_HIGH_ACCURACY
+                  : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+        case PRECISE:
+          return new RequestSpec(
+              interval,
+              0L,
+              0f,
+              hasFineLocationPermission()
+                  ? LocationRequest.QUALITY_HIGH_ACCURACY
+                  : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+        case BALANCED:
+          return new RequestSpec(
+              interval,
+              0L,
+              0f,
+              LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+        case RELAXED:
+          return new RequestSpec(
+              interval,
+              0L,
+              0f,
+              LocationRequest.QUALITY_LOW_POWER);
+        case NONE:
+        default:
+          break;
+      }
+    }
+
+    if (moving) {
+      return new RequestSpec(
+          MOVING_INTERVAL_MS,
+          MOVING_INTERVAL_MS,
+          MOVING_MIN_DISTANCE_M,
+          hasFineLocationPermission()
+              ? LocationRequest.QUALITY_HIGH_ACCURACY
+              : LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+    }
+    return new RequestSpec(
+        IDLE_INTERVAL_MS,
+        IDLE_INTERVAL_MS,
+        IDLE_MIN_DISTANCE_M,
+        LocationRequest.QUALITY_BALANCED_POWER_ACCURACY);
+  }
+
+  /**
+   * The navigation domain supplies the live geometric budget. Infinite budget falls back only to the
+   * existing session baseline; finite values are not replaced by arbitrary navigation bands.
+   */
+  private long requestedInterval(NavigationObservationPolicy.ProviderDemand demand) {
+    if (demand.maxSafeGapMs == Long.MAX_VALUE) {
+      return moving ? MOVING_INTERVAL_MS : IDLE_INTERVAL_MS;
+    }
+    return Math.max(1L, demand.maxSafeGapMs);
+  }
+
+  private static LocationRequest request(RequestSpec spec) {
+    return new LocationRequest.Builder(spec.intervalMs)
+        .setMinUpdateIntervalMillis(spec.minIntervalMs)
+        .setMinUpdateDistanceMeters(spec.minDistanceMeters)
+        .setQuality(spec.quality)
         .build();
   }
 
@@ -158,13 +239,12 @@ public final class AndroidLocationProvider implements AutoCloseable {
         || longitude < -180d
         || longitude > 180d) return;
 
-    Double gpsSpeedKmh =
-        location.hasSpeed() ? Math.max(0d, location.getSpeed() * 3.6d) : null;
+    Double gpsSpeedKmh = location.hasSpeed() ? Math.max(0d, location.getSpeed() * 3.6d) : null;
     Double bearing = location.hasBearing() ? (double) location.getBearing() : null;
     Double altitude = location.hasAltitude() ? location.getAltitude() : null;
     double accuracy = location.hasAccuracy() ? Math.max(0d, location.getAccuracy()) : 0d;
 
-    listener.onLocation(
+    LocationSnapshot snapshot =
         new LocationSnapshot(
             latitude,
             longitude,
@@ -172,7 +252,9 @@ public final class AndroidLocationProvider implements AutoCloseable {
             location.getTime() > 0 ? location.getTime() : System.currentTimeMillis(),
             gpsSpeedKmh,
             bearing,
-            altitude));
+            altitude);
+    NavigationRuntime.get().onLocation(snapshot);
+    listener.onLocation(snapshot);
   }
 
   private boolean hasAnyLocationPermission() {
@@ -190,5 +272,35 @@ public final class AndroidLocationProvider implements AutoCloseable {
     if (reason.equals(lastUnavailableReason)) return;
     lastUnavailableReason = reason;
     listener.onUnavailable(reason);
+  }
+
+  private static final class RequestSpec {
+    final long intervalMs;
+    final long minIntervalMs;
+    final float minDistanceMeters;
+    final int quality;
+
+    RequestSpec(long intervalMs, long minIntervalMs, float minDistanceMeters, int quality) {
+      this.intervalMs = intervalMs;
+      this.minIntervalMs = minIntervalMs;
+      this.minDistanceMeters = minDistanceMeters;
+      this.quality = quality;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) return true;
+      if (!(other instanceof RequestSpec)) return false;
+      RequestSpec that = (RequestSpec) other;
+      return intervalMs == that.intervalMs
+          && minIntervalMs == that.minIntervalMs
+          && Float.compare(minDistanceMeters, that.minDistanceMeters) == 0
+          && quality == that.quality;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(intervalMs, minIntervalMs, minDistanceMeters, quality);
+    }
   }
 }

@@ -13,7 +13,9 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import br.com.t4acontrol.BuildConfig;
@@ -38,10 +40,12 @@ public final class T4ASessionService extends Service
   private static final String CHANNEL_ID = "t4a_session";
   private static final int NOTIFICATION_ID = 4101;
   private static final String DP_LIGHT = "8";
+  private static final long FIRST_STATE_RECOVERY_MS = 5_000L;
 
   private final Set<T4ASession.Listener> listeners = new CopyOnWriteArraySet<>();
   private final SessionBinder binder = new SessionBinder();
   private final String instanceId = Long.toHexString(SystemClock.elapsedRealtime());
+  private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
   private T4ABackend backend;
   private AutoLightController autoLightController;
@@ -54,6 +58,8 @@ public final class T4ASessionService extends Service
   private T4AState lastState;
   private String activeNetworkTag = "NET";
   private String lastNetworkSignature = "";
+  private boolean firstStateRecoveryScheduled;
+  private boolean firstStateRecoveryAttempted;
 
   @Override
   public void onCreate() {
@@ -62,7 +68,7 @@ public final class T4ASessionService extends Service
     createNotificationChannel();
     startForeground(
         NOTIFICATION_ID,
-        notification("Sessão T4A iniciando…"),
+        notification("RideDash iniciando…"),
         foregroundServiceTypes());
     startNetworkDiagnostics();
 
@@ -119,8 +125,7 @@ public final class T4ASessionService extends Service
               }
             });
 
-    backend = application.createSessionBackend(this);
-    backend.start();
+    createAndStartBackend("create");
 
     ambientLightMonitor =
         new AndroidAmbientLightMonitor(
@@ -175,12 +180,14 @@ public final class T4ASessionService extends Service
   @Override
   public void onRebind(Intent intent) {
     super.onRebind(intent);
-    rawTagged("ANDROID", "REBIND instance=" + instanceId);
+    rawTagged("ANDROID", "REBIND instance=" + instanceId + " state=" + (lastState == null ? "none" : "ready"));
+    scheduleFirstStateRecoveryIfNeeded();
   }
 
   @Override
   public void onDestroy() {
     rawTagged("ANDROID", "DESTROY instance=" + instanceId);
+    mainHandler.removeCallbacksAndMessages(null);
     stopNetworkDiagnostics();
     if (ambientLightMonitor != null) {
       ambientLightMonitor.close();
@@ -221,6 +228,17 @@ public final class T4ASessionService extends Service
     }
     T4AState decorated = decorateAutoLight(state);
     lastState = decorated;
+    firstStateRecoveryScheduled = false;
+    if (previous == null) {
+      rawTagged(
+          "ANDROID",
+          "SESSION_STATE first authenticated="
+              + decorated.authenticated
+              + " pairing="
+              + decorated.pairing
+              + " connected="
+              + decorated.connected);
+    }
     if (previous == null || previous.connected != decorated.connected) {
       rawTagged("SDK", decorated.connected ? "CONNECTED" : "DISCONNECTED");
     }
@@ -268,6 +286,38 @@ public final class T4ASessionService extends Service
     rawTagged("MQTT", entry);
   }
 
+  private void createAndStartBackend(String reason) {
+    T4AApplication application = (T4AApplication) getApplication();
+    backend = application.createSessionBackend(this);
+    rawTagged("ANDROID", "SESSION_BACKEND start reason=" + reason + " instance=" + instanceId);
+    backend.start();
+  }
+
+  private void scheduleFirstStateRecoveryIfNeeded() {
+    if (lastState != null || backend == null || firstStateRecoveryScheduled || firstStateRecoveryAttempted) return;
+    firstStateRecoveryScheduled = true;
+    mainHandler.postDelayed(
+        () -> {
+          firstStateRecoveryScheduled = false;
+          if (lastState != null || backend == null || listeners.isEmpty()) return;
+          firstStateRecoveryAttempted = true;
+          rawTagged(
+              "ANDROID",
+              "SESSION_STALLED no_state_after_ms="
+                  + FIRST_STATE_RECOVERY_MS
+                  + " action=restart_backend instance="
+                  + instanceId);
+          try {
+            backend.destroy();
+          } catch (RuntimeException error) {
+            rawTagged("ANDROID", "SESSION_BACKEND destroy_error=" + error.getClass().getSimpleName());
+          }
+          backend = null;
+          createAndStartBackend("first_state_recovery");
+        },
+        FIRST_STATE_RECOVERY_MS);
+  }
+
   private void rawTagged(String source, String message) {
     forwardRaw("[" + source + "] " + message);
   }
@@ -307,9 +357,16 @@ public final class T4ASessionService extends Service
             + "\",\"versionCode\":"
             + BuildConfig.VERSION_CODE
             + "}");
-    listener.onRawLog("[ANDROID] UI_ATTACHED instance=" + instanceId);
+    listener.onRawLog(
+        "[ANDROID] UI_ATTACHED instance="
+            + instanceId
+            + " state="
+            + (lastState == null ? "none" : "ready")
+            + " backend="
+            + (backend == null ? "none" : "ready"));
     emitCurrentNetwork(listener);
     if (lastState != null) listener.onState(lastState);
+    else scheduleFirstStateRecoveryIfNeeded();
   }
 
   private void removeListener(T4ASession.Listener listener) {

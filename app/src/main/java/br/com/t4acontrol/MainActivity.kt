@@ -25,7 +25,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.toArgb
 import br.com.t4acontrol.backend.T4AState
+import br.com.t4acontrol.backend.navigation.NavigationState
+import br.com.t4acontrol.backend.navigation.Route
 import br.com.t4acontrol.mqtt.MqttSettingsActivity
+import br.com.t4acontrol.navigation.NavigationRuntime
+import br.com.t4acontrol.navigation.NavigationShareActivity
 import br.com.t4acontrol.session.T4ASession
 import br.com.t4acontrol.session.T4ASessionService
 import br.com.t4acontrol.ui.T4AApp
@@ -44,6 +48,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         private const val PREF_KEEP_SCREEN_ON = "keep_screen_on"
         private const val PREF_TOTAL_ODOMETER = "show_total_odometer"
         private const val PREF_THEME = "theme_mode"
+        private const val PREF_NAVIGATION_WAYPOINTS_VISIBLE = "navigation_waypoints_visible"
     }
 
     private var session: T4ASession = T4ASession.EMPTY
@@ -55,11 +60,20 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     private var keepScreenOn by mutableStateOf(true)
     private var showTotalOdometer by mutableStateOf(true)
     private var themeMode by mutableStateOf("system")
+    private var navigationWaypointsVisible by mutableStateOf(true)
     private var configurationTick by mutableIntStateOf(0)
     private var lastStatusEvent = ""
     private val eventHistory = mutableStateListOf<String>()
     private val rawHistory = mutableStateListOf<String>()
     private var rawLogFilter by mutableStateOf("ALL")
+
+    private val navigationLogListener = object : NavigationRuntime.Listener {
+        override fun onNavigationChanged(route: Route?, state: NavigationState) = Unit
+
+        override fun onNavigationRawLog(value: String) {
+            runOnUiThread { appendRaw(value) }
+        }
+    }
 
     private val sessionConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -126,6 +140,11 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         override fun setTheme(mode: String) = applyTheme(mode)
 
+        override fun setNavigationWaypointsVisible(enabled: Boolean) {
+            navigationWaypointsVisible = enabled
+            preferences().edit().putBoolean(PREF_NAVIGATION_WAYPOINTS_VISIBLE, enabled).apply()
+        }
+
         override fun setBatteryRechargeMinGapHours(hours: Int) = session.setBatteryRechargeMinGapHours(hours)
 
         override fun openMqttSettings() {
@@ -171,6 +190,9 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         keepScreenOn = preferences().getBoolean(PREF_KEEP_SCREEN_ON, true)
         showTotalOdometer = preferences().getBoolean(PREF_TOTAL_ODOMETER, true)
         themeMode = preferences().getString(PREF_THEME, "system") ?: "system"
+        navigationWaypointsVisible = preferences().getBoolean(PREF_NAVIGATION_WAYPOINTS_VISIBLE, true)
+        consumeNavigationRawLog(intent)
+        NavigationRuntime.get().addListener(navigationLogListener)
         applyKeepScreenOn(keepScreenOn)
         ensurePermissions()
         setContent {
@@ -183,6 +205,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 showTotalOdometer = showTotalOdometer,
                 keepScreenOn = keepScreenOn,
                 themeMode = themeMode,
+                navigationWaypointsVisible = navigationWaypointsVisible,
                 eventHistory = eventHistory,
                 rawHistory = rawHistory,
                 rawLogFilter = rawLogFilter,
@@ -190,6 +213,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
                 actions = uiActions,
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeNavigationRawLog(intent)
     }
 
     override fun onResume() {
@@ -209,6 +238,7 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
     }
 
     override fun onDestroy() {
+        NavigationRuntime.get().removeListener(navigationLogListener)
         disconnectSession()
         super.onDestroy()
     }
@@ -245,6 +275,13 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
     private fun appendRaw(value: String) {
         rawHistory.add(SimpleDateFormat("HH:mm:ss.SSS", Locale.ROOT).format(Date()) + " " + value)
+    }
+
+    private fun consumeNavigationRawLog(sourceIntent: Intent?) {
+        val entries = sourceIntent?.getStringArrayListExtra(NavigationShareActivity.EXTRA_NAVIGATION_RAW_LOG)
+            ?: return
+        entries.forEach(::appendRaw)
+        sourceIntent.removeExtra(NavigationShareActivity.EXTRA_NAVIGATION_RAW_LOG)
     }
 
     private fun rawLogText(): String = buildString {
