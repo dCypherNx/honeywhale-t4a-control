@@ -12,6 +12,7 @@ import br.com.t4acontrol.backend.mqtt.AndroidMqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
 import br.com.t4acontrol.backend.persistence.AndroidT4AStateStore;
+import br.com.t4acontrol.ble.BleProtocolMetadataProbeTransport;
 import br.com.t4acontrol.ble.DirectBleFallbackTransport;
 import br.com.t4acontrol.mqtt.DefaultMqttSettings;
 import br.com.t4acontrol.mqtt.MqttSettings;
@@ -32,8 +33,10 @@ public final class T4AApplication extends Application {
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
     T4ATransport tuyaTransport = new TuyaT4APlatform();
-    T4ATransport transport =
+    T4ATransport directProbe =
         new DirectBleFallbackTransport(this, tuyaTransport, listener::onRawLog);
+    T4ATransport transport =
+        new BleProtocolMetadataProbeTransport(directProbe, listener::onRawLog);
     return new T4ABackend(
         new AndroidT4AStateStore(this),
         provisioner,
