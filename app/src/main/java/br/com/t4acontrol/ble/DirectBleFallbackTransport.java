@@ -9,9 +9,14 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanRecord;
+import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelUuid;
 import br.com.t4acontrol.backend.T4AContracts;
 import br.com.t4acontrol.backend.T4ATransport;
 import java.util.Locale;
@@ -21,8 +26,12 @@ import java.util.function.Consumer;
 
 /** Experimental native-BLE probe with the operational Tuya transport kept as fallback. */
 public final class DirectBleFallbackTransport implements T4ATransport {
-  private static final long PROBE_TIMEOUT_MS = 6500L;
+  private static final long PROBE_TIMEOUT_MS = 8000L;
+  private static final long ADVERTISEMENT_OBSERVATION_MS = 1200L;
+  private static final long MTU_CALLBACK_WAIT_MS = 700L;
   private static final long NOTIFY_OBSERVATION_MS = 1500L;
+  private static final int REQUESTED_MTU = 247;
+  private static final int TUYA_COMPANY_ID = 0x07D0;
 
   private static final UUID TUYA_SERVICE =
       UUID.fromString("0000fd50-0000-1000-8000-00805f9b34fb");
@@ -40,9 +49,14 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   private final Object lock = new Object();
 
   private BluetoothGatt probeGatt;
+  private BluetoothLeScanner probeScanner;
   private T4AContracts.Device pendingDevice;
+  private String pendingNormalizedMac = "";
   private String probedDeviceId = "";
   private boolean probeFinished;
+  private boolean advertisementCaptured;
+  private boolean gattStarted;
+  private boolean serviceDiscoveryRequested;
 
   public DirectBleFallbackTransport(
       Context context, T4ATransport fallback, Consumer<String> rawLog) {
@@ -81,7 +95,11 @@ public final class DirectBleFallbackTransport implements T4ATransport {
         return;
       }
       pendingDevice = device;
+      pendingNormalizedMac = normalizeMac(device.mac);
       probeFinished = false;
+      advertisementCaptured = false;
+      gattStarted = false;
+      serviceDiscoveryRequested = false;
     }
 
     raw(
@@ -102,15 +120,16 @@ public final class DirectBleFallbackTransport implements T4ATransport {
         return;
       }
 
-      String normalizedMac = normalizeMac(device.mac);
+      String normalizedMac = pendingNormalizedMac;
       raw("ADDRESS normalized=" + !normalizedMac.equals(device.mac) + " mac=" + maskMac(normalizedMac));
-      BluetoothDevice bluetoothDevice = adapter.getRemoteDevice(normalizedMac);
-      BluetoothGatt gatt =
-          bluetoothDevice.connectGatt(context, false, probeCallback, BluetoothDevice.TRANSPORT_LE);
-      synchronized (lock) {
-        probeGatt = gatt;
+      if (!BluetoothAdapter.checkBluetoothAddress(normalizedMac)) {
+        raw("PROBE_ERROR stage=address reason=invalid_mac");
+        finishProbe(true, "invalid_mac");
+        return;
       }
+
       handler.postDelayed(probeTimeout, PROBE_TIMEOUT_MS);
+      startAdvertisementProbe(adapter);
     } catch (IllegalArgumentException | SecurityException error) {
       raw("PROBE_ERROR stage=start error=" + error.getClass().getSimpleName());
       finishProbe(true, error.getClass().getSimpleName());
@@ -144,7 +163,143 @@ public final class DirectBleFallbackTransport implements T4ATransport {
     fallback.destroy();
   }
 
+  private void startAdvertisementProbe(BluetoothAdapter adapter) {
+    BluetoothLeScanner scanner;
+    try {
+      scanner = adapter.getBluetoothLeScanner();
+    } catch (SecurityException error) {
+      raw("ADV_SCAN_ERROR stage=get_scanner error=SecurityException");
+      startGattProbe(adapter);
+      return;
+    }
+
+    if (scanner == null) {
+      raw("ADV_SCAN_SKIPPED reason=scanner_unavailable");
+      startGattProbe(adapter);
+      return;
+    }
+
+    synchronized (lock) {
+      if (probeFinished) return;
+      probeScanner = scanner;
+    }
+
+    try {
+      scanner.startScan(advertisementCallback);
+      raw("ADV_SCAN_START windowMs=" + ADVERTISEMENT_OBSERVATION_MS);
+      handler.postDelayed(finishAdvertisementObservation, ADVERTISEMENT_OBSERVATION_MS);
+    } catch (SecurityException | IllegalStateException error) {
+      raw("ADV_SCAN_ERROR stage=start error=" + error.getClass().getSimpleName());
+      synchronized (lock) {
+        probeScanner = null;
+      }
+      startGattProbe(adapter);
+    }
+  }
+
+  private final ScanCallback advertisementCallback =
+      new ScanCallback() {
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+          if (result == null || result.getDevice() == null) return;
+
+          String address;
+          try {
+            address = result.getDevice().getAddress();
+          } catch (SecurityException error) {
+            raw("ADV_SCAN_ERROR stage=result_address error=SecurityException");
+            return;
+          }
+          if (address == null || !address.equalsIgnoreCase(pendingNormalizedMac)) return;
+
+          synchronized (lock) {
+            if (advertisementCaptured || probeFinished) return;
+            advertisementCaptured = true;
+          }
+
+          ScanRecord record = result.getScanRecord();
+          byte[] rawBytes = record == null ? null : record.getBytes();
+          byte[] fd50 =
+              record == null ? null : record.getServiceData(new ParcelUuid(TUYA_SERVICE));
+          byte[] manufacturer =
+              record == null ? null : record.getManufacturerSpecificData(TUYA_COMPANY_ID);
+          raw(
+              "ADV_CAPTURE rssi="
+                  + result.getRssi()
+                  + " connectable="
+                  + result.isConnectable()
+                  + " rawLength="
+                  + lengthOf(rawBytes)
+                  + " raw="
+                  + toHex(rawBytes));
+          raw(
+              "ADV_TUYA fd50Length="
+                  + lengthOf(fd50)
+                  + " fd50="
+                  + toHex(fd50)
+                  + " mfg07D0Length="
+                  + lengthOf(manufacturer)
+                  + " mfg07D0="
+                  + toHex(manufacturer));
+          finishAdvertisementScanAndConnect("target_captured");
+        }
+
+        @Override
+        public void onScanFailed(int errorCode) {
+          raw("ADV_SCAN_ERROR stage=callback errorCode=" + errorCode);
+          finishAdvertisementScanAndConnect("scan_failed_" + errorCode);
+        }
+      };
+
+  private final Runnable finishAdvertisementObservation =
+      () -> finishAdvertisementScanAndConnect(advertisementCaptured ? "window_complete" : "target_not_seen");
+
+  private void finishAdvertisementScanAndConnect(String reason) {
+    handler.removeCallbacks(finishAdvertisementObservation);
+    stopAdvertisementScan();
+    raw("ADV_SCAN_FINISH reason=" + reason + " captured=" + advertisementCaptured);
+
+    BluetoothManager manager = context.getSystemService(BluetoothManager.class);
+    BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
+    if (adapter == null || !adapter.isEnabled()) {
+      finishProbe(true, "bluetooth_unavailable_after_scan");
+      return;
+    }
+    startGattProbe(adapter);
+  }
+
+  private void startGattProbe(BluetoothAdapter adapter) {
+    final String normalizedMac;
+    synchronized (lock) {
+      if (probeFinished || gattStarted) return;
+      gattStarted = true;
+      normalizedMac = pendingNormalizedMac;
+    }
+
+    try {
+      BluetoothDevice bluetoothDevice = adapter.getRemoteDevice(normalizedMac);
+      BluetoothGatt gatt =
+          bluetoothDevice.connectGatt(context, false, probeCallback, BluetoothDevice.TRANSPORT_LE);
+      synchronized (lock) {
+        probeGatt = gatt;
+      }
+      raw("GATT_CONNECT_REQUEST mac=" + maskMac(normalizedMac));
+    } catch (IllegalArgumentException | SecurityException error) {
+      raw("PROBE_ERROR stage=gatt_start error=" + error.getClass().getSimpleName());
+      finishProbe(true, "gatt_start_" + error.getClass().getSimpleName());
+    }
+  }
+
   private final Runnable probeTimeout = () -> finishProbe(true, "timeout");
+  private final Runnable mtuWaitExpired =
+      () -> {
+        raw("MTU_WAIT_EXPIRED proceedingWithServiceDiscovery=true");
+        BluetoothGatt gatt;
+        synchronized (lock) {
+          gatt = probeGatt;
+        }
+        if (gatt != null) requestServiceDiscovery(gatt);
+      };
   private final Runnable finishAfterObservation =
       () -> finishProbe(true, "notify_read_observation_complete");
 
@@ -163,20 +318,32 @@ public final class DirectBleFallbackTransport implements T4ATransport {
           if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
             boolean started;
             try {
-              started = gatt.discoverServices();
+              started = gatt.requestMtu(REQUESTED_MTU);
             } catch (SecurityException error) {
-              raw("PROBE_ERROR stage=discover error=SecurityException");
-              finishProbe(true, "discover_security_exception");
+              raw("PROBE_ERROR stage=mtu error=SecurityException");
+              requestServiceDiscovery(gatt);
               return;
             }
-            raw("SERVICE_DISCOVERY_REQUESTED started=" + started);
-            if (!started) finishProbe(true, "discover_services_false");
+            raw("MTU_REQUEST requested=" + REQUESTED_MTU + " started=" + started);
+            if (started) {
+              handler.removeCallbacks(mtuWaitExpired);
+              handler.postDelayed(mtuWaitExpired, MTU_CALLBACK_WAIT_MS);
+            } else {
+              requestServiceDiscovery(gatt);
+            }
             return;
           }
 
           if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
             finishProbe(true, "disconnected_status_" + status);
           }
+        }
+
+        @Override
+        public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+          handler.removeCallbacks(mtuWaitExpired);
+          raw("MTU_RESULT status=" + status + " mtu=" + mtu);
+          requestServiceDiscovery(gatt);
         }
 
         @Override
@@ -264,7 +431,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
                   + " uuid="
                   + characteristic.getUuid()
                   + " length="
-                  + (value == null ? 0 : value.length)
+                  + lengthOf(value)
                   + " hex="
                   + toHex(value));
           handler.removeCallbacks(finishAfterObservation);
@@ -278,11 +445,29 @@ public final class DirectBleFallbackTransport implements T4ATransport {
               "NOTIFY_RX uuid="
                   + characteristic.getUuid()
                   + " length="
-                  + (value == null ? 0 : value.length)
+                  + lengthOf(value)
                   + " hex="
                   + toHex(value));
         }
       };
+
+  private void requestServiceDiscovery(BluetoothGatt gatt) {
+    synchronized (lock) {
+      if (probeFinished || serviceDiscoveryRequested) return;
+      serviceDiscoveryRequested = true;
+    }
+
+    boolean started;
+    try {
+      started = gatt.discoverServices();
+    } catch (SecurityException error) {
+      raw("PROBE_ERROR stage=discover error=SecurityException");
+      finishProbe(true, "discover_security_exception");
+      return;
+    }
+    raw("SERVICE_DISCOVERY_REQUESTED started=" + started);
+    if (!started) finishProbe(true, "discover_services_false");
+  }
 
   private void logTopology(BluetoothGatt gatt) {
     int serviceCount = 0;
@@ -331,6 +516,20 @@ public final class DirectBleFallbackTransport implements T4ATransport {
             + descriptorCount);
   }
 
+  private void stopAdvertisementScan() {
+    final BluetoothLeScanner scanner;
+    synchronized (lock) {
+      scanner = probeScanner;
+      probeScanner = null;
+    }
+    if (scanner == null) return;
+    try {
+      scanner.stopScan(advertisementCallback);
+    } catch (SecurityException | IllegalStateException error) {
+      raw("ADV_SCAN_ERROR stage=stop error=" + error.getClass().getSimpleName());
+    }
+  }
+
   /** Closes the probe and optionally continues the requested connection through Tuya. */
   private void finishProbe(boolean continueWithFallback, String reason) {
     final BluetoothGatt gatt;
@@ -339,14 +538,18 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       if (probeFinished && probeGatt == null && pendingDevice == null) return;
       probeFinished = true;
       handler.removeCallbacks(probeTimeout);
+      handler.removeCallbacks(finishAdvertisementObservation);
+      handler.removeCallbacks(mtuWaitExpired);
       handler.removeCallbacks(finishAfterObservation);
       gatt = probeGatt;
       device = pendingDevice;
       probeGatt = null;
       pendingDevice = null;
+      pendingNormalizedMac = "";
       if (device != null) probedDeviceId = device.id;
     }
 
+    stopAdvertisementScan();
     if (gatt != null) {
       try {
         gatt.close();
@@ -380,6 +583,10 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   private static String maskMac(String mac) {
     if (mac == null || mac.length() < 5) return "<unknown>";
     return "**:**:**:**:" + mac.substring(mac.length() - 5);
+  }
+
+  private static int lengthOf(byte[] value) {
+    return value == null ? 0 : value.length;
   }
 
   private static String toHex(byte[] value) {
