@@ -36,6 +36,8 @@ public final class T4AContracts {
     public final String productId;
     /** Provider-neutral local communication key material, if exposed by the active provisioner. */
     public final String localKey;
+    /** Provider-neutral BLE security/session bootstrap key, if exposed by the active provisioner. */
+    public final String securityKey;
     /** Non-secret protocol/capability metadata useful when selecting a native transport codec. */
     public final Map<String, String> protocolMetadata;
     public final Map<String, Object> dps;
@@ -43,21 +45,27 @@ public final class T4AContracts {
 
     public Device(String id, String name, String mac, String uuid,
         Map<String, Object> dps, Map<String, DpSchema> schema) {
-      this(id, name, mac, uuid, "", "", Collections.emptyMap(), dps, schema);
+      this(id, name, mac, uuid, "", "", "", Collections.emptyMap(), dps, schema);
     }
 
     public Device(String id, String name, String mac, String uuid, String localKey,
         Map<String, Object> dps, Map<String, DpSchema> schema) {
-      this(id, name, mac, uuid, "", localKey, Collections.emptyMap(), dps, schema);
+      this(id, name, mac, uuid, "", localKey, "", Collections.emptyMap(), dps, schema);
     }
 
     public Device(String id, String name, String mac, String uuid, String productId,
         String localKey, Map<String, Object> dps, Map<String, DpSchema> schema) {
-      this(id, name, mac, uuid, productId, localKey, Collections.emptyMap(), dps, schema);
+      this(id, name, mac, uuid, productId, localKey, "", Collections.emptyMap(), dps, schema);
     }
 
     public Device(String id, String name, String mac, String uuid, String productId,
         String localKey, Map<String, String> protocolMetadata,
+        Map<String, Object> dps, Map<String, DpSchema> schema) {
+      this(id, name, mac, uuid, productId, localKey, "", protocolMetadata, dps, schema);
+    }
+
+    public Device(String id, String name, String mac, String uuid, String productId,
+        String localKey, String securityKey, Map<String, String> protocolMetadata,
         Map<String, Object> dps, Map<String, DpSchema> schema) {
       this.id = value(id);
       this.name = value(name);
@@ -65,6 +73,7 @@ public final class T4AContracts {
       this.uuid = value(uuid);
       this.productId = value(productId);
       this.localKey = value(localKey);
+      this.securityKey = value(securityKey);
       this.protocolMetadata = immutableMap(protocolMetadata);
       this.dps = immutableMap(dps);
       this.schema = immutableMap(schema);
