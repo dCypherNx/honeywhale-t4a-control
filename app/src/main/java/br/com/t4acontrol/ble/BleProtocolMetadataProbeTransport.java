@@ -6,7 +6,7 @@ import br.com.t4acontrol.backend.T4ATransport;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Selects the experimentally appropriate BLE bootstrap key while retaining Tuya fallback. */
+/** Keeps the direct BLE transport passive after the classic FD50 bootstrap was disproved. */
 public final class BleProtocolMetadataProbeTransport implements T4ATransport {
   private static final long DIRECT_PROBE_SUPPRESSION_MS = 12_000L;
 
@@ -47,19 +47,21 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
         + " uuid=" + device.uuid
         + " localKeyAvailable=" + (device.localKey != null && !device.localKey.isEmpty())
         + " securityKeyAvailable=" + securityKeyAvailable
-        + " bootstrapKey=" + (securityKeyAvailable ? "secKey" : "localKey")
-        + " activeWriteProbe=true");
+        + " bootstrapKey=none"
+        + " activeWriteProbe=false"
+        + " classicFd50Bootstrap=disproved");
     rawLog.accept("[BLE/DIRECT] PROTOCOL_CAPABILITIES " + formatMetadata(device.protocolMetadata)
         + " secretsLogged=false");
 
-    // DirectBleFallbackTransport currently accepts one neutral bootstrap key. For pv=2.2 devices
-    // ThingClips exposes a 16-byte secKey while devKey is absent; prefer that material. The key
-    // itself is never logged and the operational Tuya transport remains the fallback.
-    String bootstrapKey = securityKeyAvailable ? device.securityKey : device.localKey;
-    T4AContracts.Device probeDevice = new T4AContracts.Device(
-        device.id, device.name, device.mac, device.uuid, device.productId, bootstrapKey,
+    // f147 isolated the direct connection from ThingClips and proved that the classic
+    // marker=0x20/security=0x04/00F3 bootstrap receives no response with secKey. Keep the
+    // GATT/advertisement probe, but do not repeat a disproved proprietary write while the
+    // pv=2.2 bootstrap is investigated. An empty neutral key makes DirectBleFallbackTransport
+    // stop before DEVICE_INFO and then hand control back to the operational Tuya transport.
+    T4AContracts.Device passiveDevice = new T4AContracts.Device(
+        device.id, device.name, device.mac, device.uuid, device.productId, "",
         device.securityKey, device.protocolMetadata, device.dps, device.schema);
-    delegate.connect(probeDevice);
+    delegate.connect(passiveDevice);
   }
 
   @Override public boolean isConnected(String deviceId) { return delegate.isConnected(deviceId); }
