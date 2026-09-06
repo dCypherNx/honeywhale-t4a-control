@@ -29,13 +29,21 @@ final class TuyaFd50DeviceInfoCodec {
 
   private TuyaFd50DeviceInfoCodec() {}
 
-  static SessionMaterial sessionMaterial(String localKey) throws GeneralSecurityException {
-    if (localKey == null || localKey.length() < 6) {
-      throw new GeneralSecurityException("localKey must contain at least six characters");
+  static SessionMaterial sessionMaterial(String bootstrapKey) throws GeneralSecurityException {
+    if (bootstrapKey == null || bootstrapKey.length() < 6) {
+      throw new GeneralSecurityException("bootstrap key must contain at least six characters");
     }
-    byte[] localKey6 = localKey.substring(0, 6).getBytes(StandardCharsets.UTF_8);
-    byte[] loginKey = md5(localKey6);
-    return new SessionMaterial(localKey6, loginKey);
+    byte[] encoded = bootstrapKey.getBytes(StandardCharsets.UTF_8);
+    byte[] firstSix = Arrays.copyOf(encoded, 6);
+    byte[] loginKey;
+    if (encoded.length == 16) {
+      // Experimental pv=2.2 path: ThingClips exposes secKey as exactly 16 bytes. Try it directly
+      // as AES material rather than applying the classic first-six-bytes MD5 derivation.
+      loginKey = Arrays.copyOf(encoded, encoded.length);
+    } else {
+      loginKey = md5(firstSix);
+    }
+    return new SessionMaterial(firstSix, loginKey);
   }
 
   static SessionMaterial rawSecurityKeyMaterial(String securityKey)
@@ -47,20 +55,19 @@ final class TuyaFd50DeviceInfoCodec {
     if (rawKey.length != 16) {
       throw new GeneralSecurityException("securityKey must encode to exactly 16 bytes");
     }
-    byte[] firstSix = Arrays.copyOf(rawKey, 6);
-    return new SessionMaterial(firstSix, rawKey);
+    return new SessionMaterial(Arrays.copyOf(rawKey, 6), rawKey);
   }
 
-  static byte[] buildDeviceInfoFrame(String localKey, int sequence)
+  static byte[] buildDeviceInfoFrame(String bootstrapKey, int sequence)
       throws GeneralSecurityException {
     byte[] iv = new byte[16];
     RANDOM.nextBytes(iv);
-    return buildDeviceInfoFrame(localKey, sequence, iv);
+    return buildDeviceInfoFrame(bootstrapKey, sequence, iv);
   }
 
-  static byte[] buildDeviceInfoFrame(String localKey, int sequence, byte[] iv)
+  static byte[] buildDeviceInfoFrame(String bootstrapKey, int sequence, byte[] iv)
       throws GeneralSecurityException {
-    return buildDeviceInfoFrame(sessionMaterial(localKey), sequence, iv);
+    return buildDeviceInfoFrame(sessionMaterial(bootstrapKey), sequence, iv);
   }
 
   static byte[] buildDeviceInfoFrameRawSecurityKey(String securityKey, int sequence)
