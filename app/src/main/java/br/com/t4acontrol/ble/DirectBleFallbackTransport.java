@@ -12,29 +12,29 @@ import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 import br.com.t4acontrol.backend.T4AContracts;
 import br.com.t4acontrol.backend.T4ATransport;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Experimental native-BLE transport boundary with an operational Tuya fallback.
  *
  * <p>The first connection attempt for a device performs a read-only Android GATT probe: connect,
- * discover services/characteristics/descriptors, log the topology and close the native GATT. No
- * characteristic is read, written or subscribed. Whether the probe succeeds or fails, the normal
- * runtime session is then handed to the fallback transport.
+ * discover services/characteristics/descriptors, write the topology to the application's raw log
+ * and close the native GATT. No characteristic is read, written or subscribed. Whether the probe
+ * succeeds or fails, the normal runtime session is then handed to the fallback transport.
  *
  * <p>This deliberately keeps commands and telemetry on the proven Tuya path while giving us the
  * exact native GATT surface of an already provisioned T4A. It can be removed from the composition
  * root without changing backend business logic.
  */
 public final class DirectBleFallbackTransport implements T4ATransport {
-  private static final String TAG = "T4A.DirectBLE";
   private static final long PROBE_TIMEOUT_MS = 4000L;
 
   private final Context context;
   private final T4ATransport fallback;
+  private final Consumer<String> rawLog;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Object lock = new Object();
 
@@ -43,9 +43,11 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   private String probedDeviceId = "";
   private boolean probeFinished;
 
-  public DirectBleFallbackTransport(Context context, T4ATransport fallback) {
+  public DirectBleFallbackTransport(
+      Context context, T4ATransport fallback, Consumer<String> rawLog) {
     this.context = context.getApplicationContext();
     this.fallback = fallback;
+    this.rawLog = rawLog == null ? ignored -> {} : rawLog;
   }
 
   @Override
@@ -62,7 +64,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   @Override
   public void connect(T4AContracts.Device device) {
     if (device == null || device.mac == null || device.mac.trim().isEmpty()) {
-      Log.w(TAG, "probe skipped: device MAC is unavailable; using Tuya fallback");
+      raw("PROBE_SKIPPED reason=missing_mac fallback=true");
       fallback.connect(device);
       return;
     }
@@ -73,7 +75,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
         return;
       }
       if (probeGatt != null || pendingDevice != null) {
-        Log.w(TAG, "probe already active; using Tuya fallback for concurrent connect");
+        raw("PROBE_SKIPPED reason=already_active fallback=true");
         fallback.connect(device);
         return;
       }
@@ -81,15 +83,19 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       probeFinished = false;
     }
 
-    Log.i(
-        TAG,
-        "probe start deviceId=" + device.id + " mac=" + maskMac(device.mac) + " uuid=" + device.uuid);
+    raw(
+        "PROBE_START deviceId="
+            + device.id
+            + " mac="
+            + maskMac(device.mac)
+            + " uuid="
+            + device.uuid);
 
     try {
       BluetoothManager manager = context.getSystemService(BluetoothManager.class);
       BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
       if (adapter == null || !adapter.isEnabled()) {
-        finishProbe(true, "Bluetooth unavailable or disabled");
+        finishProbe(true, "bluetooth_unavailable");
         return;
       }
 
@@ -101,7 +107,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       }
       handler.postDelayed(probeTimeout, PROBE_TIMEOUT_MS);
     } catch (IllegalArgumentException | SecurityException error) {
-      Log.w(TAG, "probe could not start", error);
+      raw("PROBE_ERROR stage=start error=" + error.getClass().getSimpleName());
       finishProbe(true, error.getClass().getSimpleName());
     }
   }
@@ -139,9 +145,12 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-          Log.i(
-              TAG,
-              "connection state status=" + status + " state=" + newState + " mac="
+          raw(
+              "CONNECTION_STATE status="
+                  + status
+                  + " state="
+                  + newState
+                  + " mac="
                   + maskMac(gatt.getDevice().getAddress()));
 
           if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
@@ -149,27 +158,27 @@ public final class DirectBleFallbackTransport implements T4ATransport {
             try {
               started = gatt.discoverServices();
             } catch (SecurityException error) {
-              Log.w(TAG, "service discovery permission failure", error);
-              finishProbe(true, "discover SecurityException");
+              raw("PROBE_ERROR stage=discover error=SecurityException");
+              finishProbe(true, "discover_security_exception");
               return;
             }
-            Log.i(TAG, "service discovery requested=" + started);
+            raw("SERVICE_DISCOVERY_REQUESTED started=" + started);
             if (!started) {
-              finishProbe(true, "discoverServices returned false");
+              finishProbe(true, "discover_services_false");
             }
             return;
           }
 
           if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
-            finishProbe(true, "disconnected status=" + status);
+            finishProbe(true, "disconnected_status_" + status);
           }
         }
 
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
           if (status != BluetoothGatt.GATT_SUCCESS) {
-            Log.w(TAG, "service discovery failed status=" + status);
-            finishProbe(true, "service discovery status=" + status);
+            raw("PROBE_ERROR stage=services status=" + status);
+            finishProbe(true, "service_discovery_status_" + status);
             return;
           }
 
@@ -178,34 +187,47 @@ public final class DirectBleFallbackTransport implements T4ATransport {
           int descriptorCount = 0;
           for (BluetoothGattService service : gatt.getServices()) {
             serviceCount++;
-            Log.i(
-                TAG,
-                "SERVICE uuid=" + service.getUuid() + " type=" + service.getType()
-                    + " instanceId=" + service.getInstanceId());
+            raw(
+                "SERVICE uuid="
+                    + service.getUuid()
+                    + " type="
+                    + service.getType()
+                    + " instanceId="
+                    + service.getInstanceId());
             for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
               characteristicCount++;
-              Log.i(
-                  TAG,
-                  "  CHAR uuid=" + characteristic.getUuid()
-                      + " properties=0x" + Integer.toHexString(characteristic.getProperties())
-                      + " permissions=0x" + Integer.toHexString(characteristic.getPermissions())
-                      + " instanceId=" + characteristic.getInstanceId());
+              raw(
+                  "CHAR service="
+                      + service.getUuid()
+                      + " uuid="
+                      + characteristic.getUuid()
+                      + " properties=0x"
+                      + Integer.toHexString(characteristic.getProperties())
+                      + " permissions=0x"
+                      + Integer.toHexString(characteristic.getPermissions())
+                      + " instanceId="
+                      + characteristic.getInstanceId());
               for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors()) {
                 descriptorCount++;
-                Log.i(
-                    TAG,
-                    "    DESC uuid=" + descriptor.getUuid()
-                        + " permissions=0x" + Integer.toHexString(descriptor.getPermissions()));
+                raw(
+                    "DESC characteristic="
+                        + characteristic.getUuid()
+                        + " uuid="
+                        + descriptor.getUuid()
+                        + " permissions=0x"
+                        + Integer.toHexString(descriptor.getPermissions()));
               }
             }
           }
 
-          Log.i(
-              TAG,
-              "probe topology complete services=" + serviceCount
-                  + " characteristics=" + characteristicCount
-                  + " descriptors=" + descriptorCount);
-          finishProbe(true, "topology captured");
+          raw(
+              "TOPOLOGY_COMPLETE services="
+                  + serviceCount
+                  + " characteristics="
+                  + characteristicCount
+                  + " descriptors="
+                  + descriptorCount);
+          finishProbe(true, "topology_captured");
         }
       };
 
@@ -232,14 +254,18 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       try {
         gatt.close();
       } catch (RuntimeException error) {
-        Log.w(TAG, "error closing probe GATT", error);
+        raw("PROBE_ERROR stage=close error=" + error.getClass().getSimpleName());
       }
     }
 
-    Log.i(TAG, "probe finish reason=" + reason + " fallback=" + continueWithFallback);
+    raw("PROBE_FINISH reason=" + reason + " fallback=" + continueWithFallback);
     if (continueWithFallback && device != null) {
       fallback.connect(device);
     }
+  }
+
+  private void raw(String message) {
+    rawLog.accept("[BLE/DIRECT] " + message);
   }
 
   private static String maskMac(String mac) {
