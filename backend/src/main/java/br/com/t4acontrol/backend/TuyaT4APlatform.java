@@ -2,6 +2,7 @@ package br.com.t4acontrol.backend;
 
 import br.com.t4acontrol.backend.T4AContracts.*;
 import com.alibaba.fastjson.JSON;
+import com.thingclips.smart.android.ble.api.BleLogCallback;
 import com.thingclips.smart.android.ble.api.LeScanSetting;
 import com.thingclips.smart.android.ble.api.ScanDeviceBean;
 import com.thingclips.smart.android.ble.api.ScanType;
@@ -17,11 +18,30 @@ import com.thingclips.smart.sdk.api.*;
 import com.thingclips.smart.sdk.bean.BleActivatorBean;
 import com.thingclips.smart.sdk.bean.DeviceBean;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /** ThingClips implementation of both replaceable boundaries. No Tuya type escapes this class. */
 public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
+  private static final int BUSINESS_LOG_MAX_CHARS = 420;
+  private static final Pattern SENSITIVE_ASSIGNMENT = Pattern.compile("(?i)(local.?key|sec.?key|dev.?key|auth.?key|login.?key|token|password|passwd|pwd)\\s*[:=]\\s*[^,;\\s}]+", Pattern.CASE_INSENSITIVE);
+
   private final Map<String, ScanDeviceBean> discoveries = new HashMap<>();
+  private final Consumer<String> rawLog;
+  private final BleLogCallback bleLogCallback;
+  private final Set<String> knownSecrets = new LinkedHashSet<>();
   private IThingDevice activeDevice;
+
+  public TuyaT4APlatform() { this(null); }
+
+  public TuyaT4APlatform(Consumer<String> rawLog) {
+    this.rawLog = rawLog == null ? ignored -> {} : rawLog;
+    this.bleLogCallback = (fileName, content) ->
+        this.rawLog.accept("[SDK/BLELOG] tag=" + safeTag(fileName)
+            + " content=" + sanitizeBusinessLog(content));
+    ThingHomeSdk.getBleManager().registerBusinessLog(bleLogCallback);
+    this.rawLog.accept("[SDK/BLELOG] REGISTERED internalCommunication=true secretsRedacted=true");
+  }
 
   @Override public String currentAccount() { User user = ThingHomeSdk.getUserInstance().getUser(); return user == null ? null : T4AContracts.value(user.getEmail()); }
   @Override public void login(String countryCode, String email, String password, Callback<String> callback) { ThingHomeSdk.getUserInstance().loginWithEmail(countryCode, email, password, new ILoginCallback() { @Override public void onSuccess(User user) { String account = user == null ? "" : T4AContracts.value(user.getEmail()); callback.onSuccess(account.isEmpty() ? email : account); } @Override public void onError(String code, String error) { callback.onError(code, error); } }); }
@@ -32,13 +52,49 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
   private void activate(long homeId, ScanDeviceBean candidate, String token, Callback<Device> callback) { BleActivatorBean bean = new BleActivatorBean(candidate); bean.homeId = homeId; bean.address = candidate.getAddress(); bean.uuid = candidate.getUuid(); bean.productId = candidate.getProductId(); bean.deviceType = candidate.getDeviceType(); Map<String,Object> extra = new HashMap<>(); extra.put("token", token); bean.setExtendsData(extra); ThingHomeSdk.getActivator().newBleActivator().startActivator(bean, new IBleActivatorListener() { @Override public void onSuccess(DeviceBean result) { callback.onSuccess(toDevice(result)); } @Override public void onFailure(int code, String message, Object handle) { callback.onError(String.valueOf(code), message); } }); }
   @Override public void attach(Device device, DeviceListener listener) { detach(); activeDevice = ThingHomeSdk.newDeviceInstance(device.id); activeDevice.registerDeviceListener(new IDeviceListener() { @Override public void onDpUpdate(String id, Map<String,Object> update) { listener.onDpUpdate(id, update); } @Override public void onRemoved(String id) { listener.onRemoved(id); } @Override public void onStatusChanged(String id, boolean online) { listener.onConnectionChanged(id, isConnected(id)); } @Override public void onNetworkStatusChanged(String id, boolean online) {} @Override public void onDevInfoUpdate(String id) { listener.onDeviceInfoChanged(id); } }); }
   @Override public void detach() { if (activeDevice != null) { activeDevice.unRegisterDevListener(); activeDevice.onDestroy(); activeDevice = null; } }
-  @Override public void connect(Device device) { BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(true).setScanTimeout(30); ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(builder)); }
+  @Override public void connect(Device device) {
+    rememberSecrets(ThingHomeSdk.getDataInstance().getDeviceBean(device.id));
+    BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(true).setScanTimeout(30);
+    ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(builder));
+  }
   @Override public boolean isConnected(String deviceId) { return ThingHomeSdk.getBleManager().isBleLocalOnline(deviceId); }
   @Override public Device cachedDevice(String deviceId) { return toDevice(ThingHomeSdk.getDataInstance().getDeviceBean(deviceId)); }
   @Override public void publish(String deviceId, Map<String,Object> dps, ResultCallback callback) { if (activeDevice == null) { callback.onError("NOT_ATTACHED", "Dispositivo sem sessão ativa"); return; } activeDevice.publishDps(JSON.toJSONString(dps), new IResultCallback() { @Override public void onSuccess() { callback.onSuccess(); } @Override public void onError(String code, String error) { callback.onError(code, error); } }); }
   @Override public void readRssi(String mac, RssiCallback callback) { ThingHomeSdk.getBleOperator().readBluetoothRssi(mac, callback::onResult); }
   @Override public void remove(String deviceId, ResultCallback callback) { if (activeDevice == null) { callback.onError("NOT_ATTACHED", "Dispositivo sem sessão ativa"); return; } activeDevice.removeDevice(new IResultCallback() { @Override public void onSuccess() { callback.onSuccess(); } @Override public void onError(String code, String error) { callback.onError(code, error); } }); }
-  @Override public void destroy() { stopDiscovery(); detach(); discoveries.clear(); }
+  @Override public void destroy() { stopDiscovery(); detach(); discoveries.clear(); knownSecrets.clear(); ThingHomeSdk.getBleManager().unregisterBusinessLog(bleLogCallback); }
+
+  private void rememberSecrets(DeviceBean source) {
+    if (source == null) return;
+    knownSecrets.clear();
+    addSecret(source.getLocalKey());
+    addSecret(source.getSecKey());
+    addSecret(source.getDevKey());
+  }
+
+  private void addSecret(String value) {
+    if (value == null || value.isEmpty()) return;
+    knownSecrets.add(value);
+    if (value.length() >= 6) knownSecrets.add(value.substring(0, 6));
+  }
+
+  private String sanitizeBusinessLog(String content) {
+    if (content == null) return "<null>";
+    String sanitized = SENSITIVE_ASSIGNMENT.matcher(content).replaceAll("$1=<redacted>");
+    for (String secret : knownSecrets) {
+      if (!secret.isEmpty()) sanitized = sanitized.replace(secret, "<redacted>");
+    }
+    sanitized = sanitized.replace('\n', ' ').replace('\r', ' ').trim();
+    if (sanitized.length() > BUSINESS_LOG_MAX_CHARS) {
+      sanitized = sanitized.substring(0, BUSINESS_LOG_MAX_CHARS) + "…";
+    }
+    return "len=" + content.length() + " " + sanitized;
+  }
+
+  private static String safeTag(String value) {
+    if (value == null || value.isBlank()) return "<none>";
+    return value.replace('\n', '_').replace('\r', '_');
+  }
 
   private static String discoveryId(ScanDeviceBean device) { return T4AContracts.value(device.getUuid()) + "|" + T4AContracts.value(device.getAddress()); }
   private static String value(String value) { return value == null ? "" : value; }
