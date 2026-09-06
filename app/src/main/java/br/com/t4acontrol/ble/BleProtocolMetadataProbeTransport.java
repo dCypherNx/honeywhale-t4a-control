@@ -8,7 +8,9 @@ import java.util.function.Consumer;
 
 /** Selects the current non-actuating native BLE bootstrap experiment. */
 public final class BleProtocolMetadataProbeTransport implements T4ATransport {
-  private static final long DIRECT_PROBE_SUPPRESSION_MS = 12_000L;
+  // Keep external reconnect attempts out of the entire native experiment plus the deliberately
+  // delayed provider fallback. This is intentionally generous on the experimental branch.
+  private static final long DIRECT_PROBE_SUPPRESSION_MS = 30_000L;
 
   private final T4ATransport delegate;
   private final Consumer<String> rawLog;
@@ -50,6 +52,7 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
         + " securityKeyAvailable=" + securityKeyAvailable
         + " bootstrapKey=" + (rawSecurityKeyCandidate ? "secKey_raw16" : "none")
         + " activeWriteProbe=" + rawSecurityKeyCandidate
+        + " reconnectSuppressionMs=" + DIRECT_PROBE_SUPPRESSION_MS
         + " classicFd50Bootstrap=disproved");
     rawLog.accept("[BLE/DIRECT] PROTOCOL_CAPABILITIES " + formatMetadata(device.protocolMetadata)
         + " secretsLogged=false");
