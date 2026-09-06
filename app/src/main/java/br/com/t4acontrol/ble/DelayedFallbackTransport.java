@@ -30,6 +30,12 @@ public final class DelayedFallbackTransport implements T4ATransport {
           T4AContracts.Device device = pendingDevice;
           pendingDevice = null;
           if (destroyed || device == null) return;
+          if (this.delegate.isConnected(device.id)) {
+            this.rawLog.accept(
+                "[BLE/DIRECT] FALLBACK_SKIPPED reason=already_connected provider=tuya deviceId="
+                    + device.id);
+            return;
+          }
           this.rawLog.accept(
               "[BLE/DIRECT] FALLBACK_EXECUTE provider=tuya deviceId=" + device.id);
           this.delegate.connect(device);
@@ -51,6 +57,13 @@ public final class DelayedFallbackTransport implements T4ATransport {
   public void connect(T4AContracts.Device device) {
     if (destroyed || device == null) {
       if (!destroyed) delegate.connect(device);
+      return;
+    }
+    if (delegate.isConnected(device.id)) {
+      cancelPending("already_connected");
+      rawLog.accept(
+          "[BLE/DIRECT] FALLBACK_SKIPPED reason=already_connected provider=tuya deviceId="
+              + device.id);
       return;
     }
     pendingDevice = device;
