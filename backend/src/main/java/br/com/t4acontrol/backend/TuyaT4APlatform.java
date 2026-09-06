@@ -332,6 +332,7 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
         source.getName(),
         source.getMac(),
         source.getUuid(),
+        source.getLocalKey(),
         source.getDps(),
         schema);
   }
