@@ -32,7 +32,8 @@ public final class T4AApplication extends Application {
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
     T4ATransport tuyaTransport = new TuyaT4APlatform();
-    T4ATransport transport = new DirectBleFallbackTransport(this, tuyaTransport);
+    T4ATransport transport =
+        new DirectBleFallbackTransport(this, tuyaTransport, listener::onRawLog);
     return new T4ABackend(
         new AndroidT4AStateStore(this),
         provisioner,
