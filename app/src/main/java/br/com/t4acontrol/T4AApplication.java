@@ -33,7 +33,7 @@ public final class T4AApplication extends Application {
    */
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
-    T4ATransport tuyaTransport = new TuyaT4APlatform();
+    T4ATransport tuyaTransport = new TuyaT4APlatform(listener::onRawLog);
     T4ATransport delayedTuya =
         new DelayedFallbackTransport(tuyaTransport, listener::onRawLog);
     T4ATransport directProbe =
