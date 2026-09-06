@@ -99,7 +99,9 @@ public final class DirectBleFallbackTransport implements T4ATransport {
         return;
       }
 
-      BluetoothDevice bluetoothDevice = adapter.getRemoteDevice(device.mac);
+      String normalizedMac = normalizeMac(device.mac);
+      raw("ADDRESS normalized=" + !normalizedMac.equals(device.mac) + " mac=" + maskMac(normalizedMac));
+      BluetoothDevice bluetoothDevice = adapter.getRemoteDevice(normalizedMac);
       BluetoothGatt gatt =
           bluetoothDevice.connectGatt(context, false, probeCallback, BluetoothDevice.TRANSPORT_LE);
       synchronized (lock) {
@@ -266,6 +268,22 @@ public final class DirectBleFallbackTransport implements T4ATransport {
 
   private void raw(String message) {
     rawLog.accept("[BLE/DIRECT] " + message);
+  }
+
+  private static String normalizeMac(String mac) {
+    if (mac == null) return "";
+    String value = mac.trim().toUpperCase(java.util.Locale.ROOT);
+    if (BluetoothAdapter.checkBluetoothAddress(value)) return value;
+
+    String compact = value.replace(":", "").replace("-", "");
+    if (compact.length() != 12) return value;
+
+    StringBuilder normalized = new StringBuilder(17);
+    for (int index = 0; index < compact.length(); index += 2) {
+      if (normalized.length() > 0) normalized.append(':');
+      normalized.append(compact, index, index + 2);
+    }
+    return normalized.toString();
   }
 
   private static String maskMac(String mac) {
