@@ -14,11 +14,15 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanRecord;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelUuid;
 import br.com.t4acontrol.backend.T4AContracts;
 import br.com.t4acontrol.backend.T4ATransport;
+import java.io.ByteArrayOutputStream;
+import java.security.GeneralSecurityException;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -26,15 +30,18 @@ import java.util.function.Consumer;
 
 /** Experimental native-BLE probe with the operational Tuya transport kept as fallback. */
 public final class DirectBleFallbackTransport implements T4ATransport {
-  private static final long PROBE_TIMEOUT_MS = 8000L;
-  private static final long ADVERTISEMENT_OBSERVATION_MS = 1200L;
+  private static final long PROBE_TIMEOUT_MS = 11000L;
+  private static final long ADVERTISEMENT_OBSERVATION_MS = 2500L;
   private static final long MTU_CALLBACK_WAIT_MS = 700L;
-  private static final long NOTIFY_OBSERVATION_MS = 1500L;
+  private static final long HANDSHAKE_OBSERVATION_MS = 2200L;
   private static final int REQUESTED_MTU = 247;
   private static final int TUYA_COMPANY_ID = 0x07D0;
+  private static final int MAX_ADVERTISEMENT_CANDIDATES = 5;
 
   private static final UUID TUYA_SERVICE =
       UUID.fromString("0000fd50-0000-1000-8000-00805f9b34fb");
+  private static final UUID TUYA_WRITE =
+      UUID.fromString("00000001-0000-1001-8001-00805f9b07d0");
   private static final UUID TUYA_NOTIFY =
       UUID.fromString("00000002-0000-1001-8001-00805f9b07d0");
   private static final UUID TUYA_READ =
@@ -54,9 +61,15 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   private String pendingNormalizedMac = "";
   private String probedDeviceId = "";
   private boolean probeFinished;
-  private boolean advertisementCaptured;
   private boolean gattStarted;
   private boolean serviceDiscoveryRequested;
+  private int advertisementCandidateCount;
+
+  private TuyaFd50DeviceInfoCodec.SessionMaterial handshakeMaterial;
+  private final ByteArrayOutputStream notifyBuffer = new ByteArrayOutputStream();
+  private int notifyExpectedPacket;
+  private int notifyExpectedLength = -1;
+  private int notifyProtocolMarker = -1;
 
   public DirectBleFallbackTransport(
       Context context, T4ATransport fallback, Consumer<String> rawLog) {
@@ -97,9 +110,11 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       pendingDevice = device;
       pendingNormalizedMac = normalizeMac(device.mac);
       probeFinished = false;
-      advertisementCaptured = false;
       gattStarted = false;
       serviceDiscoveryRequested = false;
+      advertisementCandidateCount = 0;
+      handshakeMaterial = null;
+      resetNotificationAssembler();
     }
 
     raw(
@@ -172,7 +187,6 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       startGattProbe(adapter);
       return;
     }
-
     if (scanner == null) {
       raw("ADV_SCAN_SKIPPED reason=scanner_unavailable");
       startGattProbe(adapter);
@@ -186,7 +200,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
 
     try {
       scanner.startScan(advertisementCallback);
-      raw("ADV_SCAN_START windowMs=" + ADVERTISEMENT_OBSERVATION_MS);
+      raw("ADV_SCAN_START windowMs=" + ADVERTISEMENT_OBSERVATION_MS + " target=fd50_or_known_mac");
       handler.postDelayed(finishAdvertisementObservation, ADVERTISEMENT_OBSERVATION_MS);
     } catch (SecurityException | IllegalStateException error) {
       raw("ADV_SCAN_ERROR stage=start error=" + error.getClass().getSimpleName());
@@ -210,28 +224,35 @@ public final class DirectBleFallbackTransport implements T4ATransport {
             raw("ADV_SCAN_ERROR stage=result_address error=SecurityException");
             return;
           }
-          if (address == null || !address.equalsIgnoreCase(pendingNormalizedMac)) return;
-
-          synchronized (lock) {
-            if (advertisementCaptured || probeFinished) return;
-            advertisementCaptured = true;
-          }
 
           ScanRecord record = result.getScanRecord();
-          byte[] rawBytes = record == null ? null : record.getBytes();
-          byte[] fd50 =
-              record == null ? null : record.getServiceData(new ParcelUuid(TUYA_SERVICE));
+          byte[] fd50 = record == null ? null : record.getServiceData(new ParcelUuid(TUYA_SERVICE));
           byte[] manufacturer =
               record == null ? null : record.getManufacturerSpecificData(TUYA_COMPANY_ID);
+          boolean serviceUuidPresent = hasServiceUuid(record, TUYA_SERVICE);
+          boolean knownAddress =
+              address != null && address.equalsIgnoreCase(pendingNormalizedMac);
+          boolean tuyaCandidate = serviceUuidPresent || fd50 != null || manufacturer != null;
+          if (!knownAddress && !tuyaCandidate) return;
+
+          synchronized (lock) {
+            if (probeFinished || advertisementCandidateCount >= MAX_ADVERTISEMENT_CANDIDATES) return;
+            advertisementCandidateCount++;
+          }
+
           raw(
-              "ADV_CAPTURE rssi="
+              "ADV_CANDIDATE index="
+                  + advertisementCandidateCount
+                  + " mac="
+                  + maskMac(address)
+                  + " knownAddress="
+                  + knownAddress
+                  + " rssi="
                   + result.getRssi()
                   + " connectable="
                   + result.isConnectable()
-                  + " rawLength="
-                  + lengthOf(rawBytes)
-                  + " raw="
-                  + toHex(rawBytes));
+                  + " fd50Uuid="
+                  + serviceUuidPresent);
           raw(
               "ADV_TUYA fd50Length="
                   + lengthOf(fd50)
@@ -241,7 +262,6 @@ public final class DirectBleFallbackTransport implements T4ATransport {
                   + lengthOf(manufacturer)
                   + " mfg07D0="
                   + toHex(manufacturer));
-          finishAdvertisementScanAndConnect("target_captured");
         }
 
         @Override
@@ -252,12 +272,12 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       };
 
   private final Runnable finishAdvertisementObservation =
-      () -> finishAdvertisementScanAndConnect(advertisementCaptured ? "window_complete" : "target_not_seen");
+      () -> finishAdvertisementScanAndConnect("window_complete");
 
   private void finishAdvertisementScanAndConnect(String reason) {
     handler.removeCallbacks(finishAdvertisementObservation);
     stopAdvertisementScan();
-    raw("ADV_SCAN_FINISH reason=" + reason + " captured=" + advertisementCaptured);
+    raw("ADV_SCAN_FINISH reason=" + reason + " candidates=" + advertisementCandidateCount);
 
     BluetoothManager manager = context.getSystemService(BluetoothManager.class);
     BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
@@ -300,8 +320,8 @@ public final class DirectBleFallbackTransport implements T4ATransport {
         }
         if (gatt != null) requestServiceDiscovery(gatt);
       };
-  private final Runnable finishAfterObservation =
-      () -> finishProbe(true, "notify_read_observation_complete");
+  private final Runnable finishAfterHandshakeObservation =
+      () -> finishProbe(true, "device_info_observation_complete");
 
   private final BluetoothGattCallback probeCallback =
       new BluetoothGattCallback() {
@@ -364,7 +384,8 @@ public final class DirectBleFallbackTransport implements T4ATransport {
 
           BluetoothGattCharacteristic notifyCharacteristic = service.getCharacteristic(TUYA_NOTIFY);
           BluetoothGattCharacteristic readCharacteristic = service.getCharacteristic(TUYA_READ);
-          if (notifyCharacteristic == null || readCharacteristic == null) {
+          BluetoothGattCharacteristic writeCharacteristic = service.getCharacteristic(TUYA_WRITE);
+          if (notifyCharacteristic == null || readCharacteristic == null || writeCharacteristic == null) {
             raw("PROBE_ERROR stage=protocol reason=expected_characteristic_missing");
             finishProbe(true, "expected_characteristic_missing");
             return;
@@ -434,8 +455,11 @@ public final class DirectBleFallbackTransport implements T4ATransport {
                   + lengthOf(value)
                   + " hex="
                   + toHex(value));
-          handler.removeCallbacks(finishAfterObservation);
-          handler.postDelayed(finishAfterObservation, NOTIFY_OBSERVATION_MS);
+          if (status != BluetoothGatt.GATT_SUCCESS) {
+            finishProbe(true, "read_status_" + status);
+            return;
+          }
+          sendDeviceInfoProbe(gatt);
         }
 
         @Override
@@ -448,8 +472,175 @@ public final class DirectBleFallbackTransport implements T4ATransport {
                   + lengthOf(value)
                   + " hex="
                   + toHex(value));
+          if (TUYA_NOTIFY.equals(characteristic.getUuid())) {
+            handleTuyaNotification(value);
+          }
         }
       };
+
+  private void sendDeviceInfoProbe(BluetoothGatt gatt) {
+    T4AContracts.Device device;
+    synchronized (lock) {
+      if (probeFinished) return;
+      device = pendingDevice;
+    }
+    if (device == null || device.localKey == null || device.localKey.length() < 6) {
+      raw("DEVICE_INFO_SKIPPED reason=local_key_unavailable");
+      finishProbe(true, "device_info_local_key_unavailable");
+      return;
+    }
+
+    BluetoothGattService service = gatt.getService(TUYA_SERVICE);
+    BluetoothGattCharacteristic writeCharacteristic =
+        service == null ? null : service.getCharacteristic(TUYA_WRITE);
+    if (writeCharacteristic == null) {
+      finishProbe(true, "device_info_write_characteristic_missing");
+      return;
+    }
+
+    final byte[] frame;
+    try {
+      handshakeMaterial = TuyaFd50DeviceInfoCodec.sessionMaterial(device.localKey);
+      frame = TuyaFd50DeviceInfoCodec.buildDeviceInfoFrame(device.localKey, 1);
+    } catch (GeneralSecurityException error) {
+      raw("DEVICE_INFO_ERROR stage=build error=" + error.getClass().getSimpleName());
+      finishProbe(true, "device_info_build_error");
+      return;
+    }
+
+    raw(
+        "DEVICE_INFO_FRAME length="
+            + frame.length
+            + " packet=0 encryptedLength="
+            + ((frame[1] & 0xFF))
+            + " marker=0x"
+            + String.format(Locale.ROOT, "%02X", frame[2] & 0xFF)
+            + " security=0x04 seq=1 payload=00F3 secretsLogged=false");
+
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        int writeStatus =
+            gatt.writeCharacteristic(
+                writeCharacteristic,
+                frame,
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+        raw("DEVICE_INFO_WRITE_REQUEST status=" + writeStatus + " writeType=no_response");
+        if (writeStatus != BluetoothGatt.GATT_SUCCESS) {
+          finishProbe(true, "device_info_write_request_" + writeStatus);
+          return;
+        }
+      } else {
+        writeCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+        writeCharacteristic.setValue(frame);
+        boolean started = gatt.writeCharacteristic(writeCharacteristic);
+        raw("DEVICE_INFO_WRITE_REQUEST started=" + started + " writeType=no_response");
+        if (!started) {
+          finishProbe(true, "device_info_write_request_false");
+          return;
+        }
+      }
+    } catch (SecurityException error) {
+      raw("DEVICE_INFO_ERROR stage=write error=SecurityException");
+      finishProbe(true, "device_info_write_security_exception");
+      return;
+    }
+
+    handler.removeCallbacks(finishAfterHandshakeObservation);
+    handler.postDelayed(finishAfterHandshakeObservation, HANDSHAKE_OBSERVATION_MS);
+  }
+
+  private void handleTuyaNotification(byte[] value) {
+    if (value == null || value.length == 0) return;
+
+    try {
+      VarInt packet = readVarInt(value, 0);
+      int packetNumber = packet.value;
+      int pos = packet.nextOffset;
+
+      if (packetNumber == 0) {
+        VarInt totalLength = readVarInt(value, pos);
+        pos = totalLength.nextOffset;
+        if (pos >= value.length) throw new IllegalArgumentException("missing protocol marker");
+        notifyBuffer.reset();
+        notifyExpectedPacket = 0;
+        notifyExpectedLength = totalLength.value;
+        notifyProtocolMarker = value[pos++] & 0xFF;
+      }
+
+      if (packetNumber != notifyExpectedPacket) {
+        raw(
+            "DEVICE_INFO_RX_REASSEMBLY_RESET expectedPacket="
+                + notifyExpectedPacket
+                + " receivedPacket="
+                + packetNumber);
+        resetNotificationAssembler();
+        return;
+      }
+
+      notifyBuffer.write(value, pos, value.length - pos);
+      notifyExpectedPacket++;
+      raw(
+          "DEVICE_INFO_RX_FRAGMENT packet="
+              + packetNumber
+              + " accumulated="
+              + notifyBuffer.size()
+              + " expected="
+              + notifyExpectedLength
+              + " marker=0x"
+              + String.format(Locale.ROOT, "%02X", notifyProtocolMarker));
+
+      if (notifyExpectedLength < 0 || notifyBuffer.size() < notifyExpectedLength) return;
+      if (notifyBuffer.size() > notifyExpectedLength) {
+        raw("DEVICE_INFO_RX_ERROR reason=length_overflow");
+        resetNotificationAssembler();
+        return;
+      }
+
+      byte[] encrypted = notifyBuffer.toByteArray();
+      TuyaFd50DeviceInfoCodec.SessionMaterial material = handshakeMaterial;
+      if (material == null) {
+        raw("DEVICE_INFO_RX_ERROR reason=session_material_missing");
+        resetNotificationAssembler();
+        return;
+      }
+
+      TuyaFd50DeviceInfoCodec.ParsedDeviceInfo parsed =
+          TuyaFd50DeviceInfoCodec.parseDeviceInfoResponse(
+              (byte) notifyProtocolMarker, encrypted, material);
+      raw(
+          "DEVICE_INFO_RESPONSE parsed=true marker=0x"
+              + String.format(Locale.ROOT, "%02X", parsed.protocolMarker)
+              + " security=0x"
+              + String.format(Locale.ROOT, "%02X", parsed.securityFlag)
+              + " seq="
+              + parsed.sequence
+              + " responseTo="
+              + parsed.responseTo
+              + " payloadLength="
+              + parsed.payloadLength
+              + " deviceVersion="
+              + parsed.deviceVersion
+              + " protocolVersion="
+              + parsed.protocolVersion
+              + " hardwareVersion="
+              + parsed.hardwareVersion
+              + " flags=0x"
+              + Integer.toHexString(parsed.flags)
+              + " bound="
+              + parsed.bound
+              + " sessionKeyDerived="
+              + (parsed.sessionKey.length == 16)
+              + " authKeyAvailable="
+              + (parsed.authKey.length == 32)
+              + " secretsLogged=false");
+      resetNotificationAssembler();
+      handler.removeCallbacks(finishAfterHandshakeObservation);
+      handler.postDelayed(finishAfterHandshakeObservation, 250L);
+    } catch (GeneralSecurityException | IllegalArgumentException error) {
+      raw("DEVICE_INFO_RX_ERROR error=" + error.getClass().getSimpleName());
+      resetNotificationAssembler();
+    }
+  }
 
   private void requestServiceDiscovery(BluetoothGatt gatt) {
     synchronized (lock) {
@@ -540,12 +731,14 @@ public final class DirectBleFallbackTransport implements T4ATransport {
       handler.removeCallbacks(probeTimeout);
       handler.removeCallbacks(finishAdvertisementObservation);
       handler.removeCallbacks(mtuWaitExpired);
-      handler.removeCallbacks(finishAfterObservation);
+      handler.removeCallbacks(finishAfterHandshakeObservation);
       gatt = probeGatt;
       device = pendingDevice;
       probeGatt = null;
       pendingDevice = null;
       pendingNormalizedMac = "";
+      handshakeMaterial = null;
+      resetNotificationAssembler();
       if (device != null) probedDeviceId = device.id;
     }
 
@@ -562,8 +755,36 @@ public final class DirectBleFallbackTransport implements T4ATransport {
     if (continueWithFallback && device != null) fallback.connect(device);
   }
 
+  private void resetNotificationAssembler() {
+    notifyBuffer.reset();
+    notifyExpectedPacket = 0;
+    notifyExpectedLength = -1;
+    notifyProtocolMarker = -1;
+  }
+
   private void raw(String message) {
     rawLog.accept("[BLE/DIRECT] " + message);
+  }
+
+  private static boolean hasServiceUuid(ScanRecord record, UUID uuid) {
+    if (record == null) return false;
+    List<ParcelUuid> serviceUuids = record.getServiceUuids();
+    if (serviceUuids == null) return false;
+    ParcelUuid expected = new ParcelUuid(uuid);
+    return serviceUuids.contains(expected);
+  }
+
+  private static VarInt readVarInt(byte[] data, int start) {
+    int result = 0;
+    int shift = 0;
+    int offset = start;
+    while (offset < data.length && shift < 28) {
+      int current = data[offset++] & 0xFF;
+      result |= (current & 0x7F) << shift;
+      if ((current & 0x80) == 0) return new VarInt(result, offset);
+      shift += 7;
+    }
+    throw new IllegalArgumentException("invalid Tuya varint");
   }
 
   private static String normalizeMac(String mac) {
@@ -594,5 +815,15 @@ public final class DirectBleFallbackTransport implements T4ATransport {
     StringBuilder hex = new StringBuilder(value.length * 2);
     for (byte item : value) hex.append(String.format(Locale.ROOT, "%02X", item & 0xFF));
     return hex.toString();
+  }
+
+  private static final class VarInt {
+    final int value;
+    final int nextOffset;
+
+    VarInt(int value, int nextOffset) {
+      this.value = value;
+      this.nextOffset = nextOffset;
+    }
   }
 }
