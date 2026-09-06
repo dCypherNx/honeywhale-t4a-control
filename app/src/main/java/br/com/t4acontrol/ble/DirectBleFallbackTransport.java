@@ -14,23 +14,24 @@ import android.os.Handler;
 import android.os.Looper;
 import br.com.t4acontrol.backend.T4AContracts;
 import br.com.t4acontrol.backend.T4ATransport;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Consumer;
 
-/**
- * Experimental native-BLE transport boundary with an operational Tuya fallback.
- *
- * <p>The first connection attempt for a device performs a read-only Android GATT probe: connect,
- * discover services/characteristics/descriptors, write the topology to the application's raw log
- * and close the native GATT. No characteristic is read, written or subscribed. Whether the probe
- * succeeds or fails, the normal runtime session is then handed to the fallback transport.
- *
- * <p>This deliberately keeps commands and telemetry on the proven Tuya path while giving us the
- * exact native GATT surface of an already provisioned T4A. It can be removed from the composition
- * root without changing backend business logic.
- */
+/** Experimental native-BLE probe with the operational Tuya transport kept as fallback. */
 public final class DirectBleFallbackTransport implements T4ATransport {
-  private static final long PROBE_TIMEOUT_MS = 4000L;
+  private static final long PROBE_TIMEOUT_MS = 6500L;
+  private static final long NOTIFY_OBSERVATION_MS = 1500L;
+
+  private static final UUID TUYA_SERVICE =
+      UUID.fromString("0000fd50-0000-1000-8000-00805f9b34fb");
+  private static final UUID TUYA_NOTIFY =
+      UUID.fromString("00000002-0000-1001-8001-00805f9b07d0");
+  private static final UUID TUYA_READ =
+      UUID.fromString("00000003-0000-1001-8001-00805f9b07d0");
+  private static final UUID CCCD =
+      UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
   private final Context context;
   private final T4ATransport fallback;
@@ -89,7 +90,9 @@ public final class DirectBleFallbackTransport implements T4ATransport {
             + " mac="
             + maskMac(device.mac)
             + " uuid="
-            + device.uuid);
+            + device.uuid
+            + " localKeyAvailable="
+            + (device.localKey != null && !device.localKey.isEmpty()));
 
     try {
       BluetoothManager manager = context.getSystemService(BluetoothManager.class);
@@ -142,6 +145,8 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   }
 
   private final Runnable probeTimeout = () -> finishProbe(true, "timeout");
+  private final Runnable finishAfterObservation =
+      () -> finishProbe(true, "notify_read_observation_complete");
 
   private final BluetoothGattCallback probeCallback =
       new BluetoothGattCallback() {
@@ -165,9 +170,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
               return;
             }
             raw("SERVICE_DISCOVERY_REQUESTED started=" + started);
-            if (!started) {
-              finishProbe(true, "discover_services_false");
-            }
+            if (!started) finishProbe(true, "discover_services_false");
             return;
           }
 
@@ -184,72 +187,164 @@ public final class DirectBleFallbackTransport implements T4ATransport {
             return;
           }
 
-          int serviceCount = 0;
-          int characteristicCount = 0;
-          int descriptorCount = 0;
-          for (BluetoothGattService service : gatt.getServices()) {
-            serviceCount++;
-            raw(
-                "SERVICE uuid="
-                    + service.getUuid()
-                    + " type="
-                    + service.getType()
-                    + " instanceId="
-                    + service.getInstanceId());
-            for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
-              characteristicCount++;
-              raw(
-                  "CHAR service="
-                      + service.getUuid()
-                      + " uuid="
-                      + characteristic.getUuid()
-                      + " properties=0x"
-                      + Integer.toHexString(characteristic.getProperties())
-                      + " permissions=0x"
-                      + Integer.toHexString(characteristic.getPermissions())
-                      + " instanceId="
-                      + characteristic.getInstanceId());
-              for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors()) {
-                descriptorCount++;
-                raw(
-                    "DESC characteristic="
-                        + characteristic.getUuid()
-                        + " uuid="
-                        + descriptor.getUuid()
-                        + " permissions=0x"
-                        + Integer.toHexString(descriptor.getPermissions()));
-              }
-            }
+          logTopology(gatt);
+          BluetoothGattService service = gatt.getService(TUYA_SERVICE);
+          if (service == null) {
+            raw("PROBE_ERROR stage=protocol reason=tuya_service_missing");
+            finishProbe(true, "tuya_service_missing");
+            return;
           }
 
+          BluetoothGattCharacteristic notifyCharacteristic = service.getCharacteristic(TUYA_NOTIFY);
+          BluetoothGattCharacteristic readCharacteristic = service.getCharacteristic(TUYA_READ);
+          if (notifyCharacteristic == null || readCharacteristic == null) {
+            raw("PROBE_ERROR stage=protocol reason=expected_characteristic_missing");
+            finishProbe(true, "expected_characteristic_missing");
+            return;
+          }
+
+          try {
+            boolean localNotify = gatt.setCharacteristicNotification(notifyCharacteristic, true);
+            raw("NOTIFY_LOCAL_ENABLED started=" + localNotify + " uuid=" + TUYA_NOTIFY);
+            if (!localNotify) {
+              finishProbe(true, "notify_local_enable_false");
+              return;
+            }
+
+            BluetoothGattDescriptor cccd = notifyCharacteristic.getDescriptor(CCCD);
+            if (cccd == null) {
+              raw("PROBE_ERROR stage=notify reason=cccd_missing");
+              finishProbe(true, "notify_cccd_missing");
+              return;
+            }
+
+            int writeStatus = gatt.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            raw("NOTIFY_CCCD_WRITE_REQUEST status=" + writeStatus + " uuid=" + CCCD);
+            if (writeStatus != BluetoothGatt.GATT_SUCCESS) {
+              finishProbe(true, "notify_cccd_write_request_" + writeStatus);
+            }
+          } catch (SecurityException error) {
+            raw("PROBE_ERROR stage=notify error=SecurityException");
+            finishProbe(true, "notify_security_exception");
+          }
+        }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+          raw("NOTIFY_CCCD_WRITE_RESULT status=" + status + " uuid=" + descriptor.getUuid());
+          if (status != BluetoothGatt.GATT_SUCCESS) {
+            finishProbe(true, "notify_cccd_write_status_" + status);
+            return;
+          }
+
+          BluetoothGattService service = gatt.getService(TUYA_SERVICE);
+          BluetoothGattCharacteristic readCharacteristic =
+              service == null ? null : service.getCharacteristic(TUYA_READ);
+          if (readCharacteristic == null) {
+            finishProbe(true, "read_characteristic_missing");
+            return;
+          }
+
+          try {
+            boolean started = gatt.readCharacteristic(readCharacteristic);
+            raw("READ_REQUEST started=" + started + " uuid=" + TUYA_READ);
+            if (!started) finishProbe(true, "read_request_false");
+          } catch (SecurityException error) {
+            raw("PROBE_ERROR stage=read error=SecurityException");
+            finishProbe(true, "read_security_exception");
+          }
+        }
+
+        @Override
+        public void onCharacteristicRead(
+            BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] value, int status) {
           raw(
-              "TOPOLOGY_COMPLETE services="
-                  + serviceCount
-                  + " characteristics="
-                  + characteristicCount
-                  + " descriptors="
-                  + descriptorCount);
-          finishProbe(true, "topology_captured");
+              "READ_RESULT status="
+                  + status
+                  + " uuid="
+                  + characteristic.getUuid()
+                  + " length="
+                  + (value == null ? 0 : value.length)
+                  + " hex="
+                  + toHex(value));
+          handler.removeCallbacks(finishAfterObservation);
+          handler.postDelayed(finishAfterObservation, NOTIFY_OBSERVATION_MS);
+        }
+
+        @Override
+        public void onCharacteristicChanged(
+            BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] value) {
+          raw(
+              "NOTIFY_RX uuid="
+                  + characteristic.getUuid()
+                  + " length="
+                  + (value == null ? 0 : value.length)
+                  + " hex="
+                  + toHex(value));
         }
       };
+
+  private void logTopology(BluetoothGatt gatt) {
+    int serviceCount = 0;
+    int characteristicCount = 0;
+    int descriptorCount = 0;
+    for (BluetoothGattService service : gatt.getServices()) {
+      serviceCount++;
+      raw(
+          "SERVICE uuid="
+              + service.getUuid()
+              + " type="
+              + service.getType()
+              + " instanceId="
+              + service.getInstanceId());
+      for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+        characteristicCount++;
+        raw(
+            "CHAR service="
+                + service.getUuid()
+                + " uuid="
+                + characteristic.getUuid()
+                + " properties=0x"
+                + Integer.toHexString(characteristic.getProperties())
+                + " permissions=0x"
+                + Integer.toHexString(characteristic.getPermissions())
+                + " instanceId="
+                + characteristic.getInstanceId());
+        for (BluetoothGattDescriptor descriptor : characteristic.getDescriptors()) {
+          descriptorCount++;
+          raw(
+              "DESC characteristic="
+                  + characteristic.getUuid()
+                  + " uuid="
+                  + descriptor.getUuid()
+                  + " permissions=0x"
+                  + Integer.toHexString(descriptor.getPermissions()));
+        }
+      }
+    }
+    raw(
+        "TOPOLOGY_COMPLETE services="
+            + serviceCount
+            + " characteristics="
+            + characteristicCount
+            + " descriptors="
+            + descriptorCount);
+  }
 
   /** Closes the probe and optionally continues the requested connection through Tuya. */
   private void finishProbe(boolean continueWithFallback, String reason) {
     final BluetoothGatt gatt;
     final T4AContracts.Device device;
     synchronized (lock) {
-      if (probeFinished && probeGatt == null && pendingDevice == null) {
-        return;
-      }
+      if (probeFinished && probeGatt == null && pendingDevice == null) return;
       probeFinished = true;
       handler.removeCallbacks(probeTimeout);
+      handler.removeCallbacks(finishAfterObservation);
       gatt = probeGatt;
       device = pendingDevice;
       probeGatt = null;
       pendingDevice = null;
-      if (device != null) {
-        probedDeviceId = device.id;
-      }
+      if (device != null) probedDeviceId = device.id;
     }
 
     if (gatt != null) {
@@ -261,9 +356,7 @@ public final class DirectBleFallbackTransport implements T4ATransport {
     }
 
     raw("PROBE_FINISH reason=" + reason + " fallback=" + continueWithFallback);
-    if (continueWithFallback && device != null) {
-      fallback.connect(device);
-    }
+    if (continueWithFallback && device != null) fallback.connect(device);
   }
 
   private void raw(String message) {
@@ -272,12 +365,10 @@ public final class DirectBleFallbackTransport implements T4ATransport {
 
   private static String normalizeMac(String mac) {
     if (mac == null) return "";
-    String value = mac.trim().toUpperCase(java.util.Locale.ROOT);
+    String value = mac.trim().toUpperCase(Locale.ROOT);
     if (BluetoothAdapter.checkBluetoothAddress(value)) return value;
-
     String compact = value.replace(":", "").replace("-", "");
     if (compact.length() != 12) return value;
-
     StringBuilder normalized = new StringBuilder(17);
     for (int index = 0; index < compact.length(); index += 2) {
       if (normalized.length() > 0) normalized.append(':');
@@ -287,9 +378,14 @@ public final class DirectBleFallbackTransport implements T4ATransport {
   }
 
   private static String maskMac(String mac) {
-    if (mac == null || mac.length() < 5) {
-      return "<unknown>";
-    }
+    if (mac == null || mac.length() < 5) return "<unknown>";
     return "**:**:**:**:" + mac.substring(mac.length() - 5);
+  }
+
+  private static String toHex(byte[] value) {
+    if (value == null || value.length == 0) return "";
+    StringBuilder hex = new StringBuilder(value.length * 2);
+    for (byte item : value) hex.append(String.format(Locale.ROOT, "%02X", item & 0xFF));
+    return hex.toString();
   }
 }
