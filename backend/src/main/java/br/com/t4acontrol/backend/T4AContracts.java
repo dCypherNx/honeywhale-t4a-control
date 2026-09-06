@@ -59,6 +59,8 @@ public final class T4AContracts {
     public final String name;
     public final String mac;
     public final String uuid;
+    /** Provider-neutral local communication key material, if exposed by the active provisioner. */
+    public final String localKey;
     public final Map<String, Object> dps;
     public final Map<String, DpSchema> schema;
 
@@ -69,10 +71,22 @@ public final class T4AContracts {
         String uuid,
         Map<String, Object> dps,
         Map<String, DpSchema> schema) {
+      this(id, name, mac, uuid, "", dps, schema);
+    }
+
+    public Device(
+        String id,
+        String name,
+        String mac,
+        String uuid,
+        String localKey,
+        Map<String, Object> dps,
+        Map<String, DpSchema> schema) {
       this.id = value(id);
       this.name = value(name);
       this.mac = value(mac);
       this.uuid = value(uuid);
+      this.localKey = value(localKey);
       this.dps = immutableMap(dps);
       this.schema = immutableMap(schema);
     }
