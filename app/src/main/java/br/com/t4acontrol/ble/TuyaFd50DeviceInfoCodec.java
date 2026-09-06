@@ -38,6 +38,19 @@ final class TuyaFd50DeviceInfoCodec {
     return new SessionMaterial(localKey6, loginKey);
   }
 
+  static SessionMaterial rawSecurityKeyMaterial(String securityKey)
+      throws GeneralSecurityException {
+    if (securityKey == null) {
+      throw new GeneralSecurityException("securityKey unavailable");
+    }
+    byte[] rawKey = securityKey.getBytes(StandardCharsets.UTF_8);
+    if (rawKey.length != 16) {
+      throw new GeneralSecurityException("securityKey must encode to exactly 16 bytes");
+    }
+    byte[] firstSix = Arrays.copyOf(rawKey, 6);
+    return new SessionMaterial(firstSix, rawKey);
+  }
+
   static byte[] buildDeviceInfoFrame(String localKey, int sequence)
       throws GeneralSecurityException {
     byte[] iv = new byte[16];
@@ -47,11 +60,27 @@ final class TuyaFd50DeviceInfoCodec {
 
   static byte[] buildDeviceInfoFrame(String localKey, int sequence, byte[] iv)
       throws GeneralSecurityException {
+    return buildDeviceInfoFrame(sessionMaterial(localKey), sequence, iv);
+  }
+
+  static byte[] buildDeviceInfoFrameRawSecurityKey(String securityKey, int sequence)
+      throws GeneralSecurityException {
+    byte[] iv = new byte[16];
+    RANDOM.nextBytes(iv);
+    return buildDeviceInfoFrame(rawSecurityKeyMaterial(securityKey), sequence, iv);
+  }
+
+  static byte[] buildDeviceInfoFrameRawSecurityKey(
+      String securityKey, int sequence, byte[] iv) throws GeneralSecurityException {
+    return buildDeviceInfoFrame(rawSecurityKeyMaterial(securityKey), sequence, iv);
+  }
+
+  private static byte[] buildDeviceInfoFrame(SessionMaterial material, int sequence, byte[] iv)
+      throws GeneralSecurityException {
     if (iv == null || iv.length != 16) {
       throw new GeneralSecurityException("IV must contain exactly 16 bytes");
     }
 
-    SessionMaterial material = sessionMaterial(localKey);
     byte[] body = buildPlainBody(sequence, 0, DEVICE_INFO_CODE, FD50_DEVICE_INFO_PAYLOAD);
     byte[] encryptedBody = aesCbcEncrypt(material.loginKey, iv, body);
 
@@ -62,7 +91,7 @@ final class TuyaFd50DeviceInfoCodec {
     byte[] encryptedBytes = encrypted.toByteArray();
 
     ByteArrayOutputStream frame = new ByteArrayOutputStream(encryptedBytes.length + 4);
-    writeVarInt(frame, 0); // packet number
+    writeVarInt(frame, 0);
     writeVarInt(frame, encryptedBytes.length);
     frame.write(FD50_PROTOCOL_MARKER);
     frame.write(encryptedBytes, 0, encryptedBytes.length);
