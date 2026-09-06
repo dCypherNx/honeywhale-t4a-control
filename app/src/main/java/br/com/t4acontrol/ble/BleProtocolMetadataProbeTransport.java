@@ -1,5 +1,6 @@
 package br.com.t4acontrol.ble;
 
+import android.os.SystemClock;
 import br.com.t4acontrol.backend.T4AContracts;
 import br.com.t4acontrol.backend.T4ATransport;
 import java.util.Map;
@@ -7,8 +8,12 @@ import java.util.function.Consumer;
 
 /** Selects the experimentally appropriate BLE bootstrap key while retaining Tuya fallback. */
 public final class BleProtocolMetadataProbeTransport implements T4ATransport {
+  private static final long DIRECT_PROBE_SUPPRESSION_MS = 12_000L;
+
   private final T4ATransport delegate;
   private final Consumer<String> rawLog;
+  private String probingDeviceId = "";
+  private long suppressReconnectUntilMs;
 
   public BleProtocolMetadataProbeTransport(T4ATransport delegate, Consumer<String> rawLog) {
     this.delegate = delegate;
@@ -16,10 +21,27 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
   }
 
   @Override public void attach(T4AContracts.Device device, T4AContracts.DeviceListener listener) { delegate.attach(device, listener); }
-  @Override public void detach() { delegate.detach(); }
+
+  @Override public void detach() {
+    probingDeviceId = "";
+    suppressReconnectUntilMs = 0L;
+    delegate.detach();
+  }
 
   @Override public void connect(T4AContracts.Device device) {
     if (device == null) { delegate.connect(null); return; }
+
+    long now = SystemClock.elapsedRealtime();
+    if (device.id.equals(probingDeviceId) && now < suppressReconnectUntilMs) {
+      rawLog.accept("[BLE/DIRECT] PROTOCOL_RECONNECT_SUPPRESSED reason=direct_probe_active remainingMs="
+          + (suppressReconnectUntilMs - now)
+          + " fallbackDeferred=true");
+      return;
+    }
+
+    probingDeviceId = device.id;
+    suppressReconnectUntilMs = now + DIRECT_PROBE_SUPPRESSION_MS;
+
     boolean securityKeyAvailable = device.securityKey != null && !device.securityKey.isEmpty();
     rawLog.accept("[BLE/DIRECT] PROTOCOL_METADATA productId=" + display(device.productId)
         + " uuid=" + device.uuid
@@ -44,7 +66,12 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
   @Override public T4AContracts.Device cachedDevice(String deviceId) { return delegate.cachedDevice(deviceId); }
   @Override public void publish(String deviceId, Map<String,Object> dps, T4AContracts.ResultCallback callback) { delegate.publish(deviceId, dps, callback); }
   @Override public void readRssi(String mac, T4AContracts.RssiCallback callback) { delegate.readRssi(mac, callback); }
-  @Override public void destroy() { delegate.destroy(); }
+
+  @Override public void destroy() {
+    probingDeviceId = "";
+    suppressReconnectUntilMs = 0L;
+    delegate.destroy();
+  }
 
   private static String display(String value) { return value == null || value.isBlank() ? "<unknown>" : value; }
   private static String formatMetadata(Map<String,String> metadata) {
