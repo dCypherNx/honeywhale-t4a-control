@@ -48,9 +48,9 @@ public final class T4AContracts {
     public final String type;
 
     public DpSchema(String code, String mode, String type) {
-      this.code = code;
-      this.mode = mode;
-      this.type = type;
+      this.code = value(code);
+      this.mode = value(mode);
+      this.type = value(type);
     }
   }
 
@@ -59,6 +59,8 @@ public final class T4AContracts {
     public final String name;
     public final String mac;
     public final String uuid;
+    /** Provider-neutral product identifier when exposed by the active provisioner. */
+    public final String productId;
     /** Provider-neutral local communication key material, if exposed by the active provisioner. */
     public final String localKey;
     public final Map<String, Object> dps;
@@ -71,7 +73,7 @@ public final class T4AContracts {
         String uuid,
         Map<String, Object> dps,
         Map<String, DpSchema> schema) {
-      this(id, name, mac, uuid, "", dps, schema);
+      this(id, name, mac, uuid, "", "", dps, schema);
     }
 
     public Device(
@@ -82,10 +84,23 @@ public final class T4AContracts {
         String localKey,
         Map<String, Object> dps,
         Map<String, DpSchema> schema) {
+      this(id, name, mac, uuid, "", localKey, dps, schema);
+    }
+
+    public Device(
+        String id,
+        String name,
+        String mac,
+        String uuid,
+        String productId,
+        String localKey,
+        Map<String, Object> dps,
+        Map<String, DpSchema> schema) {
       this.id = value(id);
       this.name = value(name);
       this.mac = value(mac);
       this.uuid = value(uuid);
+      this.productId = value(productId);
       this.localKey = value(localKey);
       this.dps = immutableMap(dps);
       this.schema = immutableMap(schema);
