@@ -6,7 +6,7 @@ import br.com.t4acontrol.backend.T4ATransport;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Keeps the direct BLE transport passive after the classic FD50 bootstrap was disproved. */
+/** Selects the current non-actuating native BLE bootstrap experiment. */
 public final class BleProtocolMetadataProbeTransport implements T4ATransport {
   private static final long DIRECT_PROBE_SUPPRESSION_MS = 12_000L;
 
@@ -43,25 +43,25 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
     suppressReconnectUntilMs = now + DIRECT_PROBE_SUPPRESSION_MS;
 
     boolean securityKeyAvailable = device.securityKey != null && !device.securityKey.isEmpty();
+    boolean rawSecurityKeyCandidate = securityKeyAvailable && device.securityKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length == 16;
     rawLog.accept("[BLE/DIRECT] PROTOCOL_METADATA productId=" + display(device.productId)
         + " uuid=" + device.uuid
         + " localKeyAvailable=" + (device.localKey != null && !device.localKey.isEmpty())
         + " securityKeyAvailable=" + securityKeyAvailable
-        + " bootstrapKey=none"
-        + " activeWriteProbe=false"
+        + " bootstrapKey=" + (rawSecurityKeyCandidate ? "secKey_raw16" : "none")
+        + " activeWriteProbe=" + rawSecurityKeyCandidate
         + " classicFd50Bootstrap=disproved");
     rawLog.accept("[BLE/DIRECT] PROTOCOL_CAPABILITIES " + formatMetadata(device.protocolMetadata)
         + " secretsLogged=false");
 
-    // f147 isolated the direct connection from ThingClips and proved that the classic
-    // marker=0x20/security=0x04/00F3 bootstrap receives no response with secKey. Keep the
-    // GATT/advertisement probe, but do not repeat a disproved proprietary write while the
-    // pv=2.2 bootstrap is investigated. An empty neutral key makes DirectBleFallbackTransport
-    // stop before DEVICE_INFO and then hand control back to the operational Tuya transport.
-    T4AContracts.Device passiveDevice = new T4AContracts.Device(
-        device.id, device.name, device.mac, device.uuid, device.productId, "",
+    // f147 disproved classic first-six/MD5 derivation with secKey. The next isolated experiment
+    // keeps the same non-actuating DEVICE_INFO envelope but uses the 16-byte secKey directly as
+    // AES material. No PAIR or DPS is emitted.
+    String bootstrapKey = rawSecurityKeyCandidate ? device.securityKey : "";
+    T4AContracts.Device probeDevice = new T4AContracts.Device(
+        device.id, device.name, device.mac, device.uuid, device.productId, bootstrapKey,
         device.securityKey, device.protocolMetadata, device.dps, device.schema);
-    delegate.connect(passiveDevice);
+    delegate.connect(probeDevice);
   }
 
   @Override public boolean isConnected(String deviceId) { return delegate.isConnected(deviceId); }
