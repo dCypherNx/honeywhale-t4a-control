@@ -118,9 +118,6 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
         new LeScanSetting.Builder()
             .setTimeout(timeoutMs)
             .addScanType(ScanType.SINGLE)
-            // Bound results are required for Tuya's documented recovery path: when a BLE device
-            // is still bound locally but has already been removed from the cloud, discovery lets
-            // the SDK detect that mismatch and reset the device back into pairing state.
             .setNeedBoundResult(true)
             .build();
     ThingHomeSdk.getBleOperator()
@@ -332,6 +329,7 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
         source.getName(),
         source.getMac(),
         source.getUuid(),
+        source.getProductId(),
         source.getLocalKey(),
         source.getDps(),
         schema);
