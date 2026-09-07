@@ -54,7 +54,6 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
   @Override public void detach() { if (activeDevice != null) { activeDevice.unRegisterDevListener(); activeDevice.onDestroy(); activeDevice = null; } }
   @Override public void connect(Device device) {
     rememberSecrets(ThingHomeSdk.getDataInstance().getDeviceBean(device.id));
-    TuyaBleProtocolIntrospector.logOnce(ThingHomeSdk.getBleManager(), rawLog);
     BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(true).setScanTimeout(30);
     ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(builder));
   }
