@@ -9,7 +9,17 @@ import java.util.function.Consumer;
 
 /** Debug transport decorator that emits the ThingClips protocol map at the first real connect. */
 public final class SdkIntrospectionTransport implements T4ATransport {
-  private static final long[] TRACE_DELAYS_MS = {0L, 25L, 75L, 150L, 300L, 600L, 1000L, 1500L};
+  /*
+   * f161 showed that the useful worker only became visible at 1500 ms, essentially
+   * at the same instant the SDK reported CONNECTED. Sample much more densely around
+   * that transition and keep watching briefly afterwards so short-lived protocol
+   * workers have a better chance of appearing in a Java stack snapshot.
+   */
+  private static final long[] TRACE_DELAYS_MS = {
+      0L, 25L, 75L, 150L, 300L, 600L, 900L, 1050L, 1150L, 1250L, 1325L,
+      1375L, 1425L, 1475L, 1500L, 1525L, 1550L, 1600L, 1700L, 1850L,
+      2100L, 2500L, 3000L, 4000L
+  };
 
   private final T4ATransport delegate;
   private final Consumer<String> rawLog;
@@ -27,7 +37,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
 
   @Override public void connect(T4AContracts.Device device) {
     ThingBleProtocolIntrospector.inspect(rawLog);
-    rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack classesOnly=true valuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_session_window classesOnly=true valuesRead=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers();
   }
