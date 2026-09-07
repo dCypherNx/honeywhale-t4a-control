@@ -15,7 +15,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       1375L, 1425L, 1475L, 1500L, 1525L, 1550L, 1600L, 1700L, 1850L,
       2100L, 2500L, 3000L, 4000L
   };
-  private static final long ADAPTIVE_TRACE_LIMIT_MS = 10000L;
+  private static final long ADAPTIVE_TRACE_LIMIT_MS = 15000L;
   private static final long ADAPTIVE_POLL_MS = 250L;
 
   private final T4ATransport delegate;
@@ -37,6 +37,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_plus_adaptive classesOnly=true valuesRead=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSESSION] START mode=sanitized_runtime_negotiation objectRefsRead=true secretValuesRead=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC] START mode=v47_security_state_adaptive objectRefsRead=true secretValuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_TREE] START modes=optimistic,pessimistic lateralFamilies=3 maxDepth=3 writes=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -77,6 +78,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
           + " valuesRead=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSESSION] FINISH valuesLogged=safe_only secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC] FINISH valuesLogged=safe_only secretValuesRead=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_TREE] FINISH writes=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true);
     tracer.start();
@@ -92,6 +94,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
       rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_TREE] STOP reason=interrupted secretsLogged=false");
       return false;
     }
   }
@@ -100,6 +103,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleLiveSessionProbe.capture(delayMs, rawLog);
     ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
     ThingBleNamedKeyProbe.capture(delayMs, rawLog);
+    ThingBleKeyDerivationTreeProbe.capture(delayMs, rawLog);
   }
 
   private static boolean shouldProbeSession(long delayMs) {
