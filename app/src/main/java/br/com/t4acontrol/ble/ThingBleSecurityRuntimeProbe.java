@@ -14,8 +14,8 @@ import java.util.function.Consumer;
 /**
  * Debug-only probe for the active ThingClips BLE protocol controller.
  *
- * It intentionally reads only non-secret flags/numbers plus lengths/presence of
- * key material. Secret contents are never emitted.
+ * It reads runtime security material only to derive lengths and equality relations.
+ * Secret contents are never emitted.
  */
 public final class ThingBleSecurityRuntimeProbe {
   private static final String CONTROLLER = "com.thingclips.sdk.bluetooth.dpdbqdp";
@@ -160,6 +160,63 @@ public final class ThingBleSecurityRuntimeProbe {
           + " deviceCapabilityLength=" + secretLength(readNamedField(deviceInfo, "deviceCapability"))
           + " secretsLogged=false");
     }
+
+    if (securityRaw != null) logSecurityRaw(tMs, securityRaw, connectParam, deviceInfo, log);
+  }
+
+  private static void logSecurityRaw(long tMs, Object raw, Object connectParam,
+      Object deviceInfo, Consumer<String> log) {
+    Object loginKey = connectParam == null ? null : readNamedField(connectParam, "loginKey");
+    Object loginKeyComplete = connectParam == null ? null : readNamedField(connectParam, "loginKeyComplete");
+    Object secretKey = connectParam == null ? null : readNamedField(connectParam, "secretKey");
+    Object authKey = deviceInfo == null ? null : readNamedField(deviceInfo, "authKey");
+
+    StringBuilder line = new StringBuilder("[BLE/SDKSEC_RAW] tMs=").append(tMs)
+        .append(" class=").append(raw.getClass().getName());
+    Field[] fields = raw.getClass().getDeclaredFields();
+    for (Field field : fields) {
+      if (Modifier.isStatic(field.getModifiers())) continue;
+      Object value = readField(field, raw);
+      line.append(' ').append(field.getName()).append("Type=").append(typeLabel(value));
+      if (value instanceof String || value instanceof byte[]) {
+        line.append(' ').append(field.getName()).append("Length=").append(secretLength(value));
+        if (value instanceof String) {
+          line.append(' ').append(field.getName()).append("EqLoginKey=").append(secretEquals(value, loginKey));
+          line.append(' ').append(field.getName()).append("EqLoginKeyComplete=").append(secretEquals(value, loginKeyComplete));
+          line.append(' ').append(field.getName()).append("EqSecretKey=").append(secretEquals(value, secretKey));
+          line.append(' ').append(field.getName()).append("EqAuthKey=").append(secretEquals(value, authKey));
+        }
+      } else if (value instanceof Boolean) {
+        line.append(' ').append(field.getName()).append("Value=").append(value);
+      } else if (value instanceof Number) {
+        line.append(' ').append(field.getName()).append("Value=").append(value);
+      }
+    }
+    line.append(" secretValuesCompared=true secretsLogged=false");
+    log.accept(line.toString());
+  }
+
+  private static boolean secretEquals(Object a, Object b) {
+    if (a == null || b == null) return false;
+    if (a instanceof String && b instanceof String) return ((String) a).equals(b);
+    if (a instanceof byte[] && b instanceof byte[]) {
+      byte[] aa = (byte[]) a;
+      byte[] bb = (byte[]) b;
+      if (aa.length != bb.length) return false;
+      int diff = 0;
+      for (int i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i];
+      return diff == 0;
+    }
+    return false;
+  }
+
+  private static String typeLabel(Object value) {
+    if (value == null) return "null";
+    if (value instanceof String) return "String";
+    if (value instanceof byte[]) return "byte[]";
+    if (value instanceof Boolean) return "boolean";
+    if (value instanceof Number) return "number";
+    return value.getClass().getSimpleName();
   }
 
   private static Object readNamedField(Object target, String name) {
