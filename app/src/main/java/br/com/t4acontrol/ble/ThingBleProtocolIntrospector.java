@@ -42,7 +42,23 @@ public final class ThingBleProtocolIntrospector {
       "com.thingclips.sdk.ble.core.protocol.api.ProtocolSecurityUpdateDelegate",
       "com.thingclips.sdk.ble.core.protocol.api.IP4SuperSecurityAction",
       "com.thingclips.sdk.ble.core.protocol.api.DeviceCapabilityBit",
-      "com.thingclips.sdk.ble.core.protocol.api.CommonConstant"
+      "com.thingclips.sdk.ble.core.protocol.api.CommonConstant",
+      // f162 caught these concrete classes on the real RX path after CONNECTED.
+      // Inspect structure only: no instances, fields or packet contents are read.
+      "com.thingclips.sdk.bluetooth.qqpddqd",
+      "com.thingclips.sdk.bluetooth.dpbbdqq",
+      "com.thingclips.sdk.bluetooth.dpqdpqd",
+      "com.thingclips.sdk.bluetooth.bpqppbd",
+      "com.thingclips.sdk.bluetooth.dpdbqdp",
+      "com.thingclips.sdk.bluetooth.bbdqddq",
+      "com.thingclips.sdk.bluetooth.pbpdbqp",
+      "com.thingclips.sdk.bluetooth.ddpdbbp",
+      "com.thingclips.sdk.bluetooth.bqpdqdp",
+      "com.thingclips.sdk.ble.core.packet.bean.Ret",
+      "com.thingclips.sdk.bluetooth.qbqddpp",
+      "com.thingclips.sdk.bluetooth.bdpddpb",
+      "com.thingclips.sdk.bluetooth.pbbpdbb",
+      "com.thingclips.sdk.bluetooth.pbbpdbb$bdpdqbp"
   };
 
   private ThingBleProtocolIntrospector() {}
