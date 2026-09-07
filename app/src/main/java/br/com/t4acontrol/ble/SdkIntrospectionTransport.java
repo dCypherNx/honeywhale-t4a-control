@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Debug transport decorator that emits the ThingClips protocol map at the first real connect. */
+/** Debug transport decorator focused on the active ThingClips BLE 4.7 handshake. */
 public final class SdkIntrospectionTransport implements T4ATransport {
   private static final long[] TRACE_DELAYS_MS = {
       0L, 25L, 75L, 150L, 300L, 600L, 900L, 1050L,
@@ -31,13 +31,13 @@ public final class SdkIntrospectionTransport implements T4ATransport {
 
   @Override public void connect(T4AContracts.Device device) {
     ThingBleProtocolIntrospector.inspect(rawLog);
-    rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_plus_adaptive classesOnly=true valuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKTRACE] START mode=v47_targeted_dense_plus_adaptive classesOnly=true valuesRead=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSESSION] START mode=sanitized_runtime_negotiation objectRefsRead=true secretValuesRead=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKSEC] START mode=v47_security_state_adaptive objectRefsRead=true secretValuesRead=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKSEC_TREE] START modes=optimistic,pessimistic lateralFamilies=3 maxDepth=3 writes=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKSEC_ANCHOR] START basis=md5Login,md5Srand maxDerivationDepth=3 writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC] START mode=v47_unresolved_slots_5_14_15 objectRefsRead=true secretValuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_ANCHOR] START basis=md5Login,md5Srand unresolvedSlots=5,14,15 maxDerivationDepth=3 writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_AUTH] START target=AuthKeyParam correlationsOnly=true writes=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKSEC_USE] START mode=live_object_graph slotCorrelation=true writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_USE] START targetSlots=5,14,15 liveObjectGraph=true writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_IMPL] START targetSlots=5,14,15 structuralOnly=true writes=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -69,10 +69,10 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKTRACE] FINISH uniqueFrames=" + emitted.size() + " adaptiveConnectedCaptured=" + connectedCaptured + " valuesRead=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSESSION] FINISH valuesLogged=safe_only secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC] FINISH valuesLogged=safe_only secretValuesRead=false secretsLogged=false");
-      rawLog.accept("[BLE/SDKSEC_TREE] FINISH writes=false secretsLogged=false");
-      rawLog.accept("[BLE/SDKSEC_ANCHOR] FINISH writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_ANCHOR] FINISH unresolvedSlots=5,14,15 writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_AUTH] FINISH writes=false secretsLogged=false");
-      rawLog.accept("[BLE/SDKSEC_USE] FINISH writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_USE] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_IMPL] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true); tracer.start();
   }
@@ -85,10 +85,10 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
       rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC] STOP reason=interrupted secretsLogged=false");
-      rawLog.accept("[BLE/SDKSEC_TREE] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_ANCHOR] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_AUTH] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_USE] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_IMPL] STOP reason=interrupted secretsLogged=false");
       return false;
     }
   }
@@ -97,10 +97,15 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleLiveSessionProbe.capture(delayMs, rawLog);
     ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
     ThingBleNamedKeyProbe.capture(delayMs, rawLog);
-    ThingBleKeyDerivationTreeProbe.capture(delayMs, rawLog);
-    ThingBleAnchoredKeyProbe.capture(delayMs, rawLog);
-    ThingBleAuthKeyParamProbe.capture(delayMs, rawLog);
-    ThingBleSecretUsageProbe.capture(delayMs, rawLog);
+
+    // f173 proved MD5(loginKey)->slot4 and MD5(srand)->slots2/12. The unresolved work starts
+    // only after srand/session material exists, so avoid the old generic derivation tree entirely.
+    if (delayMs >= 1700L) {
+      ThingBleAnchoredKeyProbe.capture(delayMs, rawLog);
+      ThingBleAuthKeyParamProbe.capture(delayMs, rawLog);
+      ThingBleSecretUsageProbe.capture(delayMs, rawLog);
+      ThingBleKeyImplementationProbe.capture(delayMs, rawLog);
+    }
   }
 
   private static boolean shouldProbeSession(long delayMs) {
