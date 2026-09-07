@@ -99,6 +99,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
   private void captureSession(long delayMs) {
     ThingBleLiveSessionProbe.capture(delayMs, rawLog);
     ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
+    ThingBleNamedKeyProbe.capture(delayMs, rawLog);
   }
 
   private static boolean shouldProbeSession(long delayMs) {
