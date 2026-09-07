@@ -40,6 +40,11 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKSEC_IMPL] START targetSlots=5,14,15 structuralOnly=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_GRAPH] START targetSlots=5,14,15 maxDepth=9 writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKWIRE] START source=XRequest payload=edges_only writes=false completePayloadLogged=false");
+
+    // f175 showed that the XRequest path is too transient for sparse polling: the live 4.7 engine
+    // only became reachable around 4.5s and no request survived until the snapshot. Start a dedicated
+    // shallow sampler before the SDK connect call so it can observe the short-lived queue/helper state.
+    ThingBleWireSampler.start(rawLog);
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
