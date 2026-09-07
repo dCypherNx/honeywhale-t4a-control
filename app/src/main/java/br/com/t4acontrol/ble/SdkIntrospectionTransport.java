@@ -39,6 +39,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleProtocolIntrospector.inspect(rawLog);
     rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_session_window classesOnly=true valuesRead=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSESSION] START mode=sanitized_runtime_negotiation objectRefsRead=true secretValuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC] START mode=v47_security_state objectRefsRead=true secretValuesRead=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers();
   }
@@ -57,15 +58,20 @@ public final class SdkIntrospectionTransport implements T4ATransport {
             Thread.currentThread().interrupt();
             rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
             rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
+            rawLog.accept("[BLE/SDKSEC] STOP reason=interrupted secretsLogged=false");
             return;
           }
         }
         captureRuntimeSnapshot(delay, emitted);
-        if (shouldProbeSession(delay)) ThingBleLiveSessionProbe.capture(delay, rawLog);
+        if (shouldProbeSession(delay)) {
+          ThingBleLiveSessionProbe.capture(delay, rawLog);
+          ThingBleSecurityRuntimeProbe.capture(delay, rawLog);
+        }
       }
       rawLog.accept("[BLE/SDKTRACE] FINISH uniqueFrames=" + emitted.size()
           + " valuesRead=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSESSION] FINISH valuesLogged=safe_only secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC] FINISH valuesLogged=safe_only secretValuesRead=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true);
     tracer.start();
