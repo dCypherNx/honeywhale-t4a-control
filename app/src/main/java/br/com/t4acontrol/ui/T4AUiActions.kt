@@ -9,6 +9,7 @@ internal interface T4AUiActions : T4ADashboardActions {
     fun scan()
     fun setKeepScreenOn(enabled: Boolean)
     fun setTheme(mode: String)
+    fun setNavigationWaypointsVisible(enabled: Boolean)
     fun setBatteryRechargeMinGapHours(hours: Int)
     fun openMqttSettings()
     fun setAutoLockFromSettings(enabled: Boolean)

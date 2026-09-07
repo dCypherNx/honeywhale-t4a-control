@@ -32,6 +32,7 @@ import br.com.t4acontrol.ui.diagnostics.DashboardEvents
 import br.com.t4acontrol.ui.diagnostics.RawLogCard
 import br.com.t4acontrol.ui.login.LoginScreen
 import br.com.t4acontrol.ui.pairing.PairingScreen
+import br.com.t4acontrol.ui.settings.NavigationSettingsCard
 import br.com.t4acontrol.ui.settings.SettingsScreen
 import java.util.Locale
 
@@ -42,6 +43,7 @@ internal fun T4AApp(
     showTotalOdometer: Boolean,
     keepScreenOn: Boolean,
     themeMode: String,
+    navigationWaypointsVisible: Boolean,
     eventHistory: List<String>,
     rawHistory: List<String>,
     rawLogFilter: String,
@@ -79,6 +81,11 @@ internal fun T4AApp(
                     return@Column
                 }
                 if (settings) {
+                    NavigationSettingsCard(
+                        foreground = foreground,
+                        waypointsVisible = navigationWaypointsVisible,
+                        actions = actions,
+                    )
                     SettingsScreen(
                         current = current,
                         foreground = foreground,
@@ -92,6 +99,7 @@ internal fun T4AApp(
                         state = T4ADashboardMapper.map(current, showTotalOdometer),
                         actions = actions,
                         darkMode = darkMode,
+                        navigationWaypointsVisible = navigationWaypointsVisible,
                     )
                     DashboardEvents(eventHistory, foreground, actions)
                 }
