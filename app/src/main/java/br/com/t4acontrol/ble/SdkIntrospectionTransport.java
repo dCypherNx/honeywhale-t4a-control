@@ -37,6 +37,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKSEC_TREE] START modes=optimistic,pessimistic lateralFamilies=3 maxDepth=3 writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_ANCHOR] START basis=md5Login,md5Srand maxDerivationDepth=3 writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_AUTH] START target=AuthKeyParam correlationsOnly=true writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_USE] START mode=live_object_graph slotCorrelation=true writes=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -71,6 +72,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_TREE] FINISH writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_ANCHOR] FINISH writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_AUTH] FINISH writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_USE] FINISH writes=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true); tracer.start();
   }
@@ -86,6 +88,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_TREE] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_ANCHOR] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_AUTH] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_USE] STOP reason=interrupted secretsLogged=false");
       return false;
     }
   }
@@ -97,6 +100,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleKeyDerivationTreeProbe.capture(delayMs, rawLog);
     ThingBleAnchoredKeyProbe.capture(delayMs, rawLog);
     ThingBleAuthKeyParamProbe.capture(delayMs, rawLog);
+    ThingBleSecretUsageProbe.capture(delayMs, rawLog);
   }
 
   private static boolean shouldProbeSession(long delayMs) {
