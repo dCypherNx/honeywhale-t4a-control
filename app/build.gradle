@@ -23,24 +23,19 @@ def appVersionName = injectedVersionName != null && !injectedVersionName.trim().
         : '1.1.1'
 
 // versionCode is a property of the Git commit, never of the machine or CI run.
-// This guarantees that Work/Android Studio/GitHub Actions produce the same code for the same
-// commit and that later commits normally advance monotonically. The project epoch keeps the
-// value comfortably below Android's versionCode limit for decades while immediately superseding
-// the legacy 100xxx range.
+// Work/Android Studio/GitHub Actions therefore produce the same code for the same commit.
 def versionEpochSeconds = 1735689600L // 2025-01-01T00:00:00Z
 def versionFloor = 200000L
-def gitTimestampOutput = new ByteArrayOutputStream()
-def gitTimestampResult = exec {
-    workingDir rootProject.projectDir
-    commandLine 'git', 'show', '-s', '--format=%ct', 'HEAD'
-    standardOutput = gitTimestampOutput
-    errorOutput = new ByteArrayOutputStream()
-    ignoreExitValue = true
+def gitTimestampProcess = new ProcessBuilder('git', 'show', '-s', '--format=%ct', 'HEAD')
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+def gitTimestampText = gitTimestampProcess.inputStream.getText('UTF-8').trim()
+def gitTimestampExit = gitTimestampProcess.waitFor()
+if (gitTimestampExit != 0) {
+    throw new GradleException("Nao foi possivel resolver versionCode a partir do Git: ${gitTimestampText}")
 }
-if (gitTimestampResult.exitValue != 0) {
-    throw new GradleException('Nao foi possivel resolver versionCode: o build precisa ser executado dentro de um checkout Git valido.')
-}
-def gitCommitTimestamp = Long.parseLong(gitTimestampOutput.toString('UTF-8').trim())
+def gitCommitTimestamp = Long.parseLong(gitTimestampText)
 def resolvedVersionCodeLong = versionFloor + (gitCommitTimestamp - versionEpochSeconds)
 if (resolvedVersionCodeLong <= 0L || resolvedVersionCodeLong > 2100000000L) {
     throw new GradleException("versionCode derivado fora do intervalo Android: ${resolvedVersionCodeLong}")
