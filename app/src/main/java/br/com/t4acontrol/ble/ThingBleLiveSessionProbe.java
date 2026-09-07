@@ -202,7 +202,7 @@ public final class ThingBleLiveSessionProbe {
 
   private static Object readField(Field field, Object target) {
     try {
-      if (!field.canAccess(target)) field.setAccessible(true);
+      field.setAccessible(true);
       return field.get(target);
     } catch (Throwable ignored) {
       return null;
