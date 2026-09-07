@@ -39,6 +39,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKSEC_USE] START targetSlots=5,14,15 liveObjectGraph=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_IMPL] START targetSlots=5,14,15 structuralOnly=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_GRAPH] START targetSlots=5,14,15 maxDepth=9 writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKWIRE] START source=XRequest payload=edges_only writes=false completePayloadLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -75,6 +76,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_USE] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_IMPL] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_GRAPH] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKWIRE] FINISH writes=false completePayloadLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true); tracer.start();
   }
@@ -92,6 +94,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_USE] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_IMPL] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_GRAPH] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKWIRE] STOP reason=interrupted completePayloadLogged=false");
       return false;
     }
   }
@@ -109,6 +112,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       ThingBleSecretUsageProbe.capture(delayMs, rawLog);
       ThingBleKeyImplementationProbe.capture(delayMs, rawLog);
       ThingBleSlotObjectGraphProbe.capture(delayMs, rawLog);
+      ThingBleXRequestProbe.capture(delayMs, rawLog);
     }
   }
 
