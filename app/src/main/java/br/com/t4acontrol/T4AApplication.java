@@ -14,7 +14,6 @@ import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
 import br.com.t4acontrol.backend.persistence.AndroidT4AStateStore;
 import br.com.t4acontrol.ble.DelayedFallbackTransport;
 import br.com.t4acontrol.ble.NativeBleTransport;
-import br.com.t4acontrol.ble.SdkIntrospectionTransport;
 import br.com.t4acontrol.mqtt.DefaultMqttSettings;
 import br.com.t4acontrol.mqtt.MqttSettings;
 import br.com.t4acontrol.mqtt.PahoMqttTransport;
@@ -28,20 +27,17 @@ public final class T4AApplication extends Application {
   /**
    * Application composition root for a live T4A session.
    *
-   * <p>Provider-specific construction remains here. The session service owns the returned backend;
-   * Activities must depend on the UI-facing session facade instead of constructing this graph.
+   * <p>Master keeps the native BLE runtime plus the Tuya fallback, but deliberately excludes every
+   * ThingClips introspection/probe layer. Experimental SDK diagnostics live only on
+   * feature/direct-ble-transport-fallback.
    */
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
     T4ATransport tuyaTransport = new TuyaT4APlatform(listener::onRawLog);
-    if (BuildConfig.DEBUG) {
-      tuyaTransport = new SdkIntrospectionTransport(tuyaTransport, listener::onRawLog);
-    }
     T4ATransport delayedTuya =
         new DelayedFallbackTransport(tuyaTransport, listener::onRawLog);
-    T4ATransport directProbe =
+    T4ATransport transport =
         new NativeBleTransport(this, delayedTuya, listener::onRawLog);
-    T4ATransport transport = directProbe;
     return new T4ABackend(
         new AndroidT4AStateStore(this),
         provisioner,
@@ -74,7 +70,8 @@ public final class T4AApplication extends Application {
   @Override
   public void onCreate() {
     super.onCreate();
-    T4ASdk.initialize(this, BuildConfig.DEBUG);
+    // Production/master must never enable ThingClips SDK debug logging/introspection.
+    T4ASdk.initialize(this, false);
     mqttConfigurationStore = new AndroidMqttConfigurationStore(getApplicationContext());
     mqttSettings = new DefaultMqttSettings(mqttConfigurationStore);
   }
