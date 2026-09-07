@@ -10,13 +10,14 @@ import java.util.function.Consumer;
 /** Debug transport decorator that emits the ThingClips protocol map at the first real connect. */
 public final class SdkIntrospectionTransport implements T4ATransport {
   /*
-   * f161 showed that the useful worker only became visible at 1500 ms, essentially
-   * at the same instant the SDK reported CONNECTED. Sample much more densely around
-   * that transition and keep watching briefly afterwards so short-lived protocol
-   * workers have a better chance of appearing in a Java stack snapshot.
+   * f169 proved that the protocol-4.7 securityRaw object transitions from empty to
+   * authKey+srand between the 1050 and 1150 ms samples. Densify only this short
+   * transition window so we can catch transient derived material without extending
+   * the overall trace or changing the BLE traffic.
    */
   private static final long[] TRACE_DELAYS_MS = {
-      0L, 25L, 75L, 150L, 300L, 600L, 900L, 1050L, 1150L, 1250L, 1325L,
+      0L, 25L, 75L, 150L, 300L, 600L, 900L, 1050L,
+      1075L, 1100L, 1125L, 1150L, 1175L, 1200L, 1225L, 1250L, 1325L,
       1375L, 1425L, 1475L, 1500L, 1525L, 1550L, 1600L, 1700L, 1850L,
       2100L, 2500L, 3000L, 4000L
   };
@@ -79,9 +80,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
 
   private static boolean shouldProbeSession(long delayMs) {
     return delayMs == 900L
-        || delayMs == 1050L
-        || delayMs == 1150L
-        || delayMs == 1250L
+        || (delayMs >= 1050L && delayMs <= 1250L && delayMs % 25L == 0L)
         || delayMs == 1325L
         || delayMs == 1425L
         || delayMs == 1500L
