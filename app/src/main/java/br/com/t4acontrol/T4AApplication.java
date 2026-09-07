@@ -15,6 +15,7 @@ import br.com.t4acontrol.backend.persistence.AndroidT4AStateStore;
 import br.com.t4acontrol.ble.BleProtocolMetadataProbeTransport;
 import br.com.t4acontrol.ble.DelayedFallbackTransport;
 import br.com.t4acontrol.ble.DirectBleFallbackTransport;
+import br.com.t4acontrol.ble.ThingBleProtocolIntrospector;
 import br.com.t4acontrol.mqtt.DefaultMqttSettings;
 import br.com.t4acontrol.mqtt.MqttSettings;
 import br.com.t4acontrol.mqtt.PahoMqttTransport;
@@ -32,6 +33,9 @@ public final class T4AApplication extends Application {
    * Activities must depend on the UI-facing session facade instead of constructing this graph.
    */
   public T4ABackend createSessionBackend(T4ABackend.Listener listener) {
+    if (BuildConfig.DEBUG) {
+      ThingBleProtocolIntrospector.inspect(listener::onRawLog);
+    }
     T4AProvisioner provisioner = new TuyaT4AProvisioner();
     T4ATransport tuyaTransport = new TuyaT4APlatform(listener::onRawLog);
     T4ATransport delayedTuya =
