@@ -38,6 +38,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKSEC_AUTH] START target=AuthKeyParam correlationsOnly=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_USE] START targetSlots=5,14,15 liveObjectGraph=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_IMPL] START targetSlots=5,14,15 structuralOnly=true writes=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC_GRAPH] START targetSlots=5,14,15 maxDepth=9 writes=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -73,6 +74,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_AUTH] FINISH writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_USE] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_IMPL] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_GRAPH] FINISH targetSlots=5,14,15 writes=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true); tracer.start();
   }
@@ -89,6 +91,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
       rawLog.accept("[BLE/SDKSEC_AUTH] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_USE] STOP reason=interrupted secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC_IMPL] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC_GRAPH] STOP reason=interrupted secretsLogged=false");
       return false;
     }
   }
@@ -98,13 +101,14 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
     ThingBleNamedKeyProbe.capture(delayMs, rawLog);
 
-    // f173 proved MD5(loginKey)->slot4 and MD5(srand)->slots2/12. The unresolved work starts
+    // f173/f174 proved MD5(loginKey)->slot4 and MD5(srand)->slots2/12. The unresolved work starts
     // only after srand/session material exists, so avoid the old generic derivation tree entirely.
     if (delayMs >= 1700L) {
       ThingBleAnchoredKeyProbe.capture(delayMs, rawLog);
       ThingBleAuthKeyParamProbe.capture(delayMs, rawLog);
       ThingBleSecretUsageProbe.capture(delayMs, rawLog);
       ThingBleKeyImplementationProbe.capture(delayMs, rawLog);
+      ThingBleSlotObjectGraphProbe.capture(delayMs, rawLog);
     }
   }
 
