@@ -111,6 +111,69 @@ tasks.register('verifyTuyaBoundary') {
     }
 }
 
+tasks.register('inspectTuyaBleSdk') {
+    group = 'verification'
+    description = 'Lista classes BLE/segurança presentes nas dependências ThingClips resolvidas, sem despejar bytecode ou segredos.'
+
+    doLast {
+        try {
+            def runtime = configurations.findByName('debugRuntimeClasspath')
+            if (runtime == null) {
+                logger.lifecycle('[TUYA/SDK-INSPECT] debugRuntimeClasspath unavailable')
+                return
+            }
+
+            def patterns = [
+                    'p4supersecurity',
+                    'supersecurity',
+                    'securitycert',
+                    'authkeyparam',
+                    'deviceinforsp',
+                    'connectopt',
+                    'ble/core/protocol',
+                    'fd50'
+            ]
+            def findings = new TreeSet<String>()
+
+            def scanArchive
+            scanArchive = { File archive, String label ->
+                if (!archive.isFile()) return
+                zipTree(archive).visit { entry ->
+                    if (entry.directory) return
+                    def path = entry.path.replace('\\', '/').toLowerCase(Locale.ROOT)
+                    if (patterns.any { path.contains(it) }) {
+                        findings.add("${label} :: ${entry.path}")
+                    }
+                }
+            }
+
+            runtime.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+                def group = artifact.moduleVersion.id.group ?: ''
+                if (!group.startsWith('com.thingclips')) return
+
+                def source = artifact.file
+                if (source.name.endsWith('.jar')) {
+                    scanArchive(source, "${artifact.moduleVersion.id}")
+                } else if (source.name.endsWith('.aar')) {
+                    scanArchive(source, "${artifact.moduleVersion.id}")
+                    zipTree(source).matching { include 'classes.jar' }.files.each { classesJar ->
+                        scanArchive(classesJar, "${artifact.moduleVersion.id}#classes.jar")
+                    }
+                }
+            }
+
+            logger.lifecycle('[TUYA/SDK-INSPECT] findings=' + findings.size())
+            findings.each { logger.lifecycle('[TUYA/SDK-INSPECT] ' + it) }
+            if (findings.isEmpty()) {
+                logger.lifecycle('[TUYA/SDK-INSPECT] no matching class names; implementation may be obfuscated')
+            }
+        } catch (Throwable error) {
+            logger.lifecycle('[TUYA/SDK-INSPECT] non_blocking_error=' + error.getClass().getSimpleName() + ' message=' + (error.message ?: '<none>'))
+        }
+    }
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('verifyTuyaBoundary')
+    dependsOn tasks.named('inspectTuyaBleSdk')
 }

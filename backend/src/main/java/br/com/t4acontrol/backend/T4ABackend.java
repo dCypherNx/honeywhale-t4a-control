@@ -1,9 +1,11 @@
 package br.com.t4acontrol.backend;
 
 import com.alibaba.fastjson.JSON;
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public final class T4ABackend {
@@ -209,7 +211,7 @@ public final class T4ABackend {
       dps.put(DP_LOCK, remembered);
     }
     Map<String, Object> command = Collections.singletonMap(dpId, value);
-    raw("[SDK] TX " + JSON.toJSONString(command));
+    raw("[T4A] TX " + JSON.toJSONString(command));
     transport.publish(device.id, command, new T4AContracts.ResultCallback() {
       @Override public void onSuccess() {
         if (!QUIET_DPS.contains(dpId)) event("Comando DP " + dpId + " aceito; aguardando confirmação");
@@ -329,7 +331,7 @@ public final class T4ABackend {
       }
     }
     if (value.dps != null) {
-      raw("[SDK] INITIAL " + JSON.toJSONString(value.dps));
+      raw("[T4A] INITIAL " + JSON.toJSONString(value.dps));
       mergeDps(value.dps, false);
     }
     applyRememberedLock();
@@ -338,7 +340,7 @@ public final class T4ABackend {
       @Override public void onDpUpdate(String id, Map<String, Object> update) {
         scheduler.post(() -> {
           recordConnectionTransition(transport.isConnected(attached.id));
-          raw("[SDK] RX " + JSON.toJSONString(update));
+          raw("[T4A] RX " + JSON.toJSONString(update));
           logFirstLockRxAfterConnect(update);
           mergeDps(update, true);
           emitState();
@@ -381,7 +383,9 @@ public final class T4ABackend {
     if (address.isEmpty()) address = stateStore.bleAddress();
     if (!address.isEmpty()) stateStore.setBleAddress(address);
     if (address.equals(value.mac)) return value;
-    return new T4AContracts.Device(value.id, value.name, address, value.uuid, value.dps, value.schema);
+    return new T4AContracts.Device(
+        value.id, value.name, address, value.uuid, value.productId,
+        value.localKey, value.securityKey, value.protocolMetadata, value.dps, value.schema);
   }
 
   private String rssiAddress() {
@@ -459,10 +463,46 @@ public final class T4ABackend {
     }
     if (confirmsCommand) {
       for (String id : accepted.keySet()) {
-        if (!DP_LOCK.equals(id) && pendingDps.remove(id) != null && !QUIET_DPS.contains(id)) event("DP " + id + " confirmado pelo T4A");
+        if (DP_LOCK.equals(id)) continue;
+        Object expected = pendingDps.get(id);
+        Object reported = accepted.get(id);
+        if (expected == null && !pendingDps.containsKey(id)) continue;
+        if (matchesRequestedValue(expected, reported)) {
+          pendingDps.remove(id);
+          if (!QUIET_DPS.contains(id)) event("DP " + id + " confirmado pelo T4A");
+        } else {
+          raw("[T4A] RX stale DP " + id + " esperado=" + JSON.toJSONString(expected)
+              + " recebido=" + JSON.toJSONString(reported));
+        }
       }
     }
     dps.putAll(accepted);
+  }
+
+  private boolean matchesRequestedValue(Object expected, Object reported) {
+    if (Objects.equals(expected, reported)) return true;
+    if (expected == null || reported == null) return false;
+    if (expected instanceof Boolean || reported instanceof Boolean) {
+      return booleanValue(expected) == booleanValue(reported)
+          && (isBooleanLike(expected) || isBooleanLike(reported));
+    }
+    if (expected instanceof Number || reported instanceof Number) {
+      try {
+        return new BigDecimal(String.valueOf(expected))
+            .compareTo(new BigDecimal(String.valueOf(reported))) == 0;
+      } catch (NumberFormatException ignored) {
+        return false;
+      }
+    }
+    return String.valueOf(expected).equalsIgnoreCase(String.valueOf(reported));
+  }
+
+  private boolean isBooleanLike(Object value) {
+    return value instanceof Boolean
+        || "true".equalsIgnoreCase(String.valueOf(value))
+        || "false".equalsIgnoreCase(String.valueOf(value))
+        || "1".equals(String.valueOf(value))
+        || "0".equals(String.valueOf(value));
   }
 
   private void handleLiveLock(Map<String, Object> accepted) {
