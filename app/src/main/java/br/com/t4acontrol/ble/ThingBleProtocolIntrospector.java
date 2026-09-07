@@ -33,6 +33,7 @@ public final class ThingBleProtocolIntrospector {
       "com.thingclips.sdk.ble.core.protocol.entity.ActivatorResultParam",
       "com.thingclips.sdk.ble.core.bean.SecurityCertBean",
       "com.thingclips.sdk.ble.core.protocol.api.ConnectActionResponse",
+      "com.thingclips.sdk.ble.core.protocol.api.ActionResponse",
       "com.thingclips.sdk.ble.core.protocol.api.ActionProgressResponse",
       "com.thingclips.sdk.ble.core.protocol.api.ProtocolRequestDelegate",
       "com.thingclips.sdk.ble.core.protocol.api.Protocol4RequestDelegate",
@@ -50,10 +51,62 @@ public final class ThingBleProtocolIntrospector {
     if (!RAN.compareAndSet(false, true)) return;
 
     log.accept("[BLE/SDKMAP] START targetCount=" + TARGETS.length
-        + " instanceValuesRead=false instancesCreated=false safeConstantsRead=true");
+        + " instanceValuesRead=false instancesCreated=false safeConstantsRead=true runtimeSurface=true");
     ClassLoader loader = ThingBleProtocolIntrospector.class.getClassLoader();
     for (String name : TARGETS) inspectClass(loader, name, log);
-    log.accept("[BLE/SDKMAP] FINISH instanceValuesRead=false secretsLogged=false safeConstantsRead=true");
+    inspectRuntimeBleManager(loader, log);
+    log.accept("[BLE/SDKMAP] FINISH instanceValuesRead=false secretsLogged=false safeConstantsRead=true runtimeSurface=true");
+  }
+
+  private static void inspectRuntimeBleManager(ClassLoader loader, Consumer<String> log) {
+    try {
+      Class<?> sdk = Class.forName("com.thingclips.smart.home.sdk.ThingHomeSdk", false, loader);
+      Method getter = sdk.getMethod("getBleManager");
+      Object manager = getter.invoke(null);
+      if (manager == null) {
+        log.accept("[BLE/SDKMAP] RUNTIME_BLE_MANAGER null=true");
+        return;
+      }
+      Class<?> concrete = manager.getClass();
+      log.accept("[BLE/SDKMAP] RUNTIME_BLE_MANAGER null=false class=" + concrete.getName()
+          + " fieldsRead=false valuesLogged=false");
+      inspectRuntimeClassHierarchy(concrete, log);
+    } catch (Throwable error) {
+      log.accept("[BLE/SDKMAP] RUNTIME_BLE_MANAGER_ERROR error="
+          + error.getClass().getSimpleName());
+    }
+  }
+
+  private static void inspectRuntimeClassHierarchy(Class<?> type, Consumer<String> log) {
+    Class<?> current = type;
+    int depth = 0;
+    while (current != null && current != Object.class && depth < 8) {
+      String name = current.getName();
+      log.accept("[BLE/SDKMAP] RUNTIME_CLASS depth=" + depth + " name=" + name
+          + " interfaces=" + joinTypes(current.getInterfaces()) + " fieldsRead=false");
+
+      Field[] fields = current.getDeclaredFields();
+      Arrays.sort(fields, Comparator.comparing(Field::getName));
+      for (Field field : fields) {
+        log.accept("[BLE/SDKMAP] RUNTIME_FIELD owner=" + name
+            + " name=" + field.getName()
+            + " type=" + typeName(field.getType())
+            + " modifiers=" + Modifier.toString(field.getModifiers())
+            + " valueRead=false");
+      }
+
+      Method[] methods = current.getDeclaredMethods();
+      Arrays.sort(methods, Comparator.comparing(Method::getName).thenComparing(Method::toString));
+      for (Method method : methods) {
+        log.accept("[BLE/SDKMAP] RUNTIME_METHOD owner=" + name
+            + " name=" + method.getName()
+            + " modifiers=" + Modifier.toString(method.getModifiers())
+            + " returns=" + typeName(method.getReturnType())
+            + " params=" + joinTypes(method.getParameterTypes()));
+      }
+      current = current.getSuperclass();
+      depth++;
+    }
   }
 
   private static void inspectClass(ClassLoader loader, String name, Consumer<String> log) {
