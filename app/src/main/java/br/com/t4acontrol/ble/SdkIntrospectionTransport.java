@@ -38,6 +38,7 @@ public final class SdkIntrospectionTransport implements T4ATransport {
   @Override public void connect(T4AContracts.Device device) {
     ThingBleProtocolIntrospector.inspect(rawLog);
     rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_session_window classesOnly=true valuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSESSION] START mode=sanitized_runtime_negotiation objectRefsRead=true secretValuesRead=false secretsLogged=false");
     delegate.connect(device);
     traceRuntimeWorkers();
   }
@@ -55,16 +56,33 @@ public final class SdkIntrospectionTransport implements T4ATransport {
           } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
+            rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
             return;
           }
         }
         captureRuntimeSnapshot(delay, emitted);
+        if (shouldProbeSession(delay)) ThingBleLiveSessionProbe.capture(delay, rawLog);
       }
       rawLog.accept("[BLE/SDKTRACE] FINISH uniqueFrames=" + emitted.size()
           + " valuesRead=false secretsLogged=false");
+      rawLog.accept("[BLE/SDKSESSION] FINISH valuesLogged=safe_only secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true);
     tracer.start();
+  }
+
+  private static boolean shouldProbeSession(long delayMs) {
+    return delayMs == 900L
+        || delayMs == 1050L
+        || delayMs == 1150L
+        || delayMs == 1250L
+        || delayMs == 1325L
+        || delayMs == 1425L
+        || delayMs == 1500L
+        || delayMs == 1550L
+        || delayMs == 1700L
+        || delayMs == 2100L
+        || delayMs == 3000L;
   }
 
   private void captureRuntimeSnapshot(long delayMs, Set<String> emitted) {
