@@ -9,18 +9,14 @@ import java.util.function.Consumer;
 
 /** Debug transport decorator that emits the ThingClips protocol map at the first real connect. */
 public final class SdkIntrospectionTransport implements T4ATransport {
-  /*
-   * f169 proved that the protocol-4.7 securityRaw object transitions from empty to
-   * authKey+srand between the 1050 and 1150 ms samples. Densify only this short
-   * transition window so we can catch transient derived material without extending
-   * the overall trace or changing the BLE traffic.
-   */
   private static final long[] TRACE_DELAYS_MS = {
       0L, 25L, 75L, 150L, 300L, 600L, 900L, 1050L,
       1075L, 1100L, 1125L, 1150L, 1175L, 1200L, 1225L, 1250L, 1325L,
       1375L, 1425L, 1475L, 1500L, 1525L, 1550L, 1600L, 1700L, 1850L,
       2100L, 2500L, 3000L, 4000L
   };
+  private static final long ADAPTIVE_TRACE_LIMIT_MS = 10000L;
+  private static final long ADAPTIVE_POLL_MS = 250L;
 
   private final T4ATransport delegate;
   private final Consumer<String> rawLog;
@@ -38,44 +34,71 @@ public final class SdkIntrospectionTransport implements T4ATransport {
 
   @Override public void connect(T4AContracts.Device device) {
     ThingBleProtocolIntrospector.inspect(rawLog);
-    rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_session_window classesOnly=true valuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKTRACE] START mode=thread_stack_dense_plus_adaptive classesOnly=true valuesRead=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSESSION] START mode=sanitized_runtime_negotiation objectRefsRead=true secretValuesRead=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKSEC] START mode=v47_security_state objectRefsRead=true secretValuesRead=false secretsLogged=false");
+    rawLog.accept("[BLE/SDKSEC] START mode=v47_security_state_adaptive objectRefsRead=true secretValuesRead=false secretsLogged=false");
     delegate.connect(device);
-    traceRuntimeWorkers();
+    traceRuntimeWorkers(device == null ? null : device.id);
   }
 
-  private void traceRuntimeWorkers() {
+  private void traceRuntimeWorkers(String deviceId) {
     Thread tracer = new Thread(() -> {
       Set<String> emitted = new HashSet<>();
       long previousDelay = 0L;
       for (long delay : TRACE_DELAYS_MS) {
         long sleepMs = Math.max(0L, delay - previousDelay);
         previousDelay = delay;
-        if (sleepMs > 0L) {
-          try {
-            Thread.sleep(sleepMs);
-          } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
-            rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
-            rawLog.accept("[BLE/SDKSEC] STOP reason=interrupted secretsLogged=false");
-            return;
-          }
-        }
+        if (!sleepQuietly(sleepMs)) return;
         captureRuntimeSnapshot(delay, emitted);
-        if (shouldProbeSession(delay)) {
-          ThingBleLiveSessionProbe.capture(delay, rawLog);
-          ThingBleSecurityRuntimeProbe.capture(delay, rawLog);
+        if (shouldProbeSession(delay)) captureSession(delay);
+      }
+
+      boolean connectedCaptured = false;
+      for (long delay = previousDelay + ADAPTIVE_POLL_MS;
+          delay <= ADAPTIVE_TRACE_LIMIT_MS;
+          delay += ADAPTIVE_POLL_MS) {
+        if (!sleepQuietly(ADAPTIVE_POLL_MS)) return;
+        captureRuntimeSnapshot(delay, emitted);
+        boolean connected = deviceId != null && delegate.isConnected(deviceId);
+        rawLog.accept("[BLE/SDKTRACE] ADAPTIVE tMs=" + delay + " connected=" + connected);
+        if (connected) {
+          captureSession(delay);
+          connectedCaptured = true;
+          if (!sleepQuietly(100L)) return;
+          captureSession(delay + 100L);
+          if (!sleepQuietly(200L)) return;
+          captureSession(delay + 300L);
+          break;
         }
       }
+
       rawLog.accept("[BLE/SDKTRACE] FINISH uniqueFrames=" + emitted.size()
+          + " adaptiveConnectedCaptured=" + connectedCaptured
           + " valuesRead=false secretsLogged=false");
       rawLog.accept("[BLE/SDKSESSION] FINISH valuesLogged=safe_only secretsLogged=false");
       rawLog.accept("[BLE/SDKSEC] FINISH valuesLogged=safe_only secretValuesRead=false secretsLogged=false");
     }, "t4a-sdk-trace");
     tracer.setDaemon(true);
     tracer.start();
+  }
+
+  private boolean sleepQuietly(long sleepMs) {
+    if (sleepMs <= 0L) return true;
+    try {
+      Thread.sleep(sleepMs);
+      return true;
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      rawLog.accept("[BLE/SDKTRACE] STOP reason=interrupted");
+      rawLog.accept("[BLE/SDKSESSION] STOP reason=interrupted secretsLogged=false");
+      rawLog.accept("[BLE/SDKSEC] STOP reason=interrupted secretsLogged=false");
+      return false;
+    }
+  }
+
+  private void captureSession(long delayMs) {
+    ThingBleLiveSessionProbe.capture(delayMs, rawLog);
+    ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
   }
 
   private static boolean shouldProbeSession(long delayMs) {
