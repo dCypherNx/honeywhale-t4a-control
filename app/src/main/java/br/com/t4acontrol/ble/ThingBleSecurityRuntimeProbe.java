@@ -5,8 +5,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -16,6 +18,7 @@ public final class ThingBleSecurityRuntimeProbe {
   private static final String CONTROLLER = "com.thingclips.sdk.bluetooth.dpdbqdp";
   private static final int MAX_DEPTH = 7;
   private static final int MAX_NODES = 700;
+  private static final int SECRET_SLOT_MAX = 31;
   private static final String[] ROOT_CLASSES = {
       "com.thingclips.sdk.bluetooth.pdbdqqp", "com.thingclips.sdk.bluetooth.pbpdbqp",
       "com.thingclips.sdk.bluetooth.pbbpdbb", "com.thingclips.sdk.bluetooth.bpqppbd",
@@ -117,6 +120,7 @@ public final class ThingBleSecurityRuntimeProbe {
         + " deviceCapabilityLength=" + secretLength(readNamedField(deviceInfo, "deviceCapability")) + " secretsLogged=false");
 
     if (securityRaw != null) logSecurityRaw(tMs, securityRaw, connectParam, deviceInfo, rep, log);
+    logSecretKeySlots(tMs, controller, connectParam, deviceInfo, rep, log);
   }
 
   private static void logSecurityRaw(long tMs, Object raw, Object connectParam, Object deviceInfo, Object rep, Consumer<String> log) {
@@ -145,11 +149,61 @@ public final class ThingBleSecurityRuntimeProbe {
     line.append(" secretValuesCompared=true secretsLogged=false"); log.accept(line.toString());
   }
 
+  private static void logSecretKeySlots(long tMs, Object controller, Object connectParam,
+      Object deviceInfo, Object rep, Consumer<String> log) {
+    Object loginKey = connectParam == null ? null : readNamedField(connectParam, "loginKey");
+    Object loginKeyComplete = connectParam == null ? null : readNamedField(connectParam, "loginKeyComplete");
+    Object secretKey = connectParam == null ? null : readNamedField(connectParam, "secretKey");
+    Object authKey = deviceInfo == null ? null : readNamedField(deviceInfo, "authKey");
+    Object srand = rep == null ? null : readNamedField(rep, "srand");
+    List<byte[]> groups = new ArrayList<>();
+    StringBuilder line = new StringBuilder("[BLE/SDKSEC_KEYS] tMs=").append(tMs);
+    int populated = 0;
+    for (int slot = 0; slot <= SECRET_SLOT_MAX; slot++) {
+      byte[] value = invokeSecretKey(controller, slot);
+      if (value == null || value.length == 0) continue;
+      populated++;
+      int group = secretGroup(groups, value);
+      line.append(" slot").append(slot).append("Length=").append(value.length)
+          .append(" slot").append(slot).append("Group=").append(group)
+          .append(" slot").append(slot).append("EqLoginKey=").append(secretEqualsFlexible(value, loginKey))
+          .append(" slot").append(slot).append("EqLoginKeyComplete=").append(secretEqualsFlexible(value, loginKeyComplete))
+          .append(" slot").append(slot).append("EqSecretKey=").append(secretEqualsFlexible(value, secretKey))
+          .append(" slot").append(slot).append("EqAuthKey=").append(secretEqualsFlexible(value, authKey))
+          .append(" slot").append(slot).append("EqSrand=").append(secretEqualsFlexible(value, srand));
+    }
+    line.append(" populated=").append(populated)
+        .append(" maxSlot=").append(SECRET_SLOT_MAX)
+        .append(" secretValuesCompared=true secretsLogged=false");
+    log.accept(line.toString());
+  }
+
+  private static byte[] invokeSecretKey(Object controller, int slot) {
+    try {
+      Method method = controller.getClass().getMethod("getSecretKey", int.class);
+      Object value = method.invoke(controller, slot);
+      return value instanceof byte[] ? (byte[]) value : null;
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  private static int secretGroup(List<byte[]> groups, byte[] value) {
+    for (int i = 0; i < groups.size(); i++) if (secretEqualsBytes(groups.get(i), value)) return i + 1;
+    groups.add(value.clone());
+    return groups.size();
+  }
+
+  private static boolean secretEqualsBytes(byte[] a, byte[] b) {
+    if (a == null || b == null || a.length != b.length) return false;
+    int diff = 0; for (int i = 0; i < a.length; i++) diff |= a[i] ^ b[i]; return diff == 0;
+  }
+
   private static boolean secretEqualsFlexible(Object a, Object b) {
     if (a == null || b == null) return false;
     byte[] aa = secretBytes(a); byte[] bb = secretBytes(b);
     if (aa == null || bb == null || aa.length != bb.length) return false;
-    int diff = 0; for (int i = 0; i < aa.length; i++) diff |= aa[i] ^ bb[i]; return diff == 0;
+    return secretEqualsBytes(aa, bb);
   }
 
   private static byte[] secretBytes(Object value) {
