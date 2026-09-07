@@ -43,8 +43,7 @@ public final class ThingBleProtocolIntrospector {
       "com.thingclips.sdk.ble.core.protocol.api.IP4SuperSecurityAction",
       "com.thingclips.sdk.ble.core.protocol.api.DeviceCapabilityBit",
       "com.thingclips.sdk.ble.core.protocol.api.CommonConstant",
-      // f162 caught these concrete classes on the real RX path after CONNECTED.
-      // Inspect structure only: no instances, fields or packet contents are read.
+      // Concrete classes observed on the real connection/RX path.
       "com.thingclips.sdk.bluetooth.qqpddqd",
       "com.thingclips.sdk.bluetooth.dpbbdqq",
       "com.thingclips.sdk.bluetooth.dpqdpqd",
@@ -58,7 +57,21 @@ public final class ThingBleProtocolIntrospector {
       "com.thingclips.sdk.bluetooth.qbqddpp",
       "com.thingclips.sdk.bluetooth.bdpddpb",
       "com.thingclips.sdk.bluetooth.pbbpdbb",
-      "com.thingclips.sdk.bluetooth.pbbpdbb$bdpdqbp"
+      "com.thingclips.sdk.bluetooth.pbbpdbb$bdpdqbp",
+      // f163 identified bdpddpb as the protocol engine. Map its typed helpers next:
+      // packet/session state, device-info representation, RX receiver and TX/framing helpers.
+      "com.thingclips.sdk.ble.core.packet.bean.DeviceInfoRep",
+      "com.thingclips.sdk.bluetooth.qqbdppb",
+      "com.thingclips.sdk.bluetooth.dpppbbd",
+      "com.thingclips.sdk.bluetooth.ddqbbqp",
+      "com.thingclips.sdk.bluetooth.dqbpqpd",
+      "com.thingclips.sdk.bluetooth.ddpqpqq",
+      "com.thingclips.sdk.bluetooth.ddbbpdq",
+      "com.thingclips.sdk.bluetooth.pdpqqpp",
+      "com.thingclips.sdk.bluetooth.dbqqqbb",
+      "com.thingclips.sdk.bluetooth.pdpqbpq",
+      "com.thingclips.smart.android.ble.connect.request.XRequest",
+      "com.thingclips.smart.android.ble.connect.request.XResponse"
   };
 
   private ThingBleProtocolIntrospector() {}
