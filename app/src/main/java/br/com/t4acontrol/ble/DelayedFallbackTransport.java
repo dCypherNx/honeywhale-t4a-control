@@ -20,6 +20,7 @@ public final class DelayedFallbackTransport implements T4ATransport {
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Runnable delayedConnect;
   private T4AContracts.Device pendingDevice;
+  private String scheduledDeviceId;
   private boolean destroyed;
 
   public DelayedFallbackTransport(T4ATransport delegate, Consumer<String> rawLog) {
@@ -29,6 +30,7 @@ public final class DelayedFallbackTransport implements T4ATransport {
         () -> {
           T4AContracts.Device device = pendingDevice;
           pendingDevice = null;
+          scheduledDeviceId = null;
           if (destroyed || device == null) return;
           if (this.delegate.isConnected(device.id)) {
             this.rawLog.accept(
@@ -66,7 +68,17 @@ public final class DelayedFallbackTransport implements T4ATransport {
               + device.id);
       return;
     }
+    if (device.id.equals(scheduledDeviceId) && pendingDevice != null) {
+      rawLog.accept(
+          "[BLE/DIRECT] FALLBACK_ALREADY_SCHEDULED delayMs="
+              + FALLBACK_DELAY_MS
+              + " deviceId="
+              + device.id
+              + " provider=tuya");
+      return;
+    }
     pendingDevice = device;
+    scheduledDeviceId = device.id;
     handler.removeCallbacks(delayedConnect);
     rawLog.accept(
         "[BLE/DIRECT] FALLBACK_SCHEDULED delayMs="
@@ -109,6 +121,7 @@ public final class DelayedFallbackTransport implements T4ATransport {
     if (pendingDevice == null) return;
     handler.removeCallbacks(delayedConnect);
     pendingDevice = null;
+    scheduledDeviceId = null;
     rawLog.accept("[BLE/DIRECT] FALLBACK_CANCELLED reason=" + reason);
   }
 }

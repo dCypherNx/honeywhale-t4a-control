@@ -58,7 +58,7 @@ A negociação direta de MTU 247 foi bem-sucedida.
 
 A camada física/GATT deixou de ser uma incógnita. Um ESP32 consegue, em princípio, reproduzir conexão, descoberta, MTU, assinatura de notificações e escrita no canal correto.
 
-O bloqueio atual está acima do GATT: protocolo, autenticação, sessão e criptografia.
+O mesmo fluxo já foi reproduzido no Android por `NativeBleTransport`, sem chamar o transporte BLE do SDK no caminho bem-sucedido. O codec independente cobre o envelope criptografado, fragmentação/reassembly, CRC e a sequência de sessão usada pelo T4A.
 
 ## 4. Metadados do dispositivo
 
@@ -198,7 +198,7 @@ A presença de MD5 lembra mecanismos Tuya anteriores, mas **não prova que o pro
 
 ## 9. Slots ainda não explicados
 
-Continuam sem derivação confirmada:
+Na investigação do runtime do SDK, estes slots continuaram sem derivação genérica confirmada:
 
 ```text
 slot5
@@ -206,7 +206,7 @@ slot14
 slot15
 ```
 
-Eles já estão presentes quando a sessão se torna funcional e, portanto, são candidatos importantes para autenticação, cifragem ou integridade do tráfego 4.7.
+Eles já estão presentes quando a sessão se torna funcional e, portanto, são candidatos importantes para autenticação, cifragem ou integridade do tráfego 4.7. Para o caminho nativo validado, a derivação necessária foi obtida diretamente no código do protocolo: `K14 = MD5(loginKeyComplete || secretKey)` e `K15 = MD5(loginKeyComplete || secretKey || srand)`.
 
 ## 10. Caminhos testados e bem-sucedidos
 
@@ -363,9 +363,9 @@ A investigação estrutural encontrou uma âncora estável no controller `dpdbqd
 mSendDataToDeviceHelper -> dpppbbd
 ```
 
-Essa descoberta muda a estratégia: em vez de continuar procurando objetos transitórios depois que foram criados, o próximo trabalho deve seguir o ponto que **produz, transforma ou consome** os bytes de TX.
+Essa descoberta mudou a estratégia da investigação: o ponto que produz, transforma e consome os bytes de TX foi usado como referência para reproduzir o envelope fora do SDK.
 
-A branch já evoluiu para um sampler do caminho ativo de wire (`ThingClips active BLE wire path` / `Use active-path BLE wire sampler`).
+A etapa de sampler do caminho ativo de wire (`ThingClips active BLE wire path` / `Use active-path BLE wire sampler`) agora está concluída para a sessão validada; o transporte nativo reproduz o caminho final diretamente no GATT.
 
 ## 13. Linha evolutiva dos experimentos
 
@@ -392,7 +392,9 @@ Em termos de conhecimento, a branch percorreu aproximadamente esta sequência:
 19. tentar capturar objetos `XRequest` transitórios;
 20. aumentar a amostragem para 5 ms sem capturá-los;
 21. localizar `mSendDataToDeviceHelper -> dpppbbd`;
-22. migrar a investigação para o caminho ativo de wire.
+22. migrar a investigação para o caminho ativo de wire;
+23. implementar e validar a sessão direta Android com codec independente;
+24. decodificar os relatórios `DpsReportRep` v4 observados no T4A.
 
 ## 14. O que já pode ser considerado resolvido
 
@@ -422,6 +424,8 @@ Resolvido:
 ```text
 K4    = MD5(loginKey)
 K2/12 = MD5(srand)
+K14   = MD5(loginKeyComplete || secretKey)
+K15   = MD5(loginKeyComplete || secretKey || srand)
 ```
 
 ### Materiais disponíveis
@@ -436,45 +440,45 @@ Identificados, embora nem todos tenham função completamente explicada:
 - authKey;
 - srand.
 
-## 15. O que ainda impede remover o SDK do transporte
+## 15. O que ainda falta para uma remoção mais ampla do SDK
 
-Faltam principalmente:
+O MVP do runtime direto foi concluído. O transporte BLE não depende do SDK no caminho bem-sucedido e agora cobre leitura, escrita e confirmação de estado. Permanecem como trabalho separado:
 
-1. formato exato das mensagens 4.7 no wire;
-2. sequência completa do handshake NEW;
-3. função/derivação dos slots 5, 14 e 15;
-4. identificação da chave efetivamente usada em cada etapa/pacote;
-5. algoritmo de cifragem/autenticação/integridade e seus parâmetros;
-6. framing, sequência, fragmentação/reassembly e validação;
-7. codificação/decodificação DPS sobre esse transporte;
-8. reprodução independente de uma sessão completa.
+1. persistir e recuperar, de forma independente do inventário Tuya, todo o material necessário depois do pareamento inicial;
+2. decidir se login, inventário da casa e pareamento continuarão no SDK/nuvem ou ganharão uma segunda implementação;
+3. ampliar o decoder para variantes de relatórios além do `DpsReportRep` v4 observado no T4A.
 
-## 16. Próximo passo recomendado
-
-Não continuar aumentando polling genérico nem gerar centenas de combinações criptográficas sem evidência.
-
-Prioridade:
+O caminho atuante validado ficou assim:
 
 ```text
-dpdbqdp
-  -> mSendDataToDeviceHelper
-  -> dpppbbd
-  -> métodos de preparação/transformação do payload
-  -> chamada final que entrega bytes ao GATT
+T4ABackend.publish
+  -> NativeBleTransport.publish
+  -> PUBLISH_DPS (0x27) no characteristic 0001
+  -> callback local após as escritas GATT
+  -> ACK do dispositivo (0x27, quando observado)
+  -> DpsReportRep (0x8006)
+  -> estado recebido no backend
 ```
 
-Objetivo imediato: obter, sem expor segredos, uma cadeia estrutural do tipo:
+O callback de publicação indica que o frame foi aceito pela escrita GATT. A confirmação de estado é feita somente pelo relatório DPS posterior. O backend não remove mais um DP pendente quando o relatório traz um valor antigo ou diferente do solicitado.
 
-```text
-mensagem lógica
- -> framing
- -> seleção de slot/chave
- -> transformação criptográfica
- -> frame final
- -> write em FD50/0001
-```
+O schema do T4A chega com `type=obj`; o tipo efetivo está no JSON de `property`. O transporte passou a ler esse campo para codificar `bool`, `value`, `enum` e `bitmap`. Isso foi necessário para que `level_0..level_3` e `zero_start/not_zero_start` fossem enviados como índices de enum, em vez de texto.
 
-Quando esse caminho estiver mapeado, repetir o mesmo raciocínio no RX (`0002`) e então implementar um codec independente.
+## 16. Próximos passos recomendados
+
+O MVP foi exercitado em hardware na sessão direta de 2026-09-07, build `100189`, com o estado anterior registrado e restaurado ao final. A matriz atuante foi:
+
+| DP | Comando enviado | Evidência de retorno | Resultado |
+|---:|---|---|---|
+| 8 | `true`, depois `false` | `RX {"8":true}` e `RX {"8":false}`; ACK `0x27` para cada sequência | confirmado |
+| 13 | `true` | `RX {"13":true}`; ACK `0x27` | confirmado |
+| 14 | `level_2`, depois `level_3` | `RX {"14":"level_2"}` e `RX {"14":"level_3"}`; ACK `0x27` | confirmado |
+| 16 | `zero_start` | `RX {"16":"zero_start"}`; ACK `0x27` | confirmado |
+| 1 | `false` | `RX {"1":false}`; ACK `0x27` | confirmado |
+
+Durante a primeira execução, o T4A devolveu `RX {"8":true}` depois de um pedido `{"8":false}`. Esse retorno antigo era anteriormente tratado como confirmação; o teste unitário `staleDpRxDoesNotConfirmDifferentRequestedValue` reproduz o caso e a implementação atual mantém o DP pendente até chegar `RX {"8":false}`.
+
+Ao encerrar a matriz, o relatório de telemetria voltou a indicar `locked=true`, `headlight=false`, `cruise=true`, `mode=level_3`, `start_mode=zero_start` e `unit_setting=km`. Não foram executados unpair, reset ou reprovisionamento.
 
 ## 17. Critério para o primeiro protótipo ESP32
 
@@ -485,9 +489,12 @@ O primeiro protótipo independente será considerado viável quando pudermos for
 - algoritmo de handshake documentado;
 - geração/validação das chaves de sessão;
 - codec de frames 4.7;
-- pelo menos uma leitura passiva de telemetria válida.
+- leitura passiva de telemetria válida;
+- publicação de um DP e confirmação do estado correspondente.
 
-Somente depois disso devem ser considerados comandos de controle no ESP32.
+Com esses critérios atendidos no Android, o transporte pode ser portado para o ESP32 sem depender do transporte BLE Tuya.
+
+O critério de transporte e controle foi atingido no Android: uma sessão nativa recebeu telemetria DPS válida e executou comandos atuantes sem o transporte BLE do SDK. O pareamento inicial e o inventário continuam atrás da fronteira de provisionamento Tuya.
 
 ## 18. Estratégia provável de migração
 
@@ -503,7 +510,7 @@ Tuya SDK (somente provisionamento/material persistente)
             +--> ESP32
 ```
 
-Essa etapa já reduziria fortemente a dependência do SDK no runtime.
+Essa etapa está em execução: o SDK ainda fornece provisionamento e inventário, enquanto o transporte próprio Android assume a sessão BLE quando o material está disponível.
 
 ### Etapa B — transporte independente
 
@@ -521,21 +528,44 @@ Branch:
 feature/direct-ble-transport-fallback
 ```
 
-No momento desta consolidação, o HEAD anterior a este documento era:
+O HEAD histórico desta investigação era:
 
 ```text
 97321e605f29f6e2af347483768cf79ec9b26090
 Use active-path BLE wire sampler
 ```
 
-O fallback Tuya continua sendo parte obrigatória do experimento até que o transporte independente complete uma sessão real com segurança.
+O fallback Tuya continua disponível. A versão local atual já completa uma sessão real diretamente com o T4A e só agenda o fallback quando a conexão nativa falha.
 
 ## 20. Resumo executivo
 
-A investigação já ultrapassou a fase de tentativa cega de BLE.
+A investigação já ultrapassou a fase de tentativa cega de BLE. A versão local atual conecta diretamente ao T4A pelo FD50, negocia MTU 247, habilita notificações, autentica o `DEVICE_INFO`, conclui `PAIR`, envia `PUBLISH_DPS` e recebe relatórios DPS criptografados sem usar o transporte BLE Tuya. O teste físico observou o protocolo 4.7, decodificou os DPs 1, 2, 3, 5, 6, 8, 11, 12, 13, 14, 16 e 19, confirmou comandos booleanos e enum e permaneceu conectado sem executar o fallback.
 
-Sabemos onde conectar, onde escrever, onde receber, qual protocolo está realmente em uso, quais materiais entram na negociação, quais slots existem e duas derivações exatas do key schedule. Também eliminamos vários caminhos falsos: bootstrap clássico, interpretação de `pv=2.2`, busca simples por campos, brute force limitado de transformações e captura de `XRequest` por polling.
+O que permanece é a separação entre runtime direto e provisionamento: o SDK/nuvem ainda fornece o inventário e o material de pareamento, enquanto o transporte nativo assume a sessão Bluetooth. Essa é a base para a futura implementação ESP32 e para a validação controlada dos comandos DPS.
 
-O problema agora está concentrado em uma região muito menor: o caminho interno de transformação dos frames 4.7 NEW, especialmente ao redor de `dpdbqdp` e `dpppbbd`.
+## 21. Implementação nativa validada em 2026-09-07
 
-Esse é o ponto de partida correto para a continuação da engenharia reversa e para chegar ao objetivo final: **transportar conexão e tráfego BLE do T4A para um ESP32 sem depender do SDK Tuya no runtime**.
+Arquivos principais:
+
+- `app/src/main/java/br/com/t4acontrol/ble/TuyaBle47Codec.java`: framing, AES-CBC, CRC, fragmentação, reassembly, derivação de K14/K15 e payloads de sessão;
+- `app/src/main/java/br/com/t4acontrol/ble/NativeBleTransport.java`: GATT FD50, retries de `status=133/147`, handshake e DPS direto;
+- `app/src/main/java/br/com/t4acontrol/ble/DelayedFallbackTransport.java`: fallback Tuya temporizado e idempotente;
+- `backend/src/main/java/br/com/t4acontrol/backend/T4AContracts.java`: material de provisionamento atravessando a fronteira sem tipos Tuya.
+
+Sequência observada no aparelho:
+
+```text
+GATT_CONNECT_REQUEST
+  -> MTU 247
+  -> FD50/0002 + CCCD
+  -> DEVICE_INFO selector=14, resposta protocol=4.7
+  -> K15 derivada do srand
+  -> PAIR selector=15
+  -> SESSION_CONNECTED transport=native_fd50 sdk=false
+  -> QUERY_DPS command=3
+  -> DPS_REPORT command=0x8006 (DpsReportRep v4)
+```
+
+Os estados `status=133` e `status=147` são tratados como falhas transitórias de conexão: o transporte repete a conexão até três vezes antes de acionar o fallback. Na execução final, a sessão chegou a `status=0` e não houve `FALLBACK_EXECUTE`, `RX_FRAME_ERROR` ou `SESSION_DISCONNECTED` durante a matriz atuante.
+
+O MVP de DPS está validado no aparelho: cada comando atuante produziu a escrita direta, o ACK de transporte `0x27` e um relatório de estado correspondente. O estado anterior foi restaurado ao final; não foram executados unpair, reset ou reprovisionamento.

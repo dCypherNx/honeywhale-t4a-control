@@ -57,6 +57,32 @@ public class T4ABackendTest {
     assertTrue(transport.connectCalls >= 1);
   }
 
+  @Test public void restoredBluetoothAddressPreservesProvisioningMaterialAndSchema() {
+    stateStore.bleAddress = "AA:BB:CC:DD:EE:FF";
+    Map<String, String> metadata = Map.of("protocol", "4.7");
+    Map<String, T4AContracts.DpSchema> schema = Map.of(
+        "8", new T4AContracts.DpSchema("light", "rw", "bool"));
+    T4AContracts.Device provisioned = new T4AContracts.Device(
+        "device-1", "T4A", "", "uuid-1", "product-1",
+        "test-local-key", "test-security-key", metadata, Map.of("8", true), schema);
+    provisioner.account = "account";
+    provisioner.home = new T4AContracts.Home(1L, "Casa", List.of(provisioned));
+    backend = createBackend();
+
+    backend.start();
+
+    T4AContracts.Device attached = transport.attachedDevice;
+    assertEquals(stateStore.bleAddress, attached.mac);
+    assertEquals(provisioned.id, attached.id);
+    assertEquals(provisioned.uuid, attached.uuid);
+    assertEquals(provisioned.productId, attached.productId);
+    assertEquals(provisioned.localKey, attached.localKey);
+    assertEquals(provisioned.securityKey, attached.securityKey);
+    assertEquals(provisioned.protocolMetadata, attached.protocolMetadata);
+    assertEquals(provisioned.dps, attached.dps);
+    assertEquals(provisioned.schema, attached.schema);
+  }
+
   @Test public void discoveryAndPairingStayBehindProvisionerPort() {
     provisioner.account = "account";
     provisioner.home = new T4AContracts.Home(1L, "Casa", Collections.emptyList());
@@ -115,6 +141,20 @@ public class T4ABackendTest {
     transport.emitDps(Map.of("8", true));
     assertFalse(listener.latest().pendingDps.contains("8"));
     assertEquals(true, listener.latest().dps.get("8"));
+  }
+
+  @Test public void staleDpRxDoesNotConfirmDifferentRequestedValue() {
+    startConnected(Collections.emptyMap());
+    backend.publish("8", false);
+    transport.emitDps(Map.of("8", true));
+    assertTrue(listener.latest().pendingDps.contains("8"));
+    assertEquals(true, listener.latest().dps.get("8"));
+    assertTrue(listener.raw.stream().anyMatch(value -> value.contains("RX stale DP 8")));
+
+    transport.emitDps(Map.of("8", false));
+    assertFalse(listener.latest().pendingDps.contains("8"));
+    assertEquals(false, listener.latest().dps.get("8"));
+    assertTrue(listener.events.stream().anyMatch(value -> value.contains("DP 8 confirmado")));
   }
 
   @Test public void staleLockRxIsIgnoredUntilRequestedStateIsConfirmed() {

@@ -22,9 +22,12 @@ public final class T4AContracts {
   public interface RssiCallback { void onResult(boolean success, int rssi); }
 
   public static final class DpSchema {
-    public final String code; public final String mode; public final String type;
+    public final String code; public final String mode; public final String type; public final String property;
     public DpSchema(String code, String mode, String type) {
-      this.code = value(code); this.mode = value(mode); this.type = value(type);
+      this(code, mode, type, "");
+    }
+    public DpSchema(String code, String mode, String type, String property) {
+      this.code = value(code); this.mode = value(mode); this.type = value(type); this.property = value(property);
     }
   }
 
