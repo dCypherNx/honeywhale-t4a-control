@@ -53,7 +53,9 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
   @Override public void attach(Device device, DeviceListener listener) { detach(); activeDevice = ThingHomeSdk.newDeviceInstance(device.id); activeDevice.registerDeviceListener(new IDeviceListener() { @Override public void onDpUpdate(String id, Map<String,Object> update) { listener.onDpUpdate(id, update); } @Override public void onRemoved(String id) { listener.onRemoved(id); } @Override public void onStatusChanged(String id, boolean online) { listener.onConnectionChanged(id, isConnected(id)); } @Override public void onNetworkStatusChanged(String id, boolean online) {} @Override public void onDevInfoUpdate(String id) { listener.onDeviceInfoChanged(id); } }); }
   @Override public void detach() { if (activeDevice != null) { activeDevice.unRegisterDevListener(); activeDevice.onDestroy(); activeDevice = null; } }
   @Override public void connect(Device device) {
-    rememberSecrets(ThingHomeSdk.getDataInstance().getDeviceBean(device.id));
+    DeviceBean source = ThingHomeSdk.getDataInstance().getDeviceBean(device.id);
+    rememberSecrets(source);
+    logBleConnectionSelection(device.id, source);
     BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(true).setScanTimeout(30);
     ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(builder));
   }
@@ -63,6 +65,35 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
   @Override public void readRssi(String mac, RssiCallback callback) { ThingHomeSdk.getBleOperator().readBluetoothRssi(mac, callback::onResult); }
   @Override public void remove(String deviceId, ResultCallback callback) { if (activeDevice == null) { callback.onError("NOT_ATTACHED", "Dispositivo sem sessão ativa"); return; } activeDevice.removeDevice(new IResultCallback() { @Override public void onSuccess() { callback.onSuccess(); } @Override public void onError(String code, String error) { callback.onError(code, error); } }); }
   @Override public void destroy() { stopDiscovery(); detach(); discoveries.clear(); knownSecrets.clear(); ThingHomeSdk.getBleManager().unregisterBusinessLog(bleLogCallback); }
+
+  private void logBleConnectionSelection(String deviceId, DeviceBean source) {
+    try {
+      int deviceType = ThingHomeSdk.getBleManager().getDeviceType(deviceId);
+      int connectAbility = ThingHomeSdk.getBleManager().getBleConnectAbility(deviceId);
+      int expandAttr = ThingHomeSdk.getBleManager().getBleExpandAttr(deviceId);
+      int configFlag = ThingHomeSdk.getBleManager().getConfigDeviceFlag(deviceId);
+      rawLog.accept("[SDK/BLESELECT] deviceType=" + deviceType
+          + " connectAbility=" + connectAbility
+          + " expandAttr=" + expandAttr
+          + " configFlag=" + configFlag
+          + " pv=" + safeMetadata(source == null ? null : source.getPv())
+          + " protocolAttribute=" + (source == null ? "<none>" : source.getProtocolAttribute())
+          + " baseAttribute=" + (source == null ? "<none>" : source.getBaseAttribute())
+          + " ability=" + (source == null ? "<none>" : source.getAbility())
+          + " localKeyLength=" + secretLength(source == null ? null : source.getLocalKey())
+          + " secKeyLength=" + secretLength(source == null ? null : source.getSecKey())
+          + " devKeyLength=" + secretLength(source == null ? null : source.getDevKey())
+          + " secretsLogged=false");
+    } catch (Throwable error) {
+      rawLog.accept("[SDK/BLESELECT] error=" + error.getClass().getSimpleName() + " secretsLogged=false");
+    }
+  }
+
+  private static int secretLength(String value) { return value == null ? 0 : value.length(); }
+  private static String safeMetadata(String value) {
+    if (value == null || value.isBlank()) return "<none>";
+    return value.replace(' ', '_').replace('\n', '_').replace('\r', '_');
+  }
 
   private void rememberSecrets(DeviceBean source) {
     if (source == null) return;
