@@ -39,12 +39,11 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     rawLog.accept("[BLE/SDKSEC_USE] START targetSlots=5,14,15 liveObjectGraph=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_IMPL] START targetSlots=5,14,15 structuralOnly=true writes=false secretsLogged=false");
     rawLog.accept("[BLE/SDKSEC_GRAPH] START targetSlots=5,14,15 maxDepth=9 writes=false secretsLogged=false");
-    rawLog.accept("[BLE/SDKWIRE] START source=XRequest payload=edges_only writes=false completePayloadLogged=false");
+    rawLog.accept("[BLE/SDKWIRE] START source=active_path payload=edges_only writes=false completePayloadLogged=false");
 
-    // f175 showed that the XRequest path is too transient for sparse polling: the live 4.7 engine
-    // only became reachable around 4.5s and no request survived until the snapshot. Start a dedicated
-    // shallow sampler before the SDK connect call so it can observe the short-lived queue/helper state.
-    ThingBleWireSampler.start(rawLog);
+    // f176 proved that sampling only pbbpdbb.qddqppb misses the active queue/helper graph.
+    // Start from all known active TX roots before the SDK connect call.
+    ThingBleWirePathProbe.start(rawLog);
     delegate.connect(device);
     traceRuntimeWorkers(device == null ? null : device.id);
   }
@@ -109,8 +108,6 @@ public final class SdkIntrospectionTransport implements T4ATransport {
     ThingBleSecurityRuntimeProbe.capture(delayMs, rawLog);
     ThingBleNamedKeyProbe.capture(delayMs, rawLog);
 
-    // f173/f174 proved MD5(loginKey)->slot4 and MD5(srand)->slots2/12. The unresolved work starts
-    // only after srand/session material exists, so avoid the old generic derivation tree entirely.
     if (delayMs >= 1700L) {
       ThingBleAnchoredKeyProbe.capture(delayMs, rawLog);
       ThingBleAuthKeyParamProbe.capture(delayMs, rawLog);
