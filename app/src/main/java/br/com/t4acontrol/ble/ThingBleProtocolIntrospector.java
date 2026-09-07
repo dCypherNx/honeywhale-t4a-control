@@ -15,6 +15,9 @@ import java.util.function.Consumer;
 public final class ThingBleProtocolIntrospector {
   private static final AtomicBoolean RAN = new AtomicBoolean(false);
   private static final String[] TARGETS = {
+      "com.thingclips.smart.android.ble.builder.BleConnectBuilder",
+      "com.thingclips.smart.android.ble.IThingBleManager",
+      "com.thingclips.smart.interior.device.bean.DeviceRespBean",
       "com.thingclips.sdk.ble.core.ability.options.BleConnectParams",
       "com.thingclips.sdk.ble.core.protocol.entity.ConnectParam",
       "com.thingclips.sdk.ble.core.protocol.entity.ConnectOpt",
