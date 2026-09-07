@@ -12,9 +12,9 @@ import java.util.function.Consumer;
 /**
  * Debug-only structural inspection of the ThingClips BLE protocol implementation.
  *
- * <p>No instances are created and no field values are read. Only class/member names, modifiers,
- * parameter types and return types are logged. This lets the experimental branch identify the
- * real SDK handshake surface without exposing credentials or provider state.
+ * <p>No instances are created and no instance field values are read. Class/member names,
+ * modifiers, parameter types and return types are logged. Public static final numeric/boolean
+ * constants are also logged because they describe protocol modes rather than device credentials.
  */
 public final class ThingBleProtocolIntrospector {
   private static final AtomicBoolean RAN = new AtomicBoolean(false);
@@ -23,13 +23,23 @@ public final class ThingBleProtocolIntrospector {
       "com.thingclips.sdk.ble.core.ability.options.BleConnectParams",
       "com.thingclips.sdk.ble.core.protocol.entity.ConnectParam",
       "com.thingclips.sdk.ble.core.protocol.entity.ConnectOpt",
+      "com.thingclips.sdk.ble.core.protocol.entity.ConnectOpt$Builder",
       "com.thingclips.sdk.ble.core.protocol.entity.ConnectRsp",
+      "com.thingclips.sdk.ble.core.protocol.entity.DeviceInfoRsp",
+      "com.thingclips.sdk.ble.core.protocol.entity.AuthKeyParam",
+      "com.thingclips.sdk.ble.core.protocol.entity.PairParam",
+      "com.thingclips.sdk.ble.core.protocol.entity.SecretKeyUpdateParam",
       "com.thingclips.sdk.ble.core.protocol.entity.DeviceActivatorStatus",
       "com.thingclips.sdk.ble.core.protocol.entity.ActivatorResultParam",
+      "com.thingclips.sdk.ble.core.bean.SecurityCertBean",
       "com.thingclips.sdk.ble.core.protocol.api.ConnectActionResponse",
       "com.thingclips.sdk.ble.core.protocol.api.ActionProgressResponse",
       "com.thingclips.sdk.ble.core.protocol.api.ProtocolRequestDelegate",
+      "com.thingclips.sdk.ble.core.protocol.api.Protocol4RequestDelegate",
       "com.thingclips.sdk.ble.core.protocol.api.ProtocolActivatorDelegate",
+      "com.thingclips.sdk.ble.core.protocol.api.ProtocolSecurityUpdateDelegate",
+      "com.thingclips.sdk.ble.core.protocol.api.IP4SuperSecurityAction",
+      "com.thingclips.sdk.ble.core.protocol.api.DeviceCapabilityBit",
       "com.thingclips.sdk.ble.core.protocol.api.CommonConstant"
   };
 
@@ -39,10 +49,11 @@ public final class ThingBleProtocolIntrospector {
     Consumer<String> log = rawLog == null ? ignored -> {} : rawLog;
     if (!RAN.compareAndSet(false, true)) return;
 
-    log.accept("[BLE/SDKMAP] START targetCount=" + TARGETS.length + " valuesRead=false instancesCreated=false");
+    log.accept("[BLE/SDKMAP] START targetCount=" + TARGETS.length
+        + " instanceValuesRead=false instancesCreated=false safeConstantsRead=true");
     ClassLoader loader = ThingBleProtocolIntrospector.class.getClassLoader();
     for (String name : TARGETS) inspectClass(loader, name, log);
-    log.accept("[BLE/SDKMAP] FINISH valuesRead=false secretsLogged=false");
+    log.accept("[BLE/SDKMAP] FINISH instanceValuesRead=false secretsLogged=false safeConstantsRead=true");
   }
 
   private static void inspectClass(ClassLoader loader, String name, Consumer<String> log) {
@@ -65,11 +76,14 @@ public final class ThingBleProtocolIntrospector {
       Field[] fields = type.getDeclaredFields();
       Arrays.sort(fields, Comparator.comparing(Field::getName));
       for (Field field : fields) {
+        String suffix = " valueRead=false";
+        Object safeValue = safeConstantValue(field);
+        if (safeValue != null) suffix = " safeConstant=" + safeValue;
         log.accept("[BLE/SDKMAP] FIELD owner=" + name
             + " name=" + field.getName()
             + " type=" + typeName(field.getType())
             + " modifiers=" + Modifier.toString(field.getModifiers())
-            + " valueRead=false");
+            + suffix);
       }
 
       Method[] methods = type.getDeclaredMethods();
@@ -84,6 +98,22 @@ public final class ThingBleProtocolIntrospector {
     } catch (Throwable error) {
       log.accept("[BLE/SDKMAP] CLASS_MISSING name=" + name
           + " error=" + error.getClass().getSimpleName());
+    }
+  }
+
+  private static Object safeConstantValue(Field field) {
+    int modifiers = field.getModifiers();
+    if (!Modifier.isPublic(modifiers) || !Modifier.isStatic(modifiers) || !Modifier.isFinal(modifiers)) {
+      return null;
+    }
+    Class<?> type = field.getType();
+    boolean safeType = type == boolean.class || type == byte.class || type == short.class
+        || type == int.class || type == long.class || type == float.class || type == double.class;
+    if (!safeType) return null;
+    try {
+      return field.get(null);
+    } catch (Throwable ignored) {
+      return null;
     }
   }
 
