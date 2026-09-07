@@ -45,24 +45,23 @@ public final class BleProtocolMetadataProbeTransport implements T4ATransport {
     suppressReconnectUntilMs = now + DIRECT_PROBE_SUPPRESSION_MS;
 
     boolean securityKeyAvailable = device.securityKey != null && !device.securityKey.isEmpty();
-    boolean rawSecurityKeyCandidate = securityKeyAvailable && device.securityKey.getBytes(java.nio.charset.StandardCharsets.UTF_8).length == 16;
     rawLog.accept("[BLE/DIRECT] PROTOCOL_METADATA productId=" + display(device.productId)
         + " uuid=" + device.uuid
         + " localKeyAvailable=" + (device.localKey != null && !device.localKey.isEmpty())
         + " securityKeyAvailable=" + securityKeyAvailable
-        + " bootstrapKey=" + (rawSecurityKeyCandidate ? "secKey_raw16" : "none")
-        + " activeWriteProbe=" + rawSecurityKeyCandidate
+        + " bootstrapKey=none"
+        + " activeWriteProbe=false"
         + " reconnectSuppressionMs=" + DIRECT_PROBE_SUPPRESSION_MS
-        + " classicFd50Bootstrap=disproved");
+        + " classicFd50Bootstrap=disproved"
+        + " rawSecKeyBootstrap=disproved");
     rawLog.accept("[BLE/DIRECT] PROTOCOL_CAPABILITIES " + formatMetadata(device.protocolMetadata)
         + " secretsLogged=false");
 
-    // f147 disproved classic first-six/MD5 derivation with secKey. The next isolated experiment
-    // keeps the same non-actuating DEVICE_INFO envelope but uses the 16-byte secKey directly as
-    // AES material. No PAIR or DPS is emitted.
-    String bootstrapKey = rawSecurityKeyCandidate ? device.securityKey : "";
+    // f147 disproved the classic first-six/MD5 secKey candidate; f150/f151 disproved raw 16-byte
+    // secKey in the same DEVICE_INFO envelope. Keep native transport passive while we inspect the
+    // SDK's real Protocol 4 bootstrap. No DEVICE_INFO, PAIR or DPS is emitted here.
     T4AContracts.Device probeDevice = new T4AContracts.Device(
-        device.id, device.name, device.mac, device.uuid, device.productId, bootstrapKey,
+        device.id, device.name, device.mac, device.uuid, device.productId, "",
         device.securityKey, device.protocolMetadata, device.dps, device.schema);
     delegate.connect(probeDevice);
   }
