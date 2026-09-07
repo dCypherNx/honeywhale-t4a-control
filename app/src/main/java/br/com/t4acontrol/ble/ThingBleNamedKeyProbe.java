@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Debug-only probe mapping named ThingClips key getters to public getSecretKey slots. */
+/** Debug-only probe mapping named ThingClips key getters without logging key bytes. */
 public final class ThingBleNamedKeyProbe {
   private static final String ENGINE = "com.thingclips.sdk.bluetooth.bdpddpb";
   private static final int MAX_DEPTH = 7;
@@ -49,16 +49,60 @@ public final class ThingBleNamedKeyProbe {
 
       StringBuilder line = new StringBuilder("[BLE/SDKSEC_NAMED] tMs=").append(tMs)
           .append(" found=true class=").append(engine.getClass().getName());
+      List<NamedValue> namedValues = new ArrayList<>();
       for (String methodName : NAMED_METHODS) {
         byte[] value = invokeNamed(engine, methodName);
+        namedValues.add(new NamedValue(methodName, value));
         line.append(' ').append(methodName).append("Length=").append(value == null ? 0 : value.length)
             .append(' ').append(methodName).append("Slots=").append(matchingSlots(value, slots));
       }
       line.append(" secretValuesCompared=true secretsLogged=false");
       log.accept(line.toString());
+      logBackingFields(tMs, engine, namedValues, log);
     } catch (Throwable error) {
       log.accept("[BLE/SDKSEC_NAMED] tMs=" + tMs + " error="
           + error.getClass().getSimpleName() + " secretsLogged=false");
+    }
+  }
+
+  private static void logBackingFields(long tMs, Object engine, List<NamedValue> namedValues,
+      Consumer<String> log) {
+    List<FieldValue> candidates = new ArrayList<>();
+    collectFields("engine", engine, candidates);
+    collectFields("securityRaw", readNamedField(engine, "securityRaw"), candidates);
+    collectFields("rep", readNamedField(engine, "rep"), candidates);
+    collectFields("connectParam", invokeNoArg(engine, "getConnectParam"), candidates);
+    collectFields("deviceInfo", invokeNoArg(engine, "getDeviceInfo"), candidates);
+
+    StringBuilder line = new StringBuilder("[BLE/SDKSEC_NAMED_FIELDS] tMs=").append(tMs);
+    for (NamedValue named : namedValues) {
+      line.append(' ').append(named.name).append("Fields=");
+      List<String> matches = new ArrayList<>();
+      if (named.value != null && named.value.length > 0) {
+        for (FieldValue candidate : candidates) {
+          if (equalsFlexible(named.value, candidate.value)) matches.add(candidate.label);
+        }
+      }
+      line.append(matches.toString().replace(" ", ""));
+    }
+    line.append(" candidates=").append(candidates.size())
+        .append(" secretValuesCompared=true secretsLogged=false");
+    log.accept(line.toString());
+  }
+
+  private static void collectFields(String prefix, Object target, List<FieldValue> out) {
+    if (target == null) return;
+    Class<?> type = target.getClass();
+    int depth = 0;
+    while (type != null && type != Object.class && depth++ < 8) {
+      for (Field field : type.getDeclaredFields()) {
+        if (Modifier.isStatic(field.getModifiers())) continue;
+        Object value = readField(field, target);
+        if (value instanceof String || value instanceof byte[]) {
+          out.add(new FieldValue(prefix + "." + field.getName(), value));
+        }
+      }
+      type = type.getSuperclass();
     }
   }
 
@@ -137,6 +181,27 @@ public final class ThingBleNamedKeyProbe {
     }
   }
 
+  private static Object invokeNoArg(Object target, String name) {
+    if (target == null) return null;
+    try {
+      Method method = target.getClass().getMethod(name);
+      return method.invoke(target);
+    } catch (Throwable ignored) {
+      return null;
+    }
+  }
+
+  private static Object readNamedField(Object target, String name) {
+    if (target == null) return null;
+    Class<?> type = target.getClass();
+    while (type != null && type != Object.class) {
+      try { return readField(type.getDeclaredField(name), target); }
+      catch (NoSuchFieldException ignored) { type = type.getSuperclass(); }
+      catch (Throwable ignored) { return null; }
+    }
+    return null;
+  }
+
   private static String matchingSlots(byte[] value, byte[][] slots) {
     if (value == null || value.length == 0) return "[]";
     List<Integer> matches = new ArrayList<>();
@@ -144,6 +209,16 @@ public final class ThingBleNamedKeyProbe {
       if (equalsBytes(value, slots[slot])) matches.add(slot);
     }
     return matches.toString().replace(" ", "");
+  }
+
+  private static boolean equalsFlexible(byte[] a, Object b) {
+    if (a == null || b == null) return false;
+    if (b instanceof byte[]) return equalsBytes(a, (byte[]) b);
+    if (b instanceof String) {
+      try { return equalsBytes(a, ((String) b).getBytes("UTF-8")); }
+      catch (Exception ignored) { return false; }
+    }
+    return false;
   }
 
   private static boolean equalsBytes(byte[] a, byte[] b) {
@@ -175,6 +250,18 @@ public final class ThingBleNamedKeyProbe {
     return name.startsWith("com.thingclips.")
         || name.startsWith("java.util.")
         || name.startsWith("java.util.concurrent.");
+  }
+
+  private static final class NamedValue {
+    final String name;
+    final byte[] value;
+    NamedValue(String name, byte[] value) { this.name = name; this.value = value; }
+  }
+
+  private static final class FieldValue {
+    final String label;
+    final Object value;
+    FieldValue(String label, Object value) { this.label = label; this.value = value; }
   }
 
   private static final class Node {
