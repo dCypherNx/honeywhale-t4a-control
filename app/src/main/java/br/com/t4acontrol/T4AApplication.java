@@ -13,6 +13,7 @@ import br.com.t4acontrol.backend.mqtt.MqttConfigurationStore;
 import br.com.t4acontrol.backend.mqtt.MqttTelemetryCoordinator;
 import br.com.t4acontrol.backend.persistence.AndroidT4AStateStore;
 import br.com.t4acontrol.ble.DelayedFallbackTransport;
+import br.com.t4acontrol.ble.DeviceInfoReplayLoggingTransport;
 import br.com.t4acontrol.ble.NativeBleTransport;
 import br.com.t4acontrol.ble.SdkIntrospectionTransport;
 import br.com.t4acontrol.mqtt.DefaultMqttSettings;
@@ -41,6 +42,10 @@ public final class T4AApplication extends Application {
         new DelayedFallbackTransport(tuyaTransport, listener::onRawLog);
     T4ATransport directProbe =
         new NativeBleTransport(this, delayedTuya, listener::onRawLog);
+    if (BuildConfig.DEBUG) {
+      directProbe =
+          new DeviceInfoReplayLoggingTransport(directProbe, listener::onRawLog);
+    }
     T4ATransport transport = directProbe;
     return new T4ABackend(
         new AndroidT4AStateStore(this),
