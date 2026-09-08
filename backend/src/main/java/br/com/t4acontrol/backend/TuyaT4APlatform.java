@@ -59,6 +59,12 @@ public final class TuyaT4APlatform implements T4AProvisioner, T4ATransport {
     BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(true).setScanTimeout(30);
     ThingHomeSdk.getBleManager().connectBleDevice(Collections.singletonList(builder));
   }
+  @Override public void disconnect(Device device) {
+    if (device == null) return;
+    BleConnectBuilder builder = new BleConnectBuilder().setDevId(device.id).setUuid(device.uuid).setDirectConnect(true).setAutoConnect(false).setScanTimeout(30);
+    ThingHomeSdk.getBleManager().disconnectBleDevice(Collections.singletonList(builder));
+    rawLog.accept("[SDK/BLESELECT] manualDisconnect=true deviceId=" + device.id + " secretsLogged=false");
+  }
   @Override public boolean isConnected(String deviceId) { return ThingHomeSdk.getBleManager().isBleLocalOnline(deviceId); }
   @Override public Device cachedDevice(String deviceId) { return toDevice(ThingHomeSdk.getDataInstance().getDeviceBean(deviceId)); }
   @Override public void publish(String deviceId, Map<String,Object> dps, ResultCallback callback) { if (activeDevice == null) { callback.onError("NOT_ATTACHED", "Dispositivo sem sessão ativa"); return; } activeDevice.publishDps(JSON.toJSONString(dps), new IResultCallback() { @Override public void onSuccess() { callback.onSuccess(); } @Override public void onError(String code, String error) { callback.onError(code, error); } }); }
