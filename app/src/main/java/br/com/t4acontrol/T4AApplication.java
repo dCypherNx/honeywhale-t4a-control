@@ -35,7 +35,7 @@ public final class T4AApplication extends Application {
     T4ATransport unavailableRuntime =
         new UnavailableRuntimeTransport(listener::onRawLog);
     T4ATransport transport =
-        new NativeBleTransport(this, unavailableRuntime, listener::onRawLog);
+        new NativeBleTransport(this, unavailableRuntime, listener::onRawLog, false);
     return new T4ABackend(
         new AndroidT4AStateStore(this),
         provisioner,
