@@ -90,6 +90,12 @@ public final class DelayedFallbackTransport implements T4ATransport {
   }
 
   @Override
+  public void disconnect(T4AContracts.Device device) {
+    cancelPending("manual_disconnect");
+    delegate.disconnect(device);
+  }
+
+  @Override
   public boolean isConnected(String deviceId) {
     return delegate.isConnected(deviceId);
   }
