@@ -132,6 +132,12 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
 
         override fun scan() = session.scan()
 
+        override fun connectT4A() = session.connectNow()
+
+        override fun disconnectT4A() = session.disconnectNow()
+
+        override fun exportGatewayCredentials() = this@MainActivity.confirmGatewayCredentialsExport()
+
         override fun setKeepScreenOn(enabled: Boolean) {
             keepScreenOn = enabled
             preferences().edit().putBoolean(PREF_KEEP_SCREEN_ON, enabled).apply()
@@ -319,6 +325,46 @@ class MainActivity : ComponentActivity(), T4ASession.Listener {
         } catch (error: Exception) {
             uri?.let { runCatching { contentResolver.delete(it, null, null) } }
             Toast.makeText(this, R.string.raw_log_save_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun confirmGatewayCredentialsExport() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.export_gateway_credentials_question))
+            .setMessage(getString(R.string.export_gateway_credentials_warning))
+            .setPositiveButton(getString(R.string.export)) { _, _ -> saveGatewayCredentials() }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun saveGatewayCredentials() {
+        val payload = session.gatewayCredentialsJson()
+        if (payload.isBlank()) {
+            Toast.makeText(this, R.string.gateway_credentials_unavailable, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val fileName = "ridedash-t4a-gateway-${SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())}.json"
+        var uri: android.net.Uri? = null
+        try {
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/RideDash")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw java.io.IOException("MediaStore insert returned null")
+            contentResolver.openOutputStream(uri, "w")?.use { output ->
+                output.write(payload.toByteArray(Charsets.UTF_8))
+            } ?: throw java.io.IOException("MediaStore output stream unavailable")
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            Toast.makeText(this, getString(R.string.gateway_credentials_saved, fileName), Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            uri?.let { runCatching { contentResolver.delete(it, null, null) } }
+            Toast.makeText(this, R.string.gateway_credentials_save_failed, Toast.LENGTH_LONG).show()
         }
     }
 
