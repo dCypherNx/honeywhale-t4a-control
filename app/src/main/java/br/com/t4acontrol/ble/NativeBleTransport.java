@@ -143,6 +143,16 @@ public final class NativeBleTransport implements T4ATransport {
     }
   }
 
+  @Override
+  public void disconnect(T4AContracts.Device requested) {
+    T4AContracts.Device current = requested == null ? device : requested;
+    if (usingFallback) {
+      fallback.disconnect(current);
+      return;
+    }
+    disconnectNative("manual");
+  }
+
   private void startGattConnection() {
     String mac;
     int attempt;
