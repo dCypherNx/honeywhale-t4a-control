@@ -17,6 +17,7 @@
     <string name="raw_filter_other">Outros</string>
     <string name="copy">Copiar</string>
     <string name="save">Salvar</string>
+    <string name="export">Exportar</string>
     <string name="raw_log_copied">Log copiado para a área de transferência</string>
     <string name="raw_log_saved">Log salvo em Downloads/RideDash: %1$s</string>
     <string name="raw_log_save_failed">Não foi possível salvar o log raw.</string>
@@ -28,6 +29,8 @@
     <string name="device_label">Dispositivo</string>
     <string name="mac_label" translatable="false">MAC</string>
     <string name="rssi_label" translatable="false">RSSI</string>
+    <string name="connect_now">Conectar agora</string>
+    <string name="disconnect_now">Desconectar</string>
     <string name="device">Dispositivo: %1$s</string>
     <string name="mac">MAC: %1$s</string>
     <string name="signal">Sinal\n%1$s</string>
@@ -94,6 +97,13 @@
     <string name="battery_recharge_reject">Não, manter ciclo atual</string>
     <string name="integrations_section">Integrações</string>
     <string name="configure_mqtt">Configurar MQTT</string>
+    <string name="export_gateway_credentials">Exportar credenciais do gateway</string>
+    <string name="export_gateway_credentials_note">Gera um JSON versionado para um gateway já autorizado. K14 e K15 são derivados no gateway e não são exportados.</string>
+    <string name="export_gateway_credentials_question">Exportar credenciais do gateway?</string>
+    <string name="export_gateway_credentials_warning">O arquivo contém credenciais que permitem a um gateway autorizado se conectar ao T4A. Guarde-o como segredo e compartilhe apenas com o seu gateway.</string>
+    <string name="gateway_credentials_unavailable">As credenciais necessárias do T4A não estão disponíveis.</string>
+    <string name="gateway_credentials_saved">Credenciais salvas em Downloads/RideDash: %1$s</string>
+    <string name="gateway_credentials_save_failed">Não foi possível salvar as credenciais do gateway.</string>
     <string name="keep_screen_on">Manter tela ligada durante o uso</string>
     <string name="screen_on_enabled">Tela sempre ativa habilitada</string>
     <string name="screen_on_disabled">Tela sempre ativa desabilitada</string>
