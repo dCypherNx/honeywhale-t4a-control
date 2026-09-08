@@ -548,6 +548,9 @@ public final class T4ASessionService extends Service
     @Override public void login(String email, String password) { if (backend != null) backend.login(email, password); }
     @Override public void scan() { if (backend != null) backend.scan(); }
     @Override public void pair() { if (backend != null) backend.pair(); }
+    @Override public void connectNow() { if (backend != null) backend.connectNow(); }
+    @Override public void disconnectNow() { if (backend != null) backend.disconnectNow(); }
+    @Override public String gatewayCredentialsJson() { return backend == null ? "" : backend.gatewayCredentialsJson(); }
     @Override public void publish(String dpId, Object value) { if (backend != null) backend.publish(dpId, value); }
 
     @Override

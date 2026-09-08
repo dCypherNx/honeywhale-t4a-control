@@ -99,3 +99,16 @@ After installing a build containing the location changes, capture one continuous
 5. lock the screen and confirm BLE/MQTT/location continue under the foreground service;
 6. stop moving and confirm the provider returns to the stationary policy;
 7. disconnect BLE and confirm Android location collection stops while the retained last-known T4A position remains available to MQTT/Home Assistant.
+
+## Production runtime transport policy
+
+Normal product branches use native BLE as the only runtime transport.
+
+- Tuya/ThingClips may remain behind `T4AProvisioner` for authentication, provisioning and acquisition of the device credentials required by the native runtime.
+- Runtime BLE connection, reconnection, DPS commands, telemetry and RSSI must not silently fall back to `TuyaT4APlatform` or any other provider runtime.
+- If native BLE cannot establish a session, the product remains disconnected and retries only the native transport.
+- Provider-runtime connection code is reserved for branches explicitly created to investigate/test T4A connectivity and must not be merged into a normal product composition root.
+- User-requested disconnect closes the active native link without unpairing and suppresses automatic reconnect until the user explicitly requests connection again.
+- Gateway credential export is explicit and versioned; K14/K15 remain derived locally and are not exported.
+
+The production composition root therefore injects `NativeBleTransport` with a neutral unavailable/null fallback rather than a Tuya runtime transport. The Tuya SDK remains initialized only while provisioning and credential acquisition still depend on it.

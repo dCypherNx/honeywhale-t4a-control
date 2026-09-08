@@ -30,7 +30,7 @@ import java.util.function.Consumer;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Native FD50 transport. Tuya is used only by the injected fallback/provisioner. */
+/** Native FD50 transport. Provider fallback is optional and disabled in normal product runtime. */
 public final class NativeBleTransport implements T4ATransport {
   /** Device-to-app DPS report (DpsReportRep v4). */
   private static final int DPS_REPORT = 0x8006;
@@ -46,6 +46,7 @@ public final class NativeBleTransport implements T4ATransport {
 
   private final Context context;
   private final T4ATransport fallback;
+  private final boolean allowFallback;
   private final Consumer<String> rawLog;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final Object lock = new Object();
@@ -61,6 +62,7 @@ public final class NativeBleTransport implements T4ATransport {
   private boolean nativeAttempt;
   private boolean nativeConnected;
   private boolean usingFallback;
+  private boolean rssiReadPending;
   private int mtu = 20;
   private int nextSequence = 1;
   private byte[] key14;
@@ -71,8 +73,17 @@ public final class NativeBleTransport implements T4ATransport {
   private T4AContracts.RssiCallback rssiCallback;
 
   public NativeBleTransport(Context context, T4ATransport fallback, Consumer<String> rawLog) {
+    this(context, fallback, rawLog, true);
+  }
+
+  public NativeBleTransport(
+      Context context,
+      T4ATransport fallback,
+      Consumer<String> rawLog,
+      boolean allowFallback) {
     this.context = context.getApplicationContext();
     this.fallback = fallback;
+    this.allowFallback = allowFallback && fallback != null;
     this.rawLog = rawLog == null ? ignored -> {} : rawLog;
   }
 
@@ -91,7 +102,7 @@ public final class NativeBleTransport implements T4ATransport {
   @Override
   public void detach() {
     detachNative(false);
-    fallback.detach();
+    if (fallback != null) fallback.detach();
     device = null;
     listener = null;
     usingFallback = false;
@@ -100,16 +111,17 @@ public final class NativeBleTransport implements T4ATransport {
   @Override
   public void connect(T4AContracts.Device requested) {
     if (requested == null) {
-      fallback.connect(null);
+      if (allowFallback) fallback.connect(null);
       return;
     }
-    if (usingFallback) {
+    if (allowFallback && usingFallback) {
       fallback.connect(requested);
       return;
     }
     synchronized (lock) {
       if (nativeConnected || nativeAttempt) return;
       nativeAttempt = true;
+      usingFallback = false;
       device = requested;
       nextSequence = 1;
       infoReceived = false;
@@ -128,7 +140,14 @@ public final class NativeBleTransport implements T4ATransport {
       BluetoothManager manager = context.getSystemService(BluetoothManager.class);
       BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
       String mac = normalizeMac(requested.mac);
-      if (adapter == null || !adapter.isEnabled() || !BluetoothAdapter.checkBluetoothAddress(mac)) {
+      boolean adapterAvailable = adapter != null;
+      boolean adapterEnabled = adapterAvailable && adapter.isEnabled();
+      boolean addressValid = BluetoothAdapter.checkBluetoothAddress(mac);
+      raw("CONNECT_PRECHECK adapterAvailable=" + adapterAvailable
+          + " adapterEnabled=" + adapterEnabled
+          + " addressValid=" + addressValid
+          + " mac=" + maskMac(mac));
+      if (!adapterAvailable || !adapterEnabled || !addressValid) {
         fail("bluetooth_or_address_unavailable");
         return;
       }
@@ -143,6 +162,16 @@ public final class NativeBleTransport implements T4ATransport {
     }
   }
 
+  @Override
+  public void disconnect(T4AContracts.Device requested) {
+    T4AContracts.Device current = requested == null ? device : requested;
+    if (allowFallback && usingFallback) {
+      fallback.disconnect(current);
+      return;
+    }
+    disconnectNative("manual");
+  }
+
   private void startGattConnection() {
     String mac;
     int attempt;
@@ -154,7 +183,14 @@ public final class NativeBleTransport implements T4ATransport {
     try {
       BluetoothManager manager = context.getSystemService(BluetoothManager.class);
       BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
-      if (adapter == null || !adapter.isEnabled() || !BluetoothAdapter.checkBluetoothAddress(mac)) {
+      boolean adapterAvailable = adapter != null;
+      boolean adapterEnabled = adapterAvailable && adapter.isEnabled();
+      boolean addressValid = BluetoothAdapter.checkBluetoothAddress(mac);
+      if (!adapterAvailable || !adapterEnabled || !addressValid) {
+        raw("GATT_CONNECT_PRECHECK_FAILED attempt=" + attempt
+            + " adapterAvailable=" + adapterAvailable
+            + " adapterEnabled=" + adapterEnabled
+            + " addressValid=" + addressValid);
         fail("bluetooth_or_address_unavailable");
         return;
       }
@@ -170,11 +206,18 @@ public final class NativeBleTransport implements T4ATransport {
 
   @Override
   public boolean isConnected(String deviceId) {
-    synchronized (lock) { return nativeConnected && device != null && device.id.equals(deviceId); }
+    synchronized (lock) {
+      if (nativeConnected && device != null && device.id.equals(deviceId)) return true;
+    }
+    return allowFallback && usingFallback && fallback.isConnected(deviceId);
   }
 
   @Override
   public T4AContracts.Device cachedDevice(String deviceId) {
+    if (allowFallback && usingFallback) {
+      T4AContracts.Device cached = fallback.cachedDevice(deviceId);
+      if (cached != null) return cached;
+    }
     synchronized (lock) {
       if (device == null || !device.id.equals(deviceId)) return null;
       return new T4AContracts.Device(device.id, device.name, device.mac, device.uuid,
@@ -185,7 +228,14 @@ public final class NativeBleTransport implements T4ATransport {
 
   @Override
   public void publish(String deviceId, Map<String, Object> values, T4AContracts.ResultCallback callback) {
-    if (!isConnected(deviceId)) { fallback.publish(deviceId, values, callback); return; }
+    if (!isNativeConnected(deviceId)) {
+      if (allowFallback && usingFallback) {
+        fallback.publish(deviceId, values, callback);
+      } else if (callback != null) {
+        callback.onError("NATIVE_NOT_CONNECTED", "Sessão BLE nativa indisponível");
+      }
+      return;
+    }
     try {
       byte[] payload = encodeDps(values, true);
       int sequence = send(TuyaBle47Codec.PUBLISH_DPS, payload, null);
@@ -199,17 +249,38 @@ public final class NativeBleTransport implements T4ATransport {
   @Override
   public void readRssi(String mac, T4AContracts.RssiCallback callback) {
     BluetoothGatt active;
-    synchronized (lock) { active = gatt; rssiCallback = callback; }
-    if (!nativeConnected || active == null) { fallback.readRssi(mac, callback); return; }
+    synchronized (lock) {
+      active = gatt;
+      if (nativeConnected && active != null && rssiReadPending) {
+        raw("RSSI_READ_SKIPPED reason=pending");
+        if (callback != null) callback.onResult(false, 0);
+        return;
+      }
+      if (nativeConnected && active != null) {
+        rssiReadPending = true;
+        rssiCallback = callback;
+      }
+    }
+    if (!nativeConnected || active == null) {
+      if (allowFallback && usingFallback) fallback.readRssi(mac, callback);
+      else if (callback != null) callback.onResult(false, 0);
+      return;
+    }
     try {
-      if (!active.readRemoteRssi() && callback != null) callback.onResult(false, 0);
+      boolean accepted = active.readRemoteRssi();
+      raw("RSSI_READ_REQUEST accepted=" + accepted);
+      if (!accepted) finishRssiRead(false, 0, "request_rejected");
     } catch (SecurityException error) {
-      if (callback != null) callback.onResult(false, 0);
+      raw("RSSI_READ_ERROR type=" + error.getClass().getSimpleName());
+      finishRssiRead(false, 0, "security_exception");
     }
   }
 
   @Override
-  public void destroy() { detach(); fallback.destroy(); }
+  public void destroy() {
+    detach();
+    if (fallback != null) fallback.destroy();
+  }
 
   private final Runnable connectTimeout = () -> fail("timeout");
 
@@ -219,7 +290,8 @@ public final class NativeBleTransport implements T4ATransport {
       raw("CONNECTION_STATE status=" + status + " state=" + state);
       if (status != BluetoothGatt.GATT_SUCCESS || state == BluetoothProfile.STATE_DISCONNECTED) {
         if (!nativeConnected && scheduleGattRetry(connection, status, state)) return;
-        if (!nativeConnected) fail("connection_status_" + status); else disconnectNative("connection_lost");
+        if (!nativeConnected) fail("connection_status_" + status);
+        else disconnectNative("connection_lost_status_" + status);
         return;
       }
       if (state == BluetoothProfile.STATE_CONNECTED) {
@@ -276,14 +348,35 @@ public final class NativeBleTransport implements T4ATransport {
     }
 
     @Override public void onReadRemoteRssi(BluetoothGatt connection, int value, int status) {
-      T4AContracts.RssiCallback callback = rssiCallback;
-      rssiCallback = null;
-      if (callback != null) callback.onResult(status == BluetoothGatt.GATT_SUCCESS, value);
+      if (!isActiveConnection(connection)) return;
+      boolean success = status == BluetoothGatt.GATT_SUCCESS;
+      raw("RSSI_READ_RESULT status=" + status + " value=" + value + " success=" + success);
+      finishRssiRead(success, value, "callback");
     }
   };
 
   private boolean isActiveConnection(BluetoothGatt connection) {
     synchronized (lock) { return gatt == connection; }
+  }
+
+  private boolean isNativeConnected(String deviceId) {
+    synchronized (lock) {
+      return nativeConnected && device != null && device.id.equals(deviceId);
+    }
+  }
+
+  private void finishRssiRead(boolean success, int value, String source) {
+    T4AContracts.RssiCallback callback;
+    synchronized (lock) {
+      callback = rssiCallback;
+      rssiCallback = null;
+      rssiReadPending = false;
+    }
+    if (!"callback".equals(source)) {
+      raw("RSSI_READ_RESULT status=local value=" + value + " success=" + success
+          + " source=" + source);
+    }
+    if (callback != null) callback.onResult(success, value);
   }
 
   private boolean scheduleGattRetry(BluetoothGatt connection, int status, int state) {
@@ -376,7 +469,11 @@ public final class NativeBleTransport implements T4ATransport {
   }
 
   private void markConnected() {
-    synchronized (lock) { nativeConnected = true; nativeAttempt = false; }
+    synchronized (lock) {
+      nativeConnected = true;
+      nativeAttempt = false;
+      usingFallback = false;
+    }
     handler.removeCallbacks(connectTimeout);
     raw("SESSION_CONNECTED transport=native_fd50 protocol=4.7 sdk=false");
     if (listener != null) listener.onConnectionChanged(device.id, true);
@@ -417,8 +514,6 @@ public final class NativeBleTransport implements T4ATransport {
   private Map<String, Object> decodeDps(byte[] payload, int command) {
     Map<String, Object> best;
     if (command == DPS_REPORT) {
-      // DpsReportRep(4) carries version, sequence, type/ack and flag before
-      // records with a two-byte big-endian value length.
       best = decodeRecords(payload, 7, true);
     } else {
       best = decodeRecords(payload, 0, false);
@@ -468,9 +563,7 @@ public final class NativeBleTransport implements T4ATransport {
         String mapped = enumValue(schema, index);
         if (mapped == null) {
           String marker = "enum:" + code + ":" + hex(data);
-          if (loggedDpLayouts.add(marker)) {
-            raw("DP_ENUM_UNMAPPED code=" + code + " raw=" + hex(data));
-          }
+          if (loggedDpLayouts.add(marker)) raw("DP_ENUM_UNMAPPED code=" + code + " raw=" + hex(data));
         }
         return mapped == null ? index : mapped;
       }
@@ -531,11 +624,11 @@ public final class NativeBleTransport implements T4ATransport {
         String declared = new JSONObject(schema.property).optString("type", "");
         if (!declared.isBlank()) return declared.toLowerCase(Locale.ROOT);
       } catch (Exception ignored) {
-        // Fall through to the provider's top-level type when property is malformed.
       }
     }
     return schema.type == null ? "" : schema.type.toLowerCase(Locale.ROOT);
   }
+
   private byte[] encodeValue(String code, Object value) {
     int type = typeOf(code);
     if (type == 1) return new byte[] {Boolean.TRUE.equals(value) ? (byte) 1 : 0};
@@ -576,14 +669,28 @@ public final class NativeBleTransport implements T4ATransport {
 
   private void fail(String reason) {
     T4AContracts.Device current;
-    synchronized (lock) { if (!nativeAttempt && gatt == null && !nativeConnected) return; current = device; nativeAttempt = false; nativeConnected = false; }
+    synchronized (lock) {
+      if (!nativeAttempt && gatt == null && !nativeConnected) return;
+      current = device;
+      nativeAttempt = false;
+      nativeConnected = false;
+    }
     handler.removeCallbacks(connectTimeout);
     detachNative(false);
-    raw("CONNECT_DIRECT_FAILED reason=" + reason + " fallback=true");
-    if (current != null && !usingFallback) { usingFallback = true; fallback.attach(current, listener); fallback.connect(current); }
+    raw("CONNECT_DIRECT_FAILED reason=" + reason + " fallback=" + allowFallback);
+    if (allowFallback && current != null && !usingFallback) {
+      usingFallback = true;
+      fallback.attach(current, listener);
+      fallback.connect(current);
+    } else {
+      usingFallback = false;
+    }
   }
 
-  private void disconnectNative(String reason) { detachNative(true); raw("SESSION_DISCONNECTED reason=" + reason); }
+  private void disconnectNative(String reason) {
+    detachNative(true);
+    raw("SESSION_DISCONNECTED reason=" + reason);
+  }
 
   private void raw(String message) { rawLog.accept("[BLE/NATIVE] " + message); }
 
@@ -596,9 +703,24 @@ public final class NativeBleTransport implements T4ATransport {
   private void detachNative(boolean notify) {
     handler.removeCallbacks(connectTimeout);
     BluetoothGatt active;
-    synchronized (lock) { active = gatt; gatt = null; nativeAttempt = false; nativeConnected = false; writeCharacteristic = null; infoReceived = false; pendingResults.clear(); reassembler.reset(); }
-    synchronized (lock) { pendingMac = null; connectionAttempts = 0; }
+    T4AContracts.RssiCallback pendingRssi;
+    synchronized (lock) {
+      active = gatt;
+      gatt = null;
+      nativeAttempt = false;
+      nativeConnected = false;
+      writeCharacteristic = null;
+      infoReceived = false;
+      pendingResults.clear();
+      reassembler.reset();
+      pendingMac = null;
+      connectionAttempts = 0;
+      pendingRssi = rssiCallback;
+      rssiCallback = null;
+      rssiReadPending = false;
+    }
     if (active != null) closeGatt(active);
+    if (pendingRssi != null) pendingRssi.onResult(false, 0);
     if (notify && listener != null && device != null) listener.onConnectionChanged(device.id, false);
   }
 
@@ -607,6 +729,20 @@ public final class NativeBleTransport implements T4ATransport {
     try { active.close(); } catch (RuntimeException ignored) {}
   }
 
-  private static String normalizeMac(String mac) { String value = mac.trim().toUpperCase(Locale.ROOT); if (BluetoothAdapter.checkBluetoothAddress(value)) return value; String compact = value.replace(":", "").replace("-", ""); if (compact.length()!=12) return value; StringBuilder out=new StringBuilder(17); for(int i=0;i<12;i+=2){if(out.length()>0)out.append(':');out.append(compact,i,i+2);} return out.toString(); }
-  private static String maskMac(String mac) { return mac == null || mac.length()<5 ? "<unknown>" : "**:**:**:**:" + mac.substring(mac.length()-5); }
+  private static String normalizeMac(String mac) {
+    String value = mac.trim().toUpperCase(Locale.ROOT);
+    if (BluetoothAdapter.checkBluetoothAddress(value)) return value;
+    String compact = value.replace(":", "").replace("-", "");
+    if (compact.length() != 12) return value;
+    StringBuilder out = new StringBuilder(17);
+    for (int i = 0; i < 12; i += 2) {
+      if (out.length() > 0) out.append(':');
+      out.append(compact, i, i + 2);
+    }
+    return out.toString();
+  }
+
+  private static String maskMac(String mac) {
+    return mac == null || mac.length() < 5 ? "<unknown>" : "**:**:**:**:" + mac.substring(mac.length() - 5);
+  }
 }
