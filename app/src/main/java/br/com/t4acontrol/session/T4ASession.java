@@ -17,6 +17,9 @@ public interface T4ASession {
         @Override public void login(String email, String password) {}
         @Override public void scan() {}
         @Override public void pair() {}
+        @Override public void connectNow() {}
+        @Override public void disconnectNow() {}
+        @Override public String gatewayCredentialsJson() { return ""; }
         @Override public void publish(String dpId, Object value) {}
         @Override public void setLight(boolean enabled) {}
         @Override public void setAutoLockEnabled(boolean enabled) {}
@@ -44,6 +47,16 @@ public interface T4ASession {
   void login(String email, String password);
   void scan();
   void pair();
+
+  /** Explicitly resumes connection attempts and starts an immediate attempt for the paired T4A. */
+  void connectNow();
+
+  /** Disconnects the paired T4A and suspends automatic reconnect until connectNow() is requested. */
+  void disconnectNow();
+
+  /** Returns the versioned gateway credential handoff, or an empty string when unavailable. */
+  String gatewayCredentialsJson();
+
   void publish(String dpId, Object value);
 
   /** Manual headlight action. Automatic mode remains enabled and records a temporary override. */

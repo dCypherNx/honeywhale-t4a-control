@@ -67,6 +67,29 @@ internal fun SettingsScreen(
         InfoLine(stringResource(R.string.device_label), current.deviceName.ifBlank { "--" }, foreground)
         InfoLine(stringResource(R.string.mac_label), current.mac.ifBlank { "--" }, foreground)
         InfoLine(stringResource(R.string.rssi_label), if (current.rssi == 0) "--" else stringResource(R.string.dbm, current.rssi), foreground)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = actions::connectT4A,
+                enabled = current.pairing == T4AState.Pairing.PAIRED && !current.connected,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.connect_now))
+            }
+            Button(
+                onClick = actions::disconnectT4A,
+                enabled = current.connected,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = T4AUiTokens.Red,
+                    contentColor = Color.White,
+                ),
+            ) {
+                Text(stringResource(R.string.disconnect_now))
+            }
+        }
     }
 
     SettingsSection(stringResource(R.string.display_section), "display", actions = actions) {
@@ -96,6 +119,18 @@ internal fun SettingsScreen(
         Button(onClick = actions::openMqttSettings, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.configure_mqtt))
         }
+        Button(
+            onClick = actions::exportGatewayCredentials,
+            enabled = current.pairing == T4AState.Pairing.PAIRED,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.export_gateway_credentials))
+        }
+        Text(
+            stringResource(R.string.export_gateway_credentials_note),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+        )
     }
 
     SettingsSection(stringResource(R.string.automatic_lock), "auto_lock", actions = actions) {
