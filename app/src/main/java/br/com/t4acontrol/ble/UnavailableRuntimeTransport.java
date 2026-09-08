@@ -40,7 +40,7 @@ public final class UnavailableRuntimeTransport implements T4ATransport {
   }
 
   @Override
-  public void disconnect(String deviceId) {
+  public void disconnect(T4AContracts.Device device) {
     // Already disconnected by definition.
   }
 
