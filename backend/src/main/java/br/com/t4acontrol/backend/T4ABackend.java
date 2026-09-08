@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -51,6 +52,7 @@ public final class T4ABackend {
   private String account = "";
   private T4AState.Pairing pairing = T4AState.Pairing.UNPAIRED;
   private boolean connected;
+  private boolean manualConnectionPaused;
   private boolean awaitingLockRxAfterConnect;
   private String message = "";
   private long homeId;
@@ -79,7 +81,7 @@ public final class T4ABackend {
     @Override public void run() {
       if (!running) return;
       refreshFromCache();
-      if (device != null && !transport.isConnected(device.id)) connectPairedDevice();
+      if (device != null && !manualConnectionPaused && !transport.isConnected(device.id)) connectPairedDevice();
       if (connected && clock.nowMillis() - lastRssiRead >= RSSI_REFRESH_MS) pollRssi();
       long delay = connected ? STATE_REFRESH_MS : (foreground ? FOREGROUND_RECONNECT_MS : BACKGROUND_RECONNECT_MS);
       scheduler.postDelayed(this, delay);
@@ -106,6 +108,7 @@ public final class T4ABackend {
   public void start() {
     running = true;
     foreground = true;
+    manualConnectionPaused = false;
     String restoredAccount = provisioner.currentAccount();
     if (restoredAccount == null) {
       authenticated = false;
@@ -197,6 +200,65 @@ public final class T4ABackend {
         });
       }
     });
+  }
+
+  public void connectNow() {
+    if (device == null) return;
+    manualConnectionPaused = false;
+    raw("[APP] CONNECTION manual=connect deviceId=" + device.id);
+    connectPairedDevice();
+    scheduler.cancel(maintenance);
+    scheduler.post(maintenance);
+  }
+
+  public void disconnectNow() {
+    if (device == null) return;
+    manualConnectionPaused = true;
+    raw("[APP] CONNECTION manual=disconnect deviceId=" + device.id);
+    transport.disconnect(device);
+    recordConnectionTransition(false);
+    message = "T4A desconectado manualmente";
+    emitState();
+    scheduler.cancel(maintenance);
+    scheduler.post(maintenance);
+  }
+
+  /**
+   * Returns the versioned, explicit gateway handoff requested by the user.
+   *
+   * <p>The JSON deliberately contains only the already-bound runtime material required by a native
+   * BLE gateway. Derived session keys (K14/K15) are never exported and the payload must never be
+   * written to diagnostic logs.
+   */
+  public String gatewayCredentialsJson() {
+    if (device == null) return "";
+    T4AContracts.Device source = device;
+    T4AContracts.Device latest = transport.cachedDevice(device.id);
+    if (latest != null) source = withRememberedBleAddress(latest);
+    if (source == null
+        || source.mac.isBlank()
+        || source.localKey.length() != 16
+        || source.securityKey.length() != 16) return "";
+
+    Map<String, Object> root = new LinkedHashMap<>();
+    root.put("schema", "ridedash.t4a.gateway-credentials");
+    root.put("version", 1);
+
+    Map<String, Object> deviceInfo = new LinkedHashMap<>();
+    deviceInfo.put("id", source.id);
+    deviceInfo.put("name", source.name);
+    deviceInfo.put("mac", source.mac);
+    deviceInfo.put("uuid", source.uuid);
+    deviceInfo.put("productId", source.productId);
+    root.put("device", deviceInfo);
+
+    Map<String, Object> credentials = new LinkedHashMap<>();
+    credentials.put("loginKeyComplete", source.localKey);
+    credentials.put("securityKey", source.securityKey);
+    root.put("credentials", credentials);
+
+    root.put("protocol", new LinkedHashMap<>(source.protocolMetadata));
+    return JSON.toJSONString(root);
   }
 
   public void publish(String dpId, Object value) {
@@ -318,6 +380,7 @@ public final class T4ABackend {
 
   private void attach(T4AContracts.Device value) {
     transport.detach();
+    manualConnectionPaused = false;
     value = withRememberedBleAddress(value);
     device = value;
     if (!value.mac.isEmpty()) stateStore.setBleAddress(value.mac);
@@ -348,7 +411,16 @@ public final class T4ABackend {
       }
       @Override public void onRemoved(String id) { scheduler.post(() -> clearDevice("T4A removido")); }
       @Override public void onConnectionChanged(String id, boolean online) {
-        scheduler.post(() -> { recordConnectionTransition(online); emitState(); });
+        scheduler.post(() -> {
+          if (manualConnectionPaused && online) {
+            raw("[APP] CONNECTION reconnect_rejected manualPause=true deviceId=" + attached.id);
+            transport.disconnect(attached);
+            recordConnectionTransition(false);
+          } else {
+            recordConnectionTransition(online);
+          }
+          emitState();
+        });
       }
       @Override public void onDeviceInfoChanged(String id) { scheduler.post(T4ABackend.this::queryHomes); }
     });
@@ -357,7 +429,7 @@ public final class T4ABackend {
   }
 
   private void connectPairedDevice() {
-    if (device == null) return;
+    if (device == null || manualConnectionPaused) return;
     transport.connect(device);
     message = connected ? "T4A conectado" : "T4A pareado · conectando…";
     emitState();
@@ -371,7 +443,11 @@ public final class T4ABackend {
       mergeDps(latest.dps, false);
     }
     recordConnectionTransition(transport.isConnected(device.id));
-    message = connected ? "T4A conectado" : "T4A pareado · aguardando aproximação";
+    message = connected
+        ? "T4A conectado"
+        : manualConnectionPaused
+            ? "T4A desconectado manualmente"
+            : "T4A pareado · aguardando aproximação";
     emitState();
   }
 
@@ -398,6 +474,7 @@ public final class T4ABackend {
     device = null;
     candidate = null;
     connected = false;
+    manualConnectionPaused = false;
     awaitingLockRxAfterConnect = false;
     rssi = 0;
     resetAutoLockSamples();
