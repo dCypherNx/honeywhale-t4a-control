@@ -18,7 +18,6 @@ permissions:
 
 env:
   T4A_BOOTSTRAP_VERSION: '1.1.1'
-  T4A_VERSION_CODE_OFFSET: '100000'
 
 jobs:
   build-test-apk:
@@ -34,7 +33,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Resolve test version
+      - name: Resolve test version name
         id: version
         shell: bash
         run: |
@@ -67,7 +66,6 @@ jobs:
           }
 
           sequence="${GITHUB_RUN_NUMBER}"
-          version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
           latest_tag_version="$(git tag --list 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
           stable_base="${T4A_BOOTSTRAP_VERSION}"
           if [[ -n "${latest_tag_version}" ]]; then
@@ -79,13 +77,11 @@ jobs:
           version_name="${projected_version}-f${sequence}"
 
           echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
-          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_BRANCH=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
           echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
 
           echo "Stable base:   ${stable_base}"
           echo "Version name:  ${version_name}"
-          echo "Version code:  ${version_code}"
           echo "Version bump:  ${bump_kind}"
           echo "Source branch: ${GITHUB_REF_NAME}"
 
@@ -132,6 +128,16 @@ jobs:
           printf '%s' "${ANDROID_SIGNING_KEY_B64}" | base64 --decode > ci/signing/t4a-ci.keystore
           test -s ci/signing/t4a-ci.keystore
 
+      - name: Resolve APK versionCode from Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          version_code="$(./gradlew --no-daemon -q :app:printVersionCode | tail -n 1 | tr -d '\r')"
+          [[ "${version_code}" =~ ^[0-9]+$ ]] || { echo "Invalid versionCode from Gradle: ${version_code}" >&2; exit 1; }
+          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
+          echo "Version code:  ${version_code}"
+
       - name: Build debug APK
         env:
           ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
@@ -140,7 +146,6 @@ jobs:
           ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          chmod +x ./gradlew
           test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
           test -n "${ANDROID_SIGNING_KEY_ALIAS}"
           test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
@@ -195,7 +200,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Resolve release version
+      - name: Resolve release version name
         id: version
         shell: bash
         env:
@@ -229,8 +234,6 @@ jobs:
             printf '%s.%s.%s\n' "${major}" "${minor}" "${patch}"
           }
 
-          sequence="${GITHUB_RUN_NUMBER}"
-          version_code=$((T4A_VERSION_CODE_OFFSET + sequence))
           latest_tag_version="$(git tag --list 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' | sort -V | tail -n 1)"
           stable_base="${T4A_BOOTSTRAP_VERSION}"
           if [[ -n "${latest_tag_version}" ]]; then
@@ -259,7 +262,6 @@ jobs:
           fi
 
           echo "T4A_VERSION_NAME=${version_name}" >> "${GITHUB_ENV}"
-          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_PR=${source_pr}" >> "${GITHUB_ENV}"
           echo "T4A_SOURCE_BRANCH=${source_branch}" >> "${GITHUB_ENV}"
           echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
@@ -267,7 +269,6 @@ jobs:
 
           echo "Stable base:   ${stable_base}"
           echo "Version name:  ${version_name}"
-          echo "Version code:  ${version_code}"
           echo "Source branch: ${source_branch}"
           echo "Source PR:     ${source_pr:-n/a}"
 
@@ -314,6 +315,16 @@ jobs:
           printf '%s' "${ANDROID_SIGNING_KEY_B64}" | base64 --decode > ci/signing/t4a-ci.keystore
           test -s ci/signing/t4a-ci.keystore
 
+      - name: Resolve APK versionCode from Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          version_code="$(./gradlew --no-daemon -q :app:printVersionCode | tail -n 1 | tr -d '\r')"
+          [[ "${version_code}" =~ ^[0-9]+$ ]] || { echo "Invalid versionCode from Gradle: ${version_code}" >&2; exit 1; }
+          echo "T4A_VERSION_CODE=${version_code}" >> "${GITHUB_ENV}"
+          echo "Version code:  ${version_code}"
+
       - name: Build release APK
         env:
           ANDROID_SIGNING_KEYSTORE: ${{ github.workspace }}/ci/signing/t4a-ci.keystore
@@ -322,7 +333,6 @@ jobs:
           ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          chmod +x ./gradlew
           test -n "${ANDROID_SIGNING_STORE_PASSWORD}"
           test -n "${ANDROID_SIGNING_KEY_ALIAS}"
           test -n "${ANDROID_SIGNING_KEY_PASSWORD}"
@@ -388,7 +398,7 @@ jobs:
             gh release create "${tag}" "${asset}" \
               --target "${GITHUB_SHA}" \
               --title "RideDash ${version}" \
-              --notes "Stable RideDash ${version} release build. Build ${GITHUB_RUN_ID}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
+              --notes "Stable RideDash ${version} release build. Version code ${T4A_VERSION_CODE}, build ${GITHUB_RUN_ID}, commit ${GITHUB_SHA}. SHA-256: ${digest}."
           fi
 
       - name: Publish latest release APK shortcut
