@@ -52,6 +52,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify production BLE runtime
+        shell: pwsh
+        run: ./scripts/VerifyProductionBleRuntime.ps1
+
       - name: Verify required sources and imports
         shell: pwsh
         run: |

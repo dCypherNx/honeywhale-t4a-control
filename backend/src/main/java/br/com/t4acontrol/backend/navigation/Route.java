@@ -1,0 +1,60 @@
+package br.com.t4acontrol.backend.navigation;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+
+/** Immutable provider-neutral route imported from an external source. */
+public final class Route {
+  public final String id;
+  public final String source;
+  public final String originalReference;
+  public final RoutingProfile routingProfile;
+  public final List<Waypoint> waypoints;
+  public final List<RouteLeg> legs;
+  /** Optional route-level metrics supplied by the route provider. */
+  public final RouteMetadata metadata;
+
+  public Route(
+      String id,
+      String source,
+      String originalReference,
+      List<Waypoint> waypoints,
+      List<RouteLeg> legs) {
+    this(id, source, originalReference, null, waypoints, legs, null);
+  }
+
+  public Route(
+      String id,
+      String source,
+      String originalReference,
+      RoutingProfile routingProfile,
+      List<Waypoint> waypoints,
+      List<RouteLeg> legs) {
+    this(id, source, originalReference, routingProfile, waypoints, legs, null);
+  }
+
+  public Route(
+      String id,
+      String source,
+      String originalReference,
+      RoutingProfile routingProfile,
+      List<Waypoint> waypoints,
+      List<RouteLeg> legs,
+      RouteMetadata metadata) {
+    this.id = Objects.requireNonNull(id, "id");
+    this.source = source;
+    this.originalReference = originalReference;
+    this.routingProfile = routingProfile;
+    this.waypoints = Collections.unmodifiableList(new ArrayList<>(
+        Objects.requireNonNull(waypoints, "waypoints")));
+    this.legs = Collections.unmodifiableList(new ArrayList<>(
+        Objects.requireNonNull(legs, "legs")));
+    this.metadata = metadata;
+
+    if (this.waypoints.size() < 2) {
+      throw new IllegalArgumentException("A route requires at least origin and destination");
+    }
+  }
+}
