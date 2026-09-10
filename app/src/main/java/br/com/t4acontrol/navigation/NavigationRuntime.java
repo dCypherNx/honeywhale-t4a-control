@@ -1,9 +1,11 @@
 package br.com.t4acontrol.navigation;
 
 import android.content.Context;
+import br.com.t4acontrol.BuildConfig;
 import br.com.t4acontrol.backend.location.LocationSnapshot;
 import br.com.t4acontrol.backend.navigation.NavigationDeviationPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationEngine;
+import br.com.t4acontrol.backend.navigation.NavigationInstructionDiagnostics;
 import br.com.t4acontrol.backend.navigation.NavigationObservationPolicy;
 import br.com.t4acontrol.backend.navigation.NavigationState;
 import br.com.t4acontrol.backend.navigation.Route;
@@ -35,6 +37,8 @@ public final class NavigationRuntime {
   private final NavigationDeviationPolicy deviationPolicy = new NavigationDeviationPolicy();
   private final NavigationObservationPolicy observationPolicy = new NavigationObservationPolicy();
   private final RouteProgressTracker progressTracker = new RouteProgressTracker();
+  private final NavigationInstructionDiagnostics instructionDiagnostics =
+      new NavigationInstructionDiagnostics();
   private final NavigationRecoveryCoordinator recoveryCoordinator =
       new NavigationRecoveryCoordinator(new OsrmRoutePlanner());
   private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
@@ -77,6 +81,7 @@ public final class NavigationRuntime {
           state = fallbackUiState;
           observationPolicy.reset();
           progressTracker.reset();
+          instructionDiagnostics.reset();
           latestObservation = null;
           notifyListeners();
           notifyLocationDemandIfChanged();
@@ -227,6 +232,8 @@ public final class NavigationRuntime {
       nextProgress = progressTracker.observe(active, next, snapshot);
     }
 
+    logInstructionDiagnostics(current, next, snapshot, nextProgress);
+
     if (next.status == NavigationState.Status.OFF_ROUTE) {
       deviationSuspected = true;
       observe(active, next, snapshot, nextProgress, true);
@@ -263,6 +270,18 @@ public final class NavigationRuntime {
     deviationPolicy.shouldRecalculate(next, snapshot);
   }
 
+  private void logInstructionDiagnostics(
+      NavigationState previous,
+      NavigationState current,
+      LocationSnapshot snapshot,
+      RouteProgressSnapshot progress) {
+    if (!BuildConfig.DEBUG) return;
+    for (NavigationInstructionDiagnostics.Event event :
+        instructionDiagnostics.observe(previous, current, snapshot, progress)) {
+      rawLog("[NAV] " + event.kind + " " + event.summary);
+    }
+  }
+
   private void observe(
       Route active,
       NavigationState navigationState,
@@ -280,6 +299,7 @@ public final class NavigationRuntime {
     deviationPolicy.reset();
     observationPolicy.reset();
     progressTracker.reset();
+    instructionDiagnostics.reset();
     recoveryCoordinator.reset();
     latestObservation = null;
     deviationSuspected = false;
